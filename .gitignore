@@ -42,3 +42,4 @@ out/
 ### Others ###
 .env
 src/test/http/image/
+src/test/http/http-client.private.env.json
