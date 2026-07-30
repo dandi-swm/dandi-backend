@@ -24,6 +24,7 @@ class SecurityConfig(private val authErrorResponseWriter: AuthErrorResponseWrite
             }
             authorizeHttpRequests {
                 authorize(DispatcherTypeRequestMatcher(DispatcherType.ERROR), permitAll)
+                authorize("/api/v1/auth/**", permitAll)
                 authorize("/api/**", authenticated)
                 authorize(anyRequest, denyAll)
             }

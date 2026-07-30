@@ -1,0 +1,39 @@
+### 로그인 API
+POST {{url}}/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "example@naver.com",
+  "password": "암호화"
+}
+
+### 회원가입 API
+POST {{url}}/api/v1/auth/signup
+Content-Type: application/json
+
+{
+  "email": "example@naver.com",
+  "password": "암호화",
+  "nickname": "진우 집사",
+  "gender": "남성",
+  "birth": "2026-07-12",
+  "height": 175,
+  "weight": 80
+}
+
+### 이메일 인증 API
+POST {{url}}/api/v1/auth/email-verification
+Content-Type: application/json
+
+{
+  "email": "example@naver.com"
+}
+
+### 이메일 인증 확인 API
+POST {{url}}/api/v1/auth/email-verification/confirm
+Content-Type: application/json
+
+{
+  "email": "example@naver.com",
+  "verificationCode": 123456
+}
