@@ -46,6 +46,7 @@
 | 계산 로직(최상위 함수 파일) | ~Calculator | ~Calc, ~Calculation, ~Util |
 | 서블릿/보안 필터 | ~Filter | ~Interceptor (인터셉터는 MVC 계층의 다른 개념) |
 | 응답 직접 직렬화(필터 단계) | ~Writer | ~Handler, ~Responder — 예: `AuthErrorResponseWriter` |
+| 토큰 발급/검증 컴포넌트 | ~Provider | ~Manager, ~Generator, ~Factory, ~TokenService — 예: `JwtProvider` |
 
 ## Boolean 네이밍
 
@@ -93,6 +94,12 @@
 | 현재 사용자 주입 | CurrentUser | @AuthenticationPrincipal 메타 어노테이션(@CurrentUser). 인증 필수 경로의 컨트롤러 파라미터 전용 |
 | 소유권 | Ownership | 리소스가 요청 사용자 소유인지. 검증은 validateOwnership — ownership은 한 단어 (OwnerShip 금지) |
 | 임시 구현 | Stub | 프로덕션 코드의 임시 대역 접두 (예: StubAuthenticationFilter). Fake, Mock 금지 — Mock은 테스트 전용 |
+| 보안 인프라 | Security | Spring Security 메커니즘(설정·필터·principal)의 패키지명(security). 인증 API(컨트롤러/DTO)는 auth 패키지와 분리 |
+| JWT | Jwt | 식별자 표기는 Jwt (클래스 `JwtProvider`, 패키지 security.jwt). JWT 전체 대문자, JsonWebToken 금지 |
+| 접근 토큰 | AccessToken | 30분 수명, API 인증용. type 클레임 값은 "access". 필드명 accessToken |
+| 갱신 토큰 | RefreshToken | 15일 수명, 재발급용. type 클레임 값은 "refresh". 필드명 refreshToken |
+| 토큰 수명 | TimeToLive | accessTimeToLive / refreshTimeToLive. Expiration, Ttl, ExpiresIn, Validity 금지 |
+| 시크릿 키 | SecretKey | 설정의 Base64 문자열(JwtProperties.secretKey, .env의 JWT_SECRET_KEY)과 디코딩된 키 객체 모두 secretKey |
 
 ## 케이스 규칙
 
