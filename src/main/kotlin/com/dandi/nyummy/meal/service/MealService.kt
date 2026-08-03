@@ -42,6 +42,14 @@ class MealService(
     private val mealProperties: MealProperties,
 ) {
 
+    /**
+     * 식사 이미지를 임시 경로에 업로드할 수 있는 presigned URL을 발급한다.
+     *
+     * @param request 업로드할 이미지의 [UploadImageRequest] (MIME 타입, 파일 크기)
+     * @return 업로드 URL/메서드/헤더와 임시 이미지 키를 담은 [UploadImageResponse]
+     * @throws BusinessException [S3ErrorCode.UNSUPPORTED_CONTENT_TYPE] contentType이 허용되지 않는 경우
+     * @throws BusinessException [S3ErrorCode.FILE_SIZE_EXCEEDED] fileSizeBytes가 [MealProperties.maxFileSizeBytes]를 초과하거나 음수인 경우
+     */
     fun createUploadUrl(request: UploadImageRequest): UploadImageResponse {
         val expirationInstant = clock.now() + mealProperties.presignedUrlExpirationMinutes.minutes
 
@@ -61,6 +69,17 @@ class MealService(
         )
     }
 
+    /**
+     * 임시 업로드된 이미지를 확정하고 식사 기록을 생성한 뒤, 영양 분석을 비동기로 시작한다.
+     *
+     * @param userId 식사를 등록하는 사용자 ID
+     * @param request 식사 생성 정보를 담은 [CreateMealRequest] (임시 이미지 키 등)
+     * @return 생성된 [Meal]의 분석 상태를 담은 [GetStatusResponse]
+     * @throws BusinessException [S3ErrorCode.INVALID_KEY] request.imageKey가 `temp/`로 시작하지 않는 경우
+     * @throws BusinessException [S3ErrorCode.OBJECT_NOT_FOUND] request.imageKey에 해당하는 임시 객체가 S3에 없는 경우
+     * @throws BusinessException [S3ErrorCode.FILE_SIZE_EXCEEDED] 실제 업로드된 크기가 0이거나 [MealProperties.maxFileSizeBytes]를 초과하는 경우
+     * @throws BusinessException [S3ErrorCode.UNSUPPORTED_CONTENT_TYPE] 실제 콘텐츠에서 감지된 MIME 타입이 허용되지 않는 경우
+     */
     @Transactional
     fun createMeal(userId: Long, request: CreateMealRequest): GetStatusResponse {
         val imageKey = s3Service.confirmUpload(
