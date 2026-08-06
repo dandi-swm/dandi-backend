@@ -42,7 +42,10 @@ out/
 ### macOS ###
 .DS_Store
 
+### .http ###
+src/test/http/image/*
+src/test/http/meal.http
+src/test/http/http-client.private.env.json
+
 ### Others ###
 .env
-src/test/http/image/
-src/test/http/http-client.private.env.json
