@@ -104,7 +104,7 @@ allOpen {
 }
 
 tasks.register<Exec>("stageChanges") {
-    commandLine("git", "add", "-u")
+    commandLine("bash", "-c", "git diff --diff-filter=d --name-only --cached -z | xargs -0 -r git add --")
 }
 
 tasks.named("stageChanges") {
