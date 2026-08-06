@@ -27,7 +27,7 @@ class AuthController {
         ),
     )
 
-    @PostMapping("/sigup")
+    @PostMapping("/signup")
     fun signup(@RequestBody request: SignUpRequest): ResponseEntity<SignUpResponse> = ResponseEntity.ok(
         SignUpResponse(
             accessToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwidXNlcklkIjoxLCJ0eXBlIjoiYWNjZXNzIiwia" +

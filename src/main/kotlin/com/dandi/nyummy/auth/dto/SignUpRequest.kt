@@ -1,6 +1,6 @@
 package com.dandi.nyummy.auth.dto
 
-import kotlin.time.Instant
+import java.time.LocalDate
 
 data class SignUpRequest(
 
@@ -12,7 +12,7 @@ data class SignUpRequest(
 
     val gender: String,
 
-    val birth: Instant,
+    val birth: LocalDate,
 
     val height: Int,
 
