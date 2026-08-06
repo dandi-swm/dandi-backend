@@ -1,0 +1,37 @@
+### 음식 이미지 업로드 presigned-url 생성 API
+POST {{url}}/api/v1/meals/images/presigned-url
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "contentType": "image/jpeg",
+  "fileSizeBytes": 1000
+}
+
+### 발급받은 presigned url로 이미지 S3에 업로드
+PUT {{uploadUrl}}
+Content-Type: image/jpeg
+
+< image/really_crazy.jpg
+
+
+### 식사기록 생성 API
+POST {{url}}/api/v1/meals
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "name": "really_crazy",
+  "imageKey": {{imageKey}},
+  "mealAt": "2026-07-20T07:12:26Z",
+  "iconId": 1
+}
+
+### 분석 상태 조회 API
+@mealId = 11
+GET {{url}}/api/v1/meals/{{mealId}}/analysis
+Authorization: Bearer {{token}}
+
+### 재분석 요청 API
+POST {{url}}/api/v1/meals/{{mealId}}/analysis
+Authorization: Bearer {{token}}
