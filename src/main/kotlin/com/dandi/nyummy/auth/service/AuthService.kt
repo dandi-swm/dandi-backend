@@ -14,10 +14,15 @@ import com.dandi.nyummy.security.jwt.JwtProvider
 import com.dandi.nyummy.security.jwt.TokenType
 import com.dandi.nyummy.auth.dto.SignUpRequest
 import com.dandi.nyummy.auth.dto.SignUpResponse
+import com.dandi.nyummy.profile.mapper.toProfile
+import com.dandi.nyummy.profile.repository.ProfileRepository
+import com.dandi.nyummy.security.jwt.JwtProvider
+import com.dandi.nyummy.user.mapper.toUser
 import com.dandi.nyummy.user.repository.UserRepository
 import org.springframework.security.crypto.password.PasswordEncoder
+import jakarta.transaction.Transactional
+import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
-import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
 
 @Service
