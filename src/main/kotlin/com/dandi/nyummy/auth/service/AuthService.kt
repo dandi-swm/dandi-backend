@@ -12,6 +12,8 @@ import com.dandi.nyummy.exception.errorcode.AuthErrorCode
 import com.dandi.nyummy.security.jwt.JwtProperties
 import com.dandi.nyummy.security.jwt.JwtProvider
 import com.dandi.nyummy.security.jwt.TokenType
+import com.dandi.nyummy.auth.dto.SignUpRequest
+import com.dandi.nyummy.auth.dto.SignUpResponse
 import com.dandi.nyummy.user.repository.UserRepository
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
@@ -47,6 +49,7 @@ class AuthService(
 
         val userId = user.id
 
+    fun signup(request: SignUpRequest): SignUpResponse {
         val newAccessToken = jwtProvider.createAccessToken(userId)
         val newRefreshToken = jwtProvider.createRefreshToken(userId)
         val newExpiresAt = Instant.now().plus(jwtProperties.refreshTimeToLive)

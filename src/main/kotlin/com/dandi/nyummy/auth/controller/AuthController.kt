@@ -14,6 +14,7 @@ import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.security.SecurityRequirements
 import io.swagger.v3.oas.annotations.tags.Tag
+import org.springframework.http.HttpStatus
 import jakarta.validation.Valid
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.PostMapping
@@ -34,14 +35,8 @@ class AuthController(private val mailService: MailService, private val authServi
 
     @Operation(summary = "회원가입", description = "이메일·비밀번호·닉네임과 신체 정보로 회원가입하고 AccessToken과 RefreshToken을 발급받는다.")
     @PostMapping("/signup")
-    fun signup(@RequestBody request: SignUpRequest): ResponseEntity<SignUpResponse> = ResponseEntity.ok(
-        SignUpResponse(
-            accessToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwidXNlcklkIjoxLCJ0eXBlIjoiYWNjZXNzIiwia" +
-                "WF0IjoxNzUzOTIwMDAwLCJleHAiOjE3NTM5MjM2MDB9.hm9KdG2zY6kA3OooLoNbUl4nwF56MJHh2ygSIq5iwHA",
-            refreshToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwidXNlcklkIjoxLCJ0eXBlIjoicmVmcmVzaCIs" +
-                "ImlhdCI6MTc1MzkyMDAwMCwiZXhwIjoxNzU1MTI5NjAwfQ.3dYJS1UPcP5ohWa4yPbdmwjd4rRwa7nSL3AadcgMFXM",
-        ),
-    )
+    fun signup(@RequestBody request: SignUpRequest): ResponseEntity<SignUpResponse> =
+        ResponseEntity.status(HttpStatus.CREATED).body(authService.signup(request))
 
     @Operation(summary = "토큰 재발급", description = "리프레시 토큰을 검증하고 AccessToken·RefreshToken을 새로 발급한다(rotate).")
     @ApiResponse(responseCode = "401", description = "유효하지 않은 리프레시 토큰입니다.")
