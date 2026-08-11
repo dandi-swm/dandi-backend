@@ -25,52 +25,53 @@ class Meal(
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    val id: Long = 0,
+    @Column(name = "id", nullable = false)
+    val id: Long = 0L,
 
-    @Column
+    @Column(name = "name", nullable = false, length = 100)
     var name: String = "",
 
-    @Column
+    @Column(name = "carbs")
     var carbs: Int? = null,
 
-    @Column
+    @Column(name = "protein")
     var protein: Int? = null,
 
-    @Column
+    @Column(name = "fat")
     var fat: Int? = null,
 
-    @Column
+    @Column(name = "score")
     var score: Int? = null,
 
-    @Column
+    @Column(name = "calory")
     var calory: Int? = null,
 
-    @Column
     @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false, length = 20)
     var status: MealStatus,
 
-    @Column
+    @Column(name = "image_key", nullable = false, length = 512)
     val imageKey: String,
 
-    @Column
+    @Column(name = "meal_at", nullable = false)
     val mealAt: Instant,
 
-    @Column
     @CreatedDate
+    @Column(name = "created_at", nullable = false)
     var createdAt: Instant = Instant.now(),
 
-    @Column
     @LastModifiedDate
-    var updatedAt: Instant? = null,
+    @Column(name = "updated_at", nullable = false)
+    var updatedAt: Instant = Instant.now(),
 
-    @Column
+    @Column(name = "deleted_at")
     var deletedAt: Instant? = null,
 
-    @Column
-    val userId: Long = 0,
+    @Column(name = "user_id", nullable = false)
+    val userId: Long = 0L,
 
-    @Column
-    val iconId: Long = 0,
+    @Column(name = "icon_id", nullable = false)
+    val iconId: Long = 0L,
 ) {
 
     fun updateNutrition(nutrition: Nutrition?) {
