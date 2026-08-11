@@ -7,4 +7,5 @@ enum class AuthErrorCode(override val status: HttpStatus, override val code: Str
     INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED, "api.auth.invalid-credentials", "이메일 또는 비밀번호가 올바르지 않습니다."),
     UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "api.auth.unauthorized", "인증이 필요합니다."),
     FORBIDDEN(HttpStatus.FORBIDDEN, "api.auth.forbidden", "해당 요청에 대한 권한이 없습니다."),
+    INVALID_REFRESH_TOKEN(HttpStatus.UNAUTHORIZED, "api.auth.invalid-refresh-token", "유효하지 않은 리프레시 토큰입니다."),
 }

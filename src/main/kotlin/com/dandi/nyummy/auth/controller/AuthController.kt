@@ -4,6 +4,8 @@ import com.dandi.nyummy.auth.dto.EmailVerificationConfirmRequest
 import com.dandi.nyummy.auth.dto.EmailVerificationRequest
 import com.dandi.nyummy.auth.dto.LoginRequest
 import com.dandi.nyummy.auth.dto.LoginResponse
+import com.dandi.nyummy.auth.dto.RefreshRequest
+import com.dandi.nyummy.auth.dto.RefreshResponse
 import com.dandi.nyummy.auth.dto.SignUpRequest
 import com.dandi.nyummy.auth.dto.SignUpResponse
 import com.dandi.nyummy.auth.service.AuthService
@@ -39,6 +41,11 @@ class AuthController(private val authService: AuthService) {
                 "ImlhdCI6MTc1MzkyMDAwMCwiZXhwIjoxNzU1MTI5NjAwfQ.3dYJS1UPcP5ohWa4yPbdmwjd4rRwa7nSL3AadcgMFXM",
         ),
     )
+
+    @Operation(summary = "토큰 재발급", description = "리프레시 토큰을 검증하고 AccessToken·RefreshToken을 새로 발급한다(rotate).")
+    @ApiResponse(responseCode = "401", description = "유효하지 않은 리프레시 토큰입니다.")
+    @PostMapping("/refresh")
+    fun refresh(@Valid @RequestBody request: RefreshRequest): RefreshResponse = authService.refresh(request)
 
     @Operation(summary = "이메일 인증 코드 발송", description = "입력한 이메일 주소로 인증 코드를 발송한다.")
     @PostMapping("/email-verification")
