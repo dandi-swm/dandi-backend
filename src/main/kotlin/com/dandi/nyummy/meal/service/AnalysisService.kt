@@ -9,6 +9,7 @@ import com.dandi.nyummy.meal.mapper.toGetStatusResponse
 import com.dandi.nyummy.meal.repository.MealRepository
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
 
 @Service
 class AnalysisService(
@@ -23,6 +24,7 @@ class AnalysisService(
      * @return 분석 상태를 담은 [GetStatusResponse]
      * @throws BusinessException [MealErrorCode.MEAL_NOT_FOUND] mealId에 해당하는 식사가 없거나, userId가 소유자가 아닌 경우
      */
+    @Transactional(readOnly = true)
     fun getStatus(userId: Long, mealId: Long): GetStatusResponse {
         val meal = mealRepository.findByIdOrNull(mealId)
             ?: throw BusinessException(MealErrorCode.MEAL_NOT_FOUND, "Meal Not Found")

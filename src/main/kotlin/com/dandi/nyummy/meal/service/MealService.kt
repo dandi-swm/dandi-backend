@@ -23,8 +23,8 @@ import com.dandi.nyummy.meal.mapper.toMealResponse
 import com.dandi.nyummy.meal.mapper.toNutrition
 import com.dandi.nyummy.meal.repository.MealRepository
 import com.dandi.nyummy.profile.repository.ProfileRepository
-import jakarta.transaction.Transactional
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
@@ -96,6 +96,7 @@ class MealService(
         return savedMeal.toGetStatusResponse()
     }
 
+    @Transactional(readOnly = true)
     fun getDailyMeals(userId: Long, year: Int, month: Int, day: Int): DailyMealsResponse {
         val zone = ZoneId.of("Asia/Seoul")
         val date = LocalDate.of(year, month, day)
@@ -122,6 +123,7 @@ class MealService(
         )
     }
 
+    @Transactional(readOnly = true)
     fun getMonthlyMeals(userId: Long, year: Int, month: Int): MonthlyMealsResponse {
         val zone = ZoneId.of("Asia/Seoul")
         val (startDate, endDate) = calculateMonthlyCalendarRange(YearMonth.of(year, month))
@@ -163,13 +165,14 @@ class MealService(
         )
     }
 
+    @Transactional(readOnly = true)
     fun getMeal(userId: Long, mealId: Long): MealResponse {
         val meal = mealRepository.getMealByIdAndUserIdAndDeletedAtIsNull(mealId, userId)
             ?: throw Exception("Meal Not Found")
 
         val imageUrl = s3Service.createPresignedGetUrl(meal.imageKey, 10.minutes).toString()
 
-        return meal.toMealResponse(imageUrl.toString())
+        return meal.toMealResponse(imageUrl)
     }
 
     @Transactional
@@ -181,7 +184,7 @@ class MealService(
 
         meal.updateName(name)
 
-        return meal.toMealResponse(imageUrl.toString())
+        return meal.toMealResponse(imageUrl)
     }
 
     @Transactional
