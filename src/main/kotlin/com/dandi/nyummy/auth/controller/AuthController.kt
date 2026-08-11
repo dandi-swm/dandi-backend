@@ -8,6 +8,7 @@ import com.dandi.nyummy.auth.dto.RefreshRequest
 import com.dandi.nyummy.auth.dto.RefreshResponse
 import com.dandi.nyummy.auth.dto.SignUpRequest
 import com.dandi.nyummy.auth.dto.SignUpResponse
+import com.dandi.nyummy.auth.service.MailService
 import com.dandi.nyummy.auth.service.AuthService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.responses.ApiResponse
@@ -49,9 +50,21 @@ class AuthController(private val authService: AuthService) {
 
     @Operation(summary = "이메일 인증 코드 발송", description = "입력한 이메일 주소로 인증 코드를 발송한다.")
     @PostMapping("/email-verification")
-    fun emailVerification(@RequestBody request: EmailVerificationRequest) = ResponseEntity.ok()
+    fun emailVerification(@Valid @RequestBody request: EmailVerificationRequest): ResponseEntity<Void> {
+        mailService.sendEmail(request.email)
+
+        return ResponseEntity
+            .noContent()
+            .build()
+    }
 
     @Operation(summary = "이메일 인증 코드 확인", description = "이메일로 받은 인증 코드가 유효한지 검증한다.")
     @PostMapping("/email-verification/confirm")
-    fun emailVerificationConfirm(@RequestBody request: EmailVerificationConfirmRequest) = ResponseEntity.ok()
+    fun emailVerificationConfirm(@Valid @RequestBody request: EmailVerificationConfirmRequest): ResponseEntity<Void> {
+        mailService.confirm(request.email, request.verificationCode)
+
+        return ResponseEntity
+            .noContent()
+            .build()
+    }
 }
