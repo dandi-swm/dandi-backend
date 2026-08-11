@@ -15,15 +15,16 @@ class User(
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    val id: Long = 0,
+    @Column(name = "id", nullable = false)
+    val id: Long = 0L,
 
-    @Column
+    @Column(name = "email", nullable = false, unique = true, length = 255)
     val email: String,
 
-    @Column
+    @Column(name = "password", nullable = false, length = 255)
     val password: String,
 
-    @Column
     @CreatedDate
+    @Column(name = "created_at", nullable = false)
     val createdAt: Instant = Instant.now(),
 )
