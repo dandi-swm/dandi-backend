@@ -2,6 +2,7 @@ package com.dandi.nyummy.security.filter
 
 import com.dandi.nyummy.security.AuthUser
 import com.dandi.nyummy.security.jwt.JwtProvider
+import com.dandi.nyummy.security.jwt.TokenType
 import io.jsonwebtoken.JwtException
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
@@ -33,7 +34,7 @@ class JwtAuthorizationFilter(private val jwtProvider: JwtProvider) : OncePerRequ
             val authorization = authorizationValue.substring(7)
 
             try {
-                val userId = jwtProvider.getUserId(authorization)
+                val userId = jwtProvider.getUserId(authorization, TokenType.ACCESS)
 
                 val authentication = UsernamePasswordAuthenticationToken.authenticated(
                     AuthUser(userId),

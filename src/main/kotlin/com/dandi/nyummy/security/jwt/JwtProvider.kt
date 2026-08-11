@@ -1,5 +1,6 @@
 package com.dandi.nyummy.security.jwt
 
+import io.jsonwebtoken.ExpiredJwtException
 import io.jsonwebtoken.JwtException
 import io.jsonwebtoken.JwtParser
 import io.jsonwebtoken.Jwts
@@ -8,7 +9,7 @@ import io.jsonwebtoken.security.Keys
 import org.springframework.stereotype.Component
 import java.time.Clock
 import java.time.Duration
-import java.util.Date
+import java.util.*
 import javax.crypto.SecretKey
 
 @Component
@@ -37,13 +38,19 @@ class JwtProvider(private val jwtProperties: JwtProperties, private val clock: C
             .compact()
     }
 
-    fun getUserId(token: String): Long {
-        val claims = parser.parseSignedClaims(token).payload
-
-        if (claims["type"] != "access") {
-            throw JwtException("access 토큰이 아님")
+    fun getUserId(token: String, expectedType: TokenType): Long {
+        val claims = try {
+            parser.parseSignedClaims(token).payload
+        } catch (e: ExpiredJwtException) {
+            throw JwtException("만료된 JWT 토큰입니다.", e)
+        } catch (e: JwtException) {
+            throw JwtException("유효하지 않은 토큰입니다.", e)
         }
 
-        return claims.subject?.toLong() ?: throw JwtException("유효한 sub이 아님")
+        if (claims["type"] != expectedType.value) {
+            throw JwtException("${expectedType.value} 토큰이 아닙니다.")
+        }
+
+        return claims.subject?.toLongOrNull() ?: throw JwtException("유효한 sub가 아닙니다.")
     }
 }
