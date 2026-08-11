@@ -37,3 +37,11 @@ Content-Type: application/json
   "email": "example@naver.com",
   "verificationCode": 123456
 }
+
+### access token 재발급 API
+POST {{url}}/api/v1/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "{{refreshToken}}"
+}

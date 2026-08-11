@@ -1,7 +1,7 @@
 ### 음식 이미지 업로드 presigned-url 생성 API
 POST {{url}}/api/v1/meals/images/presigned-url
 Content-Type: application/json
-Authorization: Bearer {{token}}
+Authorization: Bearer {{accessToken}}
 
 {
   "contentType": "image/jpeg",
@@ -18,7 +18,7 @@ Content-Type: image/jpeg
 ### 식사기록 생성 API
 POST {{url}}/api/v1/meals
 Content-Type: application/json
-Authorization: Bearer {{token}}
+Authorization: Bearer {{accessToken}}
 
 {
   "name": "really_crazy",
@@ -30,8 +30,8 @@ Authorization: Bearer {{token}}
 ### 분석 상태 조회 API
 @mealId = 11
 GET {{url}}/api/v1/meals/{{mealId}}/analysis
-Authorization: Bearer {{token}}
+Authorization: Bearer {{accessToken}}
 
 ### 재분석 요청 API
 POST {{url}}/api/v1/meals/{{mealId}}/analysis
-Authorization: Bearer {{token}}
+Authorization: Bearer {{accessToken}}
