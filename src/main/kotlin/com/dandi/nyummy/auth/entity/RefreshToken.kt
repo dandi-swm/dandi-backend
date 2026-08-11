@@ -21,7 +21,7 @@ class RefreshToken(
     @Column(name = "id", nullable = false)
     val id: Long = 0L,
 
-    @Column(name = "refresh_token", nullable = false, length = 512)
+    @Column(name = "refresh_token", nullable = false, unique = true, length = 512)
     var refreshToken: String,
 
     @Column(name = "user_id", nullable = false)
