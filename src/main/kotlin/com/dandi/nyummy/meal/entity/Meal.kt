@@ -72,13 +72,6 @@ class Meal(
     @Column
     val iconId: Long = 0,
 ) {
-    fun updateNutrition(calory: Int, carbs: Int, protein: Int, fat: Int) {
-        this.status = MealStatus.COMPLETED
-        this.calory = calory
-        this.carbs = carbs
-        this.protein = protein
-        this.fat = fat
-    }
 
     fun updateNutrition(nutrition: Nutrition?) {
         this.calory = nutrition?.calory ?: 0
