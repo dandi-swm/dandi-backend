@@ -70,6 +70,9 @@ dependencies {
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.1")
 
     runtimeOnly("org.bouncycastle:bcprov-jdk18on:1.82")
+
+    // 메일 전송
+    implementation("org.springframework.boot:spring-boot-starter-mail")
 }
 
 kotlin {
