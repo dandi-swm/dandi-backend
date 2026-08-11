@@ -33,4 +33,9 @@ class RefreshToken(
 
     @Column(name = "expires_at", nullable = false)
     var expiresAt: Instant,
-)
+) {
+    fun rotate(refreshToken: String, newExpiresAt: Instant) {
+        this.refreshToken = refreshToken
+        this.expiresAt = newExpiresAt
+    }
+}

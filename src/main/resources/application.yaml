@@ -34,6 +34,8 @@ app:
     base-url: "https://generativelanguage.googleapis.com"
     connect-timeout: 5s
     read-timeout: 30s
+  auth:
+    login-redirect-url: "dandi://home"
   jwt:
     secret-key: ${JWT_SECRET_KEY}
     access-time-to-live: 30m
