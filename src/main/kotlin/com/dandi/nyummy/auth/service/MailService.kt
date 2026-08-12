@@ -2,11 +2,11 @@ package com.dandi.nyummy.auth.service
 
 import com.dandi.nyummy.auth.entity.Mail
 import com.dandi.nyummy.auth.repository.MailRepository
-import jakarta.transaction.Transactional
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.mail.SimpleMailMessage
 import org.springframework.mail.javamail.JavaMailSender
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
 import java.security.SecureRandom
 import java.time.Duration
 import java.time.Instant
