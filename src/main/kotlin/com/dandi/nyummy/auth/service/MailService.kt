@@ -2,6 +2,8 @@ package com.dandi.nyummy.auth.service
 
 import com.dandi.nyummy.auth.entity.Mail
 import com.dandi.nyummy.auth.repository.MailRepository
+import com.dandi.nyummy.exception.BusinessException
+import com.dandi.nyummy.exception.errorcode.AuthErrorCode
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.mail.SimpleMailMessage
 import org.springframework.mail.javamail.JavaMailSender
@@ -30,7 +32,7 @@ class MailService(
 
         if (existingMail != null) {
             if (Duration.between(existingMail.createdAt, Instant.now()) < EMAIL_VALID_TIME) {
-                throw RuntimeException("아직 5분이 지나지 않았습니다.")
+                throw BusinessException(AuthErrorCode.MAIL_RESEND_TOO_EARLY)
             }
 
             existingMail.createdAt = Instant.now()
@@ -57,14 +59,14 @@ class MailService(
     @Transactional
     fun confirm(email: String, code: String) {
         val existingMail = mailRepository.findByEmail(email)
-            ?: throw RuntimeException("존재하지 않는 이메일입니다.")
+            ?: throw BusinessException(AuthErrorCode.MAIL_NOT_FOUND)
 
         if (Duration.between(existingMail.createdAt, Instant.now()) > EMAIL_VALID_TIME) {
-            throw RuntimeException("검증 시간이 지났습니다. 코드를 재발송 받으세요.")
+            throw BusinessException(AuthErrorCode.MAIL_CODE_EXPIRED)
         }
 
         if (!existingMail.code.equals(code)) {
-            throw RuntimeException("코드가 다릅니다.")
+            throw BusinessException(AuthErrorCode.MAIL_CODE_MISMATCH)
         }
 
         existingMail.isVerified = true
