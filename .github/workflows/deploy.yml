@@ -56,6 +56,8 @@ jobs:
           AWS_S3_BUCKET_NAME: dummy
           GEMINI_API_KEY: i'msohungryandangry
           JWT_SECRET_KEY: c83mV3J9dm3u1nGB93mdHgHbZTE3mciNNc93nMvfi3m=
+          EMAIL_USERNAME: test@dandi.com
+          EMAIL_PASSWORD: test
         run: ./gradlew clean build
 
       - name: AWS 자격 증명 설정
