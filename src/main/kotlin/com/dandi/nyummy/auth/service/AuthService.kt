@@ -78,6 +78,15 @@ class AuthService(
         return LoginResponse(redirectUrl, newAccessToken, newRefreshToken)
     }
 
+    /**
+     * 이메일 인증이 완료된 사용자를 신규 가입시키고 AccessToken·RefreshToken을 발급한다.
+     * 비밀번호는 인코딩해 저장하며, 사용자 생성 시 프로필도 함께 생성한다.
+     *
+     * @param request 회원가입 요청 정보를 담은 [SignUpRequest] (이메일, 비밀번호, 닉네임, 성별, 생년월일, 키, 몸무게)
+     * @return 새로 발급된 AccessToken·RefreshToken을 담은 [SignUpResponse]
+     * @throws BusinessException [AuthErrorCode.MAIL_NOT_VERIFICATION] 이메일 인증 이력이 없거나 인증이 완료되지 않은 경우
+     * @throws BusinessException [AuthErrorCode.EXISTED_EMAIL] 이미 가입된 이메일인 경우
+     */
     @Transactional
     fun signup(request: SignUpRequest): SignUpResponse {
         val findMail = mailRepository.findByEmail(request.email)
