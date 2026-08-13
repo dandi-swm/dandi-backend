@@ -16,7 +16,12 @@ import java.time.Instant
 @EntityListeners(AuditingEntityListener::class)
 class Mail(
 
-    @Column(name = "email", nullable = false)
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "id", nullable = false)
+    val id: Long = 0,
+
+    @Column(name = "email", nullable = false, unique = true)
     val email: String,
 
     @Column(name = "code", nullable = false)
@@ -28,11 +33,4 @@ class Mail(
     @CreatedDate
     @Column(name = "created_at", nullable = false)
     var createdAt: Instant = Instant.now(),
-
-) {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "id", nullable = false)
-    val id: Long = 0
-}
+)
