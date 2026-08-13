@@ -8,12 +8,16 @@ import com.dandi.nyummy.auth.dto.RefreshResponse
 import com.dandi.nyummy.auth.dto.SignUpRequest
 import com.dandi.nyummy.auth.dto.SignUpResponse
 import com.dandi.nyummy.auth.entity.RefreshToken
+import com.dandi.nyummy.auth.repository.MailRepository
 import com.dandi.nyummy.auth.repository.RefreshTokenRepository
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.AuthErrorCode
+import com.dandi.nyummy.profile.mapper.toProfile
+import com.dandi.nyummy.profile.repository.ProfileRepository
 import com.dandi.nyummy.security.jwt.JwtProperties
 import com.dandi.nyummy.security.jwt.JwtProvider
 import com.dandi.nyummy.security.jwt.TokenType
+import com.dandi.nyummy.user.mapper.toUser
 import com.dandi.nyummy.user.repository.UserRepository
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
@@ -24,10 +28,12 @@ import java.time.Instant
 class AuthService(
     private val userRepository: UserRepository,
     private val refreshTokenRepository: RefreshTokenRepository,
+    private val mailRepository: MailRepository,
     private val passwordEncoder: PasswordEncoder,
     private val jwtProvider: JwtProvider,
     private val jwtProperties: JwtProperties,
     private val authProperties: AuthProperties,
+    private val profileRepository: ProfileRepository,
 ) {
 
     /**
@@ -72,7 +78,30 @@ class AuthService(
         return LoginResponse(redirectUrl, newAccessToken, newRefreshToken)
     }
 
+    @Transactional
     fun signup(request: SignUpRequest): SignUpResponse {
+        val findMail = mailRepository.findByEmail(request.email)
+            ?: throw BusinessException(AuthErrorCode.MAIL_NOT_VERIFICATION)
+
+        if (!findMail.isVerified) {
+            throw BusinessException(AuthErrorCode.MAIL_NOT_VERIFICATION)
+        }
+
+        val user = userRepository.findByEmail(request.email)
+        if (user != null) {
+            throw BusinessException(AuthErrorCode.EXISTED_EMAIL)
+        }
+
+        val encoded = passwordEncoder.encode(request.password)
+            ?: throw RuntimeException("패스워드 인코딩 실패")
+
+        val saved = userRepository.save(request.toUser(encoded))
+        profileRepository.save(request.toProfile(saved.id))
+
+        return SignUpResponse(
+            jwtProvider.createAccessToken(saved.id),
+            jwtProvider.createRefreshToken(saved.id),
+        )
     }
 
     /**
