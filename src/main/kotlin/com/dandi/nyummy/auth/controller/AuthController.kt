@@ -34,8 +34,9 @@ class AuthController(private val mailService: MailService, private val authServi
     fun login(@Valid @RequestBody request: LoginRequest): LoginResponse = authService.login(request)
 
     @Operation(summary = "회원가입", description = "이메일·비밀번호·닉네임과 신체 정보로 회원가입하고 AccessToken과 RefreshToken을 발급받는다.")
+    @ApiResponse(responseCode = "400", description = "인증되지 않은 이메일이거나 이미 가입되어 있는 이메일입니다.")
     @PostMapping("/signup")
-    fun signup(@RequestBody request: SignUpRequest): ResponseEntity<SignUpResponse> =
+    fun signup(@Valid @RequestBody request: SignUpRequest): ResponseEntity<SignUpResponse> =
         ResponseEntity.status(HttpStatus.CREATED).body(authService.signup(request))
 
     @Operation(summary = "토큰 재발급", description = "리프레시 토큰을 검증하고 AccessToken·RefreshToken을 새로 발급한다(rotate).")
