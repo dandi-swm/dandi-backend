@@ -105,9 +105,20 @@ class AuthService(
         val saved = userRepository.save(request.toUser(encoded))
         profileRepository.save(request.toProfile(saved.id))
 
+        val newRefreshToken = jwtProvider.createRefreshToken(saved.id)
+        val newExpiresAt = Instant.now().plus(jwtProperties.refreshTimeToLive)
+
+        refreshTokenRepository.save(
+            RefreshToken(
+                refreshToken = newRefreshToken,
+                userId = saved.id,
+                expiresAt = newExpiresAt,
+            ),
+        )
+
         return SignUpResponse(
             jwtProvider.createAccessToken(saved.id),
-            jwtProvider.createRefreshToken(saved.id),
+            newRefreshToken,
         )
     }
 
