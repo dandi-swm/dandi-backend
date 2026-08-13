@@ -84,16 +84,16 @@ class AuthService(
      *
      * @param request 회원가입 요청 정보를 담은 [SignUpRequest] (이메일, 비밀번호, 닉네임, 성별, 생년월일, 키, 몸무게)
      * @return 새로 발급된 AccessToken·RefreshToken을 담은 [SignUpResponse]
-     * @throws BusinessException [AuthErrorCode.MAIL_NOT_VERIFICATION] 이메일 인증 이력이 없거나 인증이 완료되지 않은 경우
+     * @throws BusinessException [AuthErrorCode.MAIL_NOT_VERIFIED] 이메일 인증 이력이 없거나 인증이 완료되지 않은 경우
      * @throws BusinessException [AuthErrorCode.EXISTED_EMAIL] 이미 가입된 이메일인 경우
      */
     @Transactional
     fun signup(request: SignUpRequest): SignUpResponse {
         val findMail = mailRepository.findByEmail(request.email)
-            ?: throw BusinessException(AuthErrorCode.MAIL_NOT_VERIFICATION)
+            ?: throw BusinessException(AuthErrorCode.MAIL_NOT_VERIFIED)
 
         if (!findMail.isVerified) {
-            throw BusinessException(AuthErrorCode.MAIL_NOT_VERIFICATION)
+            throw BusinessException(AuthErrorCode.MAIL_NOT_VERIFIED)
         }
 
         if (userRepository.existsByEmail(request.email)) {

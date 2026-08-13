@@ -11,7 +11,7 @@ enum class AuthErrorCode(override val status: HttpStatus, override val code: Str
     MAIL_NOT_FOUND(HttpStatus.NOT_FOUND, "api.auth.mailNotFound", "해당 이메일로 발송된 인증 코드가 없습니다."),
     MAIL_CODE_EXPIRED(HttpStatus.BAD_REQUEST, "api.auth.mailCodeExpired", "인증 코드 유효 시간이 지났습니다. 코드를 재발송 받으세요."),
     MAIL_CODE_MISMATCH(HttpStatus.BAD_REQUEST, "api.auth.mailCodeMismatch", "인증 코드가 일치하지 않습니다."),
-    MAIL_NOT_VERIFICATION(HttpStatus.BAD_REQUEST, "api.auth.mailNotVerification", "인증되지 않은 이메일입니다."),
+    MAIL_NOT_VERIFIED(HttpStatus.BAD_REQUEST, "api.auth.mailNotVerified", "인증되지 않은 이메일입니다."),
     INVALID_REFRESH_TOKEN(HttpStatus.UNAUTHORIZED, "api.auth.invalidRefreshToken", "유효하지 않은 리프레시 토큰입니다."),
     EXISTED_EMAIL(HttpStatus.BAD_REQUEST, "api.auth.existedEmail", "이미 가입되어 있는 이메일입니다."),
 }
