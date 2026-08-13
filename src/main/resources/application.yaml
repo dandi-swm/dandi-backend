@@ -58,3 +58,5 @@ app:
     parallelism: 1
     memory: 19456
     iterations: 2
+  mail:
+    valid-time: 5m

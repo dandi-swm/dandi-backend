@@ -18,10 +18,10 @@ class MailService(
     private val mailRepository: MailRepository,
     private val mailSender: JavaMailSender,
     @Value("\${spring.mail.username}") private val fromAddress: String,
+    @Value("\${app.mail.valid-time}") private val validTime: Duration,
 ) {
     companion object {
         private val random = SecureRandom()
-        private val EMAIL_VALID_TIME: Duration = Duration.ofMinutes(5)
     }
 
     /**
@@ -37,7 +37,7 @@ class MailService(
         val code = createCode()
 
         if (existingMail != null) {
-            if (Duration.between(existingMail.createdAt, Instant.now()) < EMAIL_VALID_TIME) {
+            if (Duration.between(existingMail.createdAt, Instant.now()) < validTime) {
                 throw BusinessException(AuthErrorCode.MAIL_RESEND_TOO_EARLY)
             }
 
@@ -45,7 +45,12 @@ class MailService(
             existingMail.isVerified = false
             existingMail.code = code
         } else {
-            mailRepository.save(Mail(email, code))
+            mailRepository.save(
+                Mail(
+                    email = email,
+                    code = code,
+                ),
+            )
         }
 
         send(email, code)
@@ -76,7 +81,7 @@ class MailService(
         val existingMail = mailRepository.findByEmail(email)
             ?: throw BusinessException(AuthErrorCode.MAIL_NOT_FOUND)
 
-        if (Duration.between(existingMail.createdAt, Instant.now()) > EMAIL_VALID_TIME) {
+        if (Duration.between(existingMail.createdAt, Instant.now()) > validTime) {
             throw BusinessException(AuthErrorCode.MAIL_CODE_EXPIRED)
         }
 
