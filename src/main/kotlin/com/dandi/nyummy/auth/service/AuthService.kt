@@ -5,6 +5,8 @@ import com.dandi.nyummy.auth.dto.LoginRequest
 import com.dandi.nyummy.auth.dto.LoginResponse
 import com.dandi.nyummy.auth.dto.RefreshRequest
 import com.dandi.nyummy.auth.dto.RefreshResponse
+import com.dandi.nyummy.auth.dto.SignUpRequest
+import com.dandi.nyummy.auth.dto.SignUpResponse
 import com.dandi.nyummy.auth.entity.RefreshToken
 import com.dandi.nyummy.auth.repository.RefreshTokenRepository
 import com.dandi.nyummy.exception.BusinessException
@@ -12,17 +14,10 @@ import com.dandi.nyummy.exception.errorcode.AuthErrorCode
 import com.dandi.nyummy.security.jwt.JwtProperties
 import com.dandi.nyummy.security.jwt.JwtProvider
 import com.dandi.nyummy.security.jwt.TokenType
-import com.dandi.nyummy.auth.dto.SignUpRequest
-import com.dandi.nyummy.auth.dto.SignUpResponse
-import com.dandi.nyummy.profile.mapper.toProfile
-import com.dandi.nyummy.profile.repository.ProfileRepository
-import com.dandi.nyummy.security.jwt.JwtProvider
-import com.dandi.nyummy.user.mapper.toUser
 import com.dandi.nyummy.user.repository.UserRepository
 import org.springframework.security.crypto.password.PasswordEncoder
-import jakarta.transaction.Transactional
-import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
 
 @Service
@@ -54,7 +49,6 @@ class AuthService(
 
         val userId = user.id
 
-    fun signup(request: SignUpRequest): SignUpResponse {
         val newAccessToken = jwtProvider.createAccessToken(userId)
         val newRefreshToken = jwtProvider.createRefreshToken(userId)
         val newExpiresAt = Instant.now().plus(jwtProperties.refreshTimeToLive)
@@ -76,6 +70,9 @@ class AuthService(
         val redirectUrl = authProperties.loginRedirectUrl
 
         return LoginResponse(redirectUrl, newAccessToken, newRefreshToken)
+    }
+
+    fun signup(request: SignUpRequest): SignUpResponse {
     }
 
     /**
