@@ -96,13 +96,11 @@ class AuthService(
             throw BusinessException(AuthErrorCode.MAIL_NOT_VERIFICATION)
         }
 
-        val user = userRepository.findByEmail(request.email)
-        if (user != null) {
+        if (userRepository.existsByEmail(request.email)) {
             throw BusinessException(AuthErrorCode.EXISTED_EMAIL)
         }
 
-        val encoded = passwordEncoder.encode(request.password)
-            ?: throw RuntimeException("패스워드 인코딩 실패")
+        val encoded = checkNotNull(passwordEncoder.encode(request.password))
 
         val saved = userRepository.save(request.toUser(encoded))
         profileRepository.save(request.toProfile(saved.id))
