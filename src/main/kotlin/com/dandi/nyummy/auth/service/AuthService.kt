@@ -101,4 +101,15 @@ class AuthService(
 
         return RefreshResponse(newAccessToken, newRefreshToken)
     }
+
+    @Transactional
+    fun logout(userId: Long, accessToken: String) {
+        // TODO: accessToken 레디스 블랙리스트에 저장
+
+        val refreshToken = refreshTokenRepository.findByUserId(userId)
+            // 리프래시 토큰이 없다면? -> 이상한 상황이긴 하지만, 굳이 신경쓸 필요 있을까? 만료시킬건데 어차피.
+            ?: return
+
+        refreshTokenRepository.delete(refreshToken)
+    }
 }

@@ -37,7 +37,7 @@ class JwtAuthorizationFilter(private val jwtProvider: JwtProvider) : OncePerRequ
                 val userId = jwtProvider.getUserId(authorization, TokenType.ACCESS)
 
                 val authentication = UsernamePasswordAuthenticationToken.authenticated(
-                    AuthUser(userId),
+                    AuthUser(userId, authorization),
                     null,
                     listOf(SimpleGrantedAuthority("ROLE_USER")),
                 )

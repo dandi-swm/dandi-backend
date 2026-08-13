@@ -45,3 +45,7 @@ Content-Type: application/json
 {
   "refreshToken": "{{refreshToken}}"
 }
+
+### 로그아웃 API
+POST {{url}}/api/v1/auth/logout
+Authorization: Bearer {{accessToken}}

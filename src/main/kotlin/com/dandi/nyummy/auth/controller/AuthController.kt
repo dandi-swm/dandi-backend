@@ -10,6 +10,8 @@ import com.dandi.nyummy.auth.dto.SignUpRequest
 import com.dandi.nyummy.auth.dto.SignUpResponse
 import com.dandi.nyummy.auth.service.AuthService
 import com.dandi.nyummy.auth.service.MailService
+import com.dandi.nyummy.security.AuthUser
+import com.dandi.nyummy.security.CurrentUser
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.security.SecurityRequirements
@@ -62,6 +64,15 @@ class AuthController(private val mailService: MailService, private val authServi
     @PostMapping("/email-verification/confirm")
     fun emailVerificationConfirm(@Valid @RequestBody request: EmailVerificationConfirmRequest): ResponseEntity<Void> {
         mailService.confirm(request.email, request.verificationCode)
+
+        return ResponseEntity
+            .noContent()
+            .build()
+    }
+
+    @PostMapping("/logout")
+    fun logout(@CurrentUser user: AuthUser): ResponseEntity<Void> {
+        authService.logout(user.userId, user.accessToken)
 
         return ResponseEntity
             .noContent()
