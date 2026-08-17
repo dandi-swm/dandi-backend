@@ -83,7 +83,6 @@ class MealService(
      * @throws BusinessException [S3ErrorCode.FILE_SIZE_EXCEEDED] 실제 업로드된 크기가 0이거나 [MealProperties.maxFileSizeBytes]를 초과하는 경우
      * @throws BusinessException [S3ErrorCode.UNSUPPORTED_CONTENT_TYPE] 실제 콘텐츠에서 감지된 MIME 타입이 허용되지 않는 경우
      */
-    @Transactional
     fun createMeal(userId: Long, request: CreateMealRequest): GetStatusResponse {
         val imageKey = s3Service.confirmUpload(
             tempKey = request.imageKey,
@@ -92,9 +91,10 @@ class MealService(
         )
 
         val meal = request.toEntity(userId, imageKey)
+
         val savedMeal = mealRepository.save(meal)
 
-        analysisService.analyzeNutrition(userId, savedMeal.id)
+        analysisService.analyzeNutrition(savedMeal)
 
         return savedMeal.toGetStatusResponse()
     }
