@@ -7,7 +7,7 @@ fun SignUpRequest.toProfile(userId: Long) = Profile(
     userId = userId,
     nickname = this.nickname,
     birth = this.birth,
-    gender = this.gender.ordinal.toByte(),
+    gender = this.gender,
     height = this.height,
     weight = this.weight,
 )
