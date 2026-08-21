@@ -5,8 +5,8 @@ import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.enum.DailyNutritionEvaluation
 import com.dandi.nyummy.meal.mapper.toNutrition
 import com.dandi.nyummy.profile.entity.Profile
+import com.dandi.nyummy.profile.enum.Gender
 import java.time.LocalDate
-import java.time.LocalDateTime
 import java.time.Period
 
 private val DEFAULT_INTAKE = Nutrition(calory = 2000, carbs = 250, protein = 100, fat = 70)
@@ -40,9 +40,13 @@ private fun isPositiveNutrient(totalValue: Int, recommendedValue: Int): Boolean 
 
 fun calculateRecommendedDailyIntake(profile: Profile?, today: LocalDate): Nutrition {
     val birth = profile?.birth ?: return DEFAULT_INTAKE
-    val gender = profile.gender ?: return DEFAULT_INTAKE
     val height = profile.height ?: return DEFAULT_INTAKE
     val weight = profile.weight ?: return DEFAULT_INTAKE
+    val genderConstant = when (profile.gender) {
+        Gender.MALE -> 5
+        Gender.FEMALE -> -161
+        Gender.OTHER, null -> return DEFAULT_INTAKE
+    }
 
     /**
      *  Mifflin-St Jeor 공식 (기초 대사량)
@@ -52,7 +56,7 @@ fun calculateRecommendedDailyIntake(profile: Profile?, today: LocalDate): Nutrit
      */
 
     val age = calculateAge(birth, today)
-    val bmr = (10 * weight + 6.25 * height - 5 * age + if (gender.toInt() == 0) 5 else -161)
+    val bmr = (10 * weight + 6.25 * height - 5 * age + genderConstant)
     val calory = bmr * 1.375
 
     return Nutrition(

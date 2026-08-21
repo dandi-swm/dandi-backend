@@ -5,13 +5,19 @@ import com.dandi.nyummy.auth.dto.LoginRequest
 import com.dandi.nyummy.auth.dto.LoginResponse
 import com.dandi.nyummy.auth.dto.RefreshRequest
 import com.dandi.nyummy.auth.dto.RefreshResponse
+import com.dandi.nyummy.auth.dto.SignUpRequest
+import com.dandi.nyummy.auth.dto.SignUpResponse
 import com.dandi.nyummy.auth.entity.RefreshToken
+import com.dandi.nyummy.auth.repository.MailRepository
 import com.dandi.nyummy.auth.repository.RefreshTokenRepository
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.AuthErrorCode
+import com.dandi.nyummy.profile.mapper.toProfile
+import com.dandi.nyummy.profile.repository.ProfileRepository
 import com.dandi.nyummy.security.jwt.JwtProperties
 import com.dandi.nyummy.security.jwt.JwtProvider
 import com.dandi.nyummy.security.jwt.TokenType
+import com.dandi.nyummy.user.mapper.toUser
 import com.dandi.nyummy.user.repository.UserRepository
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
@@ -22,10 +28,12 @@ import java.time.Instant
 class AuthService(
     private val userRepository: UserRepository,
     private val refreshTokenRepository: RefreshTokenRepository,
+    private val mailRepository: MailRepository,
     private val passwordEncoder: PasswordEncoder,
     private val jwtProvider: JwtProvider,
     private val jwtProperties: JwtProperties,
     private val authProperties: AuthProperties,
+    private val profileRepository: ProfileRepository,
 ) {
 
     /**
@@ -68,6 +76,50 @@ class AuthService(
         val redirectUrl = authProperties.loginRedirectUrl
 
         return LoginResponse(redirectUrl, newAccessToken, newRefreshToken)
+    }
+
+    /**
+     * 이메일 인증이 완료된 사용자를 신규 가입시키고 AccessToken·RefreshToken을 발급한다.
+     * 비밀번호는 인코딩해 저장하며, 사용자 생성 시 프로필도 함께 생성한다.
+     *
+     * @param request 회원가입 요청 정보를 담은 [SignUpRequest] (이메일, 비밀번호, 닉네임, 성별, 생년월일, 키, 몸무게)
+     * @return 새로 발급된 AccessToken·RefreshToken을 담은 [SignUpResponse]
+     * @throws BusinessException [AuthErrorCode.MAIL_NOT_VERIFIED] 이메일 인증 이력이 없거나 인증이 완료되지 않은 경우
+     * @throws BusinessException [AuthErrorCode.EXISTED_EMAIL] 이미 가입된 이메일인 경우
+     */
+    @Transactional
+    fun signup(request: SignUpRequest): SignUpResponse {
+        val findMail = mailRepository.findByEmail(request.email)
+            ?: throw BusinessException(AuthErrorCode.MAIL_NOT_VERIFIED)
+
+        if (!findMail.isVerified) {
+            throw BusinessException(AuthErrorCode.MAIL_NOT_VERIFIED)
+        }
+
+        if (userRepository.existsByEmail(request.email)) {
+            throw BusinessException(AuthErrorCode.EXISTED_EMAIL)
+        }
+
+        val encoded = checkNotNull(passwordEncoder.encode(request.password))
+
+        val saved = userRepository.save(request.toUser(encoded))
+        profileRepository.save(request.toProfile(saved.id))
+
+        val newRefreshToken = jwtProvider.createRefreshToken(saved.id)
+        val newExpiresAt = Instant.now().plus(jwtProperties.refreshTimeToLive)
+
+        refreshTokenRepository.save(
+            RefreshToken(
+                refreshToken = newRefreshToken,
+                userId = saved.id,
+                expiresAt = newExpiresAt,
+            ),
+        )
+
+        return SignUpResponse(
+            jwtProvider.createAccessToken(saved.id),
+            newRefreshToken,
+        )
     }
 
     /**

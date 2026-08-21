@@ -1,8 +1,11 @@
 package com.dandi.nyummy.profile.entity
 
+import com.dandi.nyummy.profile.enum.Gender
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.EntityListeners
+import jakarta.persistence.EnumType
+import jakarta.persistence.Enumerated
 import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
@@ -28,8 +31,9 @@ class Profile(
     @Column(name = "birth")
     val birth: LocalDate? = null,
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "gender")
-    val gender: Byte? = null,
+    val gender: Gender? = null,
 
     @Column(name = "height")
     val height: Int? = null,
