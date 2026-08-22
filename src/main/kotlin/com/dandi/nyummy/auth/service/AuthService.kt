@@ -9,22 +9,19 @@ import com.dandi.nyummy.auth.entity.RefreshToken
 import com.dandi.nyummy.auth.repository.RefreshTokenRepository
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.AuthErrorCode
-import com.dandi.nyummy.security.jwt.JwtProperties
-import com.dandi.nyummy.security.jwt.JwtProvider
+import com.dandi.nyummy.security.jwt.TokenService
 import com.dandi.nyummy.security.jwt.TokenType
 import com.dandi.nyummy.user.repository.UserRepository
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
-import java.time.Instant
 
 @Service
 class AuthService(
     private val userRepository: UserRepository,
     private val refreshTokenRepository: RefreshTokenRepository,
     private val passwordEncoder: PasswordEncoder,
-    private val jwtProvider: JwtProvider,
-    private val jwtProperties: JwtProperties,
+    private val tokenService: TokenService,
     private val authProperties: AuthProperties,
 ) {
 
@@ -47,9 +44,8 @@ class AuthService(
 
         val userId = user.id
 
-        val newAccessToken = jwtProvider.createAccessToken(userId)
-        val newRefreshToken = jwtProvider.createRefreshToken(userId)
-        val newExpiresAt = Instant.now().plus(jwtProperties.refreshTimeToLive)
+        val (newAccessToken, newRefreshToken) = tokenService.createTokenPair(userId)
+        val newExpiresAt = tokenService.getExpiration(newRefreshToken, TokenType.REFRESH).toInstant()
 
         val existingToken = refreshTokenRepository.findByUserId(userId)
 
@@ -81,7 +77,7 @@ class AuthService(
     @Transactional
     fun refresh(request: RefreshRequest): RefreshResponse {
         val userId = try {
-            jwtProvider.getUserId(request.refreshToken, TokenType.REFRESH)
+            tokenService.getUserId(request.refreshToken, TokenType.REFRESH)
         } catch (e: Exception) {
             throw BusinessException(AuthErrorCode.INVALID_REFRESH_TOKEN)
         }
@@ -93,9 +89,8 @@ class AuthService(
             throw BusinessException(AuthErrorCode.INVALID_REFRESH_TOKEN)
         }
 
-        val newAccessToken = jwtProvider.createAccessToken(userId)
-        val newRefreshToken = jwtProvider.createRefreshToken(userId)
-        val newExpiresAt = Instant.now().plus(jwtProperties.refreshTimeToLive)
+        val (newAccessToken, newRefreshToken) = tokenService.createTokenPair(userId)
+        val newExpiresAt = tokenService.getExpiration(newRefreshToken, TokenType.REFRESH).toInstant()
 
         existingToken.rotate(newRefreshToken, newExpiresAt)
 

@@ -1,14 +1,14 @@
 package com.dandi.nyummy.security.jwt
 
-import io.jsonwebtoken.ExpiredJwtException
-import io.jsonwebtoken.JwtException
+import com.dandi.nyummy.exception.BusinessException
+import com.dandi.nyummy.exception.errorcode.AuthErrorCode
+import io.jsonwebtoken.Claims
 import io.jsonwebtoken.JwtParser
 import io.jsonwebtoken.Jwts
 import io.jsonwebtoken.io.Decoders
 import io.jsonwebtoken.security.Keys
 import org.springframework.stereotype.Component
 import java.time.Clock
-import java.time.Duration
 import java.util.*
 import javax.crypto.SecretKey
 
@@ -22,35 +22,39 @@ class JwtProvider(private val jwtProperties: JwtProperties, private val clock: C
         .clock { Date.from(clock.instant()) }
         .build()
 
-    fun createAccessToken(userId: Long): String = createToken(userId, "access", jwtProperties.accessTimeToLive)
+    private fun getClaims(token: String, type: TokenType): Claims {
+        val claims = parser.parseSignedClaims(token).payload
 
-    fun createRefreshToken(userId: Long): String = createToken(userId, "refresh", jwtProperties.refreshTimeToLive)
+        if (claims["type"] != type.value) {
+            throw BusinessException(AuthErrorCode.UNAUTHORIZED)
+        }
 
-    private fun createToken(userId: Long, type: String, timeToLive: Duration): String {
+        return claims
+    }
+
+    private fun createToken(userId: Long, type: TokenType): String {
         val now = clock.instant()
+
+        val timeToLive = when (type) {
+            TokenType.ACCESS -> jwtProperties.accessTimeToLive
+            TokenType.REFRESH -> jwtProperties.refreshTimeToLive
+        }
 
         return Jwts.builder()
             .subject(userId.toString())
-            .claim("type", type)
+            .claim("type", type.value)
             .issuedAt(Date.from(now))
             .expiration(Date.from(now.plus(timeToLive)))
             .signWith(secretKey)
             .compact()
     }
 
-    fun getUserId(token: String, expectedType: TokenType): Long {
-        val claims = try {
-            parser.parseSignedClaims(token).payload
-        } catch (e: ExpiredJwtException) {
-            throw JwtException("만료된 JWT 토큰입니다.", e)
-        } catch (e: JwtException) {
-            throw JwtException("유효하지 않은 토큰입니다.", e)
-        }
+    fun createAccessToken(userId: Long): String = createToken(userId, TokenType.ACCESS)
 
-        if (claims["type"] != expectedType.value) {
-            throw JwtException("${expectedType.value} 토큰이 아닙니다.")
-        }
+    fun createRefreshToken(userId: Long): String = createToken(userId, TokenType.REFRESH)
 
-        return claims.subject?.toLongOrNull() ?: throw JwtException("유효한 sub가 아닙니다.")
-    }
+    fun getUserId(token: String, type: TokenType): Long = getClaims(token, type).subject?.toLongOrNull()
+        ?: throw BusinessException(AuthErrorCode.UNAUTHORIZED)
+
+    fun getExpiration(token: String, type: TokenType): Date = getClaims(token, type).expiration
 }
