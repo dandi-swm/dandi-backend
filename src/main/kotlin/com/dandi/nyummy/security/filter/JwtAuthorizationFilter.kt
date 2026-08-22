@@ -1,21 +1,21 @@
 package com.dandi.nyummy.security.filter
 
-import com.dandi.nyummy.security.AuthUser
-import com.dandi.nyummy.security.jwt.JwtProvider
-import com.dandi.nyummy.security.jwt.TokenType
+import com.dandi.nyummy.exception.BusinessException
+import com.dandi.nyummy.exception.errorcode.AuthErrorCode
+import com.dandi.nyummy.security.jwt.TokenService
+import io.jsonwebtoken.ExpiredJwtException
 import io.jsonwebtoken.JwtException
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
-import org.springframework.security.core.authority.SimpleGrantedAuthority
+import org.springframework.http.HttpHeaders
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.web.filter.OncePerRequestFilter
 
-class JwtAuthorizationFilter(private val jwtProvider: JwtProvider) : OncePerRequestFilter() {
+class JwtAuthorizationFilter(private val tokenService: TokenService) : OncePerRequestFilter() {
 
     companion object {
-        const val AUTHORIZATION_HEADER = "Authorization"
+        const val AUTH_EXCEPTION = "authException"
     }
 
     override fun doFilterInternal(
@@ -23,31 +23,26 @@ class JwtAuthorizationFilter(private val jwtProvider: JwtProvider) : OncePerRequ
         response: HttpServletResponse,
         filterChain: FilterChain,
     ) {
-        val authorizationValue = request.getHeader(AUTHORIZATION_HEADER)
+        val token = extractToken(request)
 
-        if (authorizationValue != null) {
-            if (!authorizationValue.startsWith("Bearer ")) {
-                filterChain.doFilter(request, response)
-                return
-            }
-
-            val authorization = authorizationValue.substring(7)
-
+        if (token != null) {
             try {
-                val userId = jwtProvider.getUserId(authorization, TokenType.ACCESS)
-
-                val authentication = UsernamePasswordAuthenticationToken.authenticated(
-                    AuthUser(userId),
-                    null,
-                    listOf(SimpleGrantedAuthority("ROLE_USER")),
-                )
-                SecurityContextHolder.setContext(
-                    SecurityContextHolder.createEmptyContext().apply { this.authentication = authentication },
-                )
+                val authentication = tokenService.getAuthentication(token)
+                SecurityContextHolder.getContextHolderStrategy().context =
+                    SecurityContextHolder.createEmptyContext().apply { this.authentication = authentication }
+            } catch (e: ExpiredJwtException) {
+                request.setAttribute(AUTH_EXCEPTION, BusinessException(AuthErrorCode.TOKEN_EXPIRED))
             } catch (e: JwtException) {
+                request.setAttribute(AUTH_EXCEPTION, BusinessException(AuthErrorCode.UNAUTHORIZED))
+            } catch (e: BusinessException) {
+                request.setAttribute(AUTH_EXCEPTION, e)
             }
         }
 
         filterChain.doFilter(request, response)
     }
+
+    private fun extractToken(request: HttpServletRequest): String? = request.getHeader(HttpHeaders.AUTHORIZATION)
+        ?.takeIf { it.startsWith("Bearer ") }
+        ?.substring(7)
 }

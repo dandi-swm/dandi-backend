@@ -10,8 +10,11 @@ import com.dandi.nyummy.auth.dto.SignUpRequest
 import com.dandi.nyummy.auth.dto.SignUpResponse
 import com.dandi.nyummy.auth.service.AuthService
 import com.dandi.nyummy.auth.service.MailService
+import com.dandi.nyummy.security.AuthUser
+import com.dandi.nyummy.security.CurrentUser
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.responses.ApiResponse
+import io.swagger.v3.oas.annotations.security.SecurityRequirement
 import io.swagger.v3.oas.annotations.security.SecurityRequirements
 import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
@@ -21,7 +24,7 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
-@Tag(name = "Auth", description = "회원가입 · 로그인 · 이메일 인증 API (인증 토큰 불필요)")
+@Tag(name = "Auth", description = "회원가입 · 로그인 · 로그아웃 · 이메일 인증 API")
 @RestController
 @RequestMapping("/api/v1/auth")
 @SecurityRequirements
@@ -62,6 +65,23 @@ class AuthController(private val mailService: MailService, private val authServi
     @PostMapping("/email-verification/confirm")
     fun emailVerificationConfirm(@Valid @RequestBody request: EmailVerificationConfirmRequest): ResponseEntity<Void> {
         mailService.confirm(request.email, request.verificationCode)
+
+        return ResponseEntity
+            .noContent()
+            .build()
+    }
+
+    @Operation(
+        summary = "로그아웃",
+        description = "저장된 RefreshToken을 삭제해 로그아웃 처리한다. " +
+            "저장된 토큰이 없어도 이미 로그아웃된 상태로 보고 정상 처리한다. ",
+    )
+    @SecurityRequirement(name = "bearerAuth")
+    @ApiResponse(responseCode = "204", description = "로그아웃 성공")
+    @ApiResponse(responseCode = "401", description = "인증이 필요합니다.")
+    @PostMapping("/logout")
+    fun logout(@CurrentUser user: AuthUser): ResponseEntity<Void> {
+        authService.logout(user.userId, user.accessToken)
 
         return ResponseEntity
             .noContent()

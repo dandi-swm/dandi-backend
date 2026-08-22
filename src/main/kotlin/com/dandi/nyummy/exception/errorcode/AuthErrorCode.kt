@@ -6,6 +6,7 @@ enum class AuthErrorCode(override val status: HttpStatus, override val code: Str
     ErrorCode {
     INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED, "api.auth.invalidCredentials", "이메일 또는 비밀번호가 올바르지 않습니다."),
     UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "api.auth.unauthorized", "인증이 필요합니다."),
+    TOKEN_EXPIRED(HttpStatus.UNAUTHORIZED, "api.auth.tokenExpired", "토큰이 만료되었습니다."),
     FORBIDDEN(HttpStatus.FORBIDDEN, "api.auth.forbidden", "해당 요청에 대한 권한이 없습니다."),
     MAIL_RESEND_TOO_EARLY(HttpStatus.TOO_MANY_REQUESTS, "api.auth.mailResendTooEarly", "인증 코드를 발송한 지 5분이 지나지 않았습니다."),
     MAIL_NOT_FOUND(HttpStatus.NOT_FOUND, "api.auth.mailNotFound", "해당 이메일로 발송된 인증 코드가 없습니다."),
