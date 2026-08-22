@@ -97,12 +97,19 @@ class AuthService(
         return RefreshResponse(newAccessToken, newRefreshToken)
     }
 
+    /**
+     * 사용자의 RefreshToken을 삭제해 로그아웃 처리한다.
+     *
+     * 저장된 RefreshToken이 없어도 이미 로그아웃된 상태로 보고 정상 처리한다(멱등).
+     *
+     * @param userId 로그아웃할 사용자 ID
+     * @param accessToken 블랙리스트 등록에 사용할 AccessToken (Redis 도입 전까지 미사용)
+     */
     @Transactional
     fun logout(userId: Long, accessToken: String) {
         // TODO: accessToken 레디스 블랙리스트에 저장
 
         val refreshToken = refreshTokenRepository.findByUserId(userId)
-            // 리프래시 토큰이 없다면? -> 이상한 상황이긴 하지만, 굳이 신경쓸 필요 있을까? 만료시킬건데 어차피.
             ?: return
 
         refreshTokenRepository.delete(refreshToken)
