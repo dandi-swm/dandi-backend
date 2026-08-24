@@ -32,7 +32,7 @@ class SecurityExceptionHandler(
         resolver.resolveException(request, response, null, exception)
     }
 
-    // 인증은 됐는데 접근 불가 (존재하지 않는/매핑 안 된 경로) → FORBIDDEN
+    // 인가 규칙에 의해 차단된 요청 (현재는 anyRequest denyAll에 걸린 /api 밖 경로) → FORBIDDEN
     override fun handle(
         request: HttpServletRequest,
         response: HttpServletResponse,
