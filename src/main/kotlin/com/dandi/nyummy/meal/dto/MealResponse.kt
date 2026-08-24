@@ -16,4 +16,6 @@ data class MealResponse(
     val nutrition: Nutrition,
 
     val imageUrl: String,
+
+    val iconId: Long? = 1,
 )

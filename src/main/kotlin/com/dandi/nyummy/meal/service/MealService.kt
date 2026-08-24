@@ -21,7 +21,6 @@ import com.dandi.nyummy.meal.dto.UploadImageResponse
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.mapper.toDailyMealResponse
 import com.dandi.nyummy.meal.mapper.toEntity
-import com.dandi.nyummy.meal.mapper.toGetStatusResponse
 import com.dandi.nyummy.meal.mapper.toMealResponse
 import com.dandi.nyummy.meal.mapper.toNutrition
 import com.dandi.nyummy.meal.repository.MealRepository
@@ -83,20 +82,28 @@ class MealService(
      * @throws BusinessException [S3ErrorCode.FILE_SIZE_EXCEEDED] 실제 업로드된 크기가 0이거나 [MealProperties.maxFileSizeBytes]를 초과하는 경우
      * @throws BusinessException [S3ErrorCode.UNSUPPORTED_CONTENT_TYPE] 실제 콘텐츠에서 감지된 MIME 타입이 허용되지 않는 경우
      */
-    fun createMeal(userId: Long, request: CreateMealRequest): GetStatusResponse {
+    fun createMeal(userId: Long, request: CreateMealRequest): MealResponse {
         val imageKey = s3Service.confirmUpload(
             tempKey = request.imageKey,
             finalKeyPrefix = "meals",
             maxFileSizeBytes = mealProperties.maxFileSizeBytes,
         )
 
+        val defaultIconId = 1
+
         val meal = request.toEntity(userId, imageKey)
 
-        val savedMeal = mealRepository.save(meal)
+        mealRepository.save(meal)
 
-        analysisService.analyzeNutrition(savedMeal)
+        val analyzedMeal = analysisService.analyzeNutrition(meal)
 
-        return savedMeal.toGetStatusResponse()
+        val imageUrl = s3Service.createPresignedGetUrl(meal.imageKey, 10.minutes).toString()
+
+        // TODO: AI에게 name과 icon 반환하게 하기
+        analyzedMeal.name = "엽떡"
+        analyzedMeal.iconId = 1
+
+        return analyzedMeal.toMealResponse(imageUrl)
     }
 
     /**

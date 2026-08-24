@@ -71,7 +71,7 @@ class Meal(
     val userId: Long = 0L,
 
     @Column(name = "icon_id", nullable = false)
-    val iconId: Long = 0L,
+    var iconId: Long = 0L,
 ) {
 
     fun updateNutrition(nutrition: Nutrition?) {

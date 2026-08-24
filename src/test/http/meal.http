@@ -21,10 +21,8 @@ Content-Type: application/json
 Authorization: Bearer {{accessToken}}
 
 {
-  "name": "really_crazy",
-  "imageKey": {{imageKey}},
-  "mealAt": "2026-07-20T07:12:26Z",
-  "iconId": 1
+  "imageKey": "{{imageKey}}",
+  "mealAt": "2026-07-20T07:12:26Z"
 }
 
 ### 분석 상태 조회 API

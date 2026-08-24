@@ -89,7 +89,7 @@ class MealController(private val mealService: MealService, private val analysisS
         description = "업로드된 이미지 키로 식사를 생성하고 영양 분석을 시작한다. 생성 직후의 분석 상태를 반환한다.",
     )
     @PostMapping
-    fun createMeal(@CurrentUser user: AuthUser, @Valid @RequestBody request: CreateMealRequest): GetStatusResponse =
+    fun createMeal(@CurrentUser user: AuthUser, @Valid @RequestBody request: CreateMealRequest): MealResponse =
         mealService.createMeal(user.userId, request)
 
     @Operation(
