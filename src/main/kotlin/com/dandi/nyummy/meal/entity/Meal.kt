@@ -2,7 +2,7 @@ package com.dandi.nyummy.meal.entity
 
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.MealErrorCode
-import com.dandi.nyummy.meal.dto.Nutrition
+import com.dandi.nyummy.infra.ai.nutrition.NutritionAnalysisResult
 import com.dandi.nyummy.meal.enum.MealStatus
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
@@ -74,11 +74,13 @@ class Meal(
     var iconId: Long = 0L,
 ) {
 
-    fun updateNutrition(nutrition: Nutrition?) {
-        this.calory = nutrition?.calory ?: 0
-        this.carbs = nutrition?.carbs ?: 0
-        this.protein = nutrition?.protein ?: 0
-        this.fat = nutrition?.fat ?: 0
+    fun updateAnalysisResult(analysisResult: NutritionAnalysisResult) {
+        this.name = analysisResult.name
+        this.iconId = analysisResult.iconId
+        this.calory = analysisResult.nutrition.calory
+        this.carbs = analysisResult.nutrition.carbs
+        this.protein = analysisResult.nutrition.protein
+        this.fat = analysisResult.nutrition.fat
     }
 
     fun updateStatus(status: MealStatus) {

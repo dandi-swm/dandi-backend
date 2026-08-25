@@ -97,11 +97,13 @@ class S3Service(
      * @throws BusinessException [S3ErrorCode.FILE_SIZE_EXCEEDED] 실제 업로드된 크기가 0이거나 maxFileSizeBytes를 초과할 경우 (이 경우 임시 객체는 삭제됨)
      * @throws BusinessException [S3ErrorCode.UNSUPPORTED_CONTENT_TYPE] 실제 콘텐츠에서 감지된 MIME 타입이 허용 목록에 없을 경우 (이 경우 임시 객체는 삭제됨)
      */
-    fun confirmUpload(tempKey: String, finalKeyPrefix: String, maxFileSizeBytes: Long): String = runBlocking {
+    fun confirmUploadedImage(tempKey: String, finalKeyPrefix: String, maxFileSizeBytes: Long): String = runBlocking {
+        // 1. imageKey prefix 확인
         if (!tempKey.startsWith("$TEMP_PREFIX/")) {
             throw BusinessException(S3ErrorCode.INVALID_KEY)
         }
 
+        // 2. 해당 imageKey에 실제로 이미지가 존재하는지 확인
         val head = try {
             s3Client.headObject {
                 bucket = bucketName
@@ -111,6 +113,7 @@ class S3Service(
             throw BusinessException(S3ErrorCode.OBJECT_NOT_FOUND)
         }
 
+        // 3. 실제 이미지 크기 확인
         val actualSize = head.contentLength ?: 0L
 
         if (actualSize == 0L || actualSize > maxFileSizeBytes) {
@@ -118,6 +121,7 @@ class S3Service(
             throw BusinessException(S3ErrorCode.FILE_SIZE_EXCEEDED)
         }
 
+        // 4. 지원하는 이미지 확장자인지 확인 (png, jpg)
         val headerBytes = downloadObjectRange(tempKey, "bytes=0-1023")
 
         val detectedMimeType = tika.detect(headerBytes) // 메모리 측정해보기

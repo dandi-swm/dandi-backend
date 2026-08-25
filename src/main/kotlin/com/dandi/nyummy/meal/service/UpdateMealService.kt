@@ -1,6 +1,6 @@
 package com.dandi.nyummy.meal.service
 
-import com.dandi.nyummy.meal.dto.Nutrition
+import com.dandi.nyummy.infra.ai.nutrition.NutritionAnalysisResult
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.repository.MealRepository
@@ -23,14 +23,14 @@ class UpdateMealService(private val mealRepository: MealRepository) {
     }
 
     /**
-     * 식사의 영양 정보를 저장하고 즉시 커밋한다.
+     * 식사의 영양 분석 결과(이름·아이콘·영양)를 저장하고 즉시 커밋한다.
      *
-     * @param meal 영양 정보를 저장할 [Meal]
-     * @param nutrition 저장할 [Nutrition]
+     * @param meal 분석 결과를 저장할 [Meal]
+     * @param analysisResult 저장할 [NutritionAnalysisResult]
      */
     @Transactional
-    fun updateNutrition(meal: Meal, nutrition: Nutrition) {
-        meal.updateNutrition(nutrition)
+    fun updateAnalysisResult(meal: Meal, analysisResult: NutritionAnalysisResult) {
+        meal.updateAnalysisResult(analysisResult)
         mealRepository.save(meal)
     }
 }

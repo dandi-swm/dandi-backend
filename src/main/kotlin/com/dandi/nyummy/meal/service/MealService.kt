@@ -11,8 +11,8 @@ import com.dandi.nyummy.meal.config.MealProperties
 import com.dandi.nyummy.meal.dto.CreateMealRequest
 import com.dandi.nyummy.meal.dto.DailyMealsResponse
 import com.dandi.nyummy.meal.dto.DailyNutritionResponse
-import com.dandi.nyummy.meal.dto.GetStatusResponse
 import com.dandi.nyummy.meal.dto.MealResponse
+import com.dandi.nyummy.meal.dto.MealStatusResponse
 import com.dandi.nyummy.meal.dto.MonthlyMealDayResponse
 import com.dandi.nyummy.meal.dto.MonthlyMealsResponse
 import com.dandi.nyummy.meal.dto.Nutrition
@@ -22,6 +22,7 @@ import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.mapper.toDailyMealResponse
 import com.dandi.nyummy.meal.mapper.toEntity
 import com.dandi.nyummy.meal.mapper.toMealResponse
+import com.dandi.nyummy.meal.mapper.toMealStatusResponse
 import com.dandi.nyummy.meal.mapper.toNutrition
 import com.dandi.nyummy.meal.repository.MealRepository
 import com.dandi.nyummy.profile.repository.ProfileRepository
@@ -72,38 +73,37 @@ class MealService(
     }
 
     /**
-     * 임시 업로드된 이미지를 확정하고 식사 기록을 생성한 뒤, 영양 분석을 비동기로 시작한다.
+     * 임시 업로드된 이미지를 확정하고 식사 기록을 생성한 뒤, 영양 분석을 수행한다.
+     *
+     * 분석은 [AnalysisService.analyzeNutrition]에서 동기로 실행되므로,
+     * 반환되는 상태는 이미 COMPLETED 또는 FAILED로 확정된 값이다.
+     * 식사 시각은 이미지에서 추출할 예정이며, 구현 전까지는 생성 시점의 서버 시각을 사용한다.
      *
      * @param userId 식사를 등록하는 사용자 ID
-     * @param request 식사 생성 정보를 담은 [CreateMealRequest] (임시 이미지 키 등)
-     * @return 생성된 [Meal]의 분석 상태를 담은 [GetStatusResponse]
+     * @param request 식사 생성 정보를 담은 [CreateMealRequest] (임시 이미지 키)
+     * @return 생성된 [Meal]의 분석 상태를 담은 [MealStatusResponse]
      * @throws BusinessException [S3ErrorCode.INVALID_KEY] request.imageKey가 `temp/`로 시작하지 않는 경우
      * @throws BusinessException [S3ErrorCode.OBJECT_NOT_FOUND] request.imageKey에 해당하는 임시 객체가 S3에 없는 경우
      * @throws BusinessException [S3ErrorCode.FILE_SIZE_EXCEEDED] 실제 업로드된 크기가 0이거나 [MealProperties.maxFileSizeBytes]를 초과하는 경우
      * @throws BusinessException [S3ErrorCode.UNSUPPORTED_CONTENT_TYPE] 실제 콘텐츠에서 감지된 MIME 타입이 허용되지 않는 경우
      */
-    fun createMeal(userId: Long, request: CreateMealRequest): MealResponse {
-        val imageKey = s3Service.confirmUpload(
+    fun createMeal(userId: Long, request: CreateMealRequest): MealStatusResponse {
+        val imageKey = s3Service.confirmUploadedImage(
             tempKey = request.imageKey,
             finalKeyPrefix = "meals",
             maxFileSizeBytes = mealProperties.maxFileSizeBytes,
         )
 
-        val defaultIconId = 1
+        // TODO: 이미지에서 시각 추출
+        val mealAt = Instant.now()
 
-        val meal = request.toEntity(userId, imageKey)
+        val meal = request.toEntity(userId, mealAt, imageKey)
 
         mealRepository.save(meal)
 
-        val analyzedMeal = analysisService.analyzeNutrition(meal)
+        analysisService.analyzeNutrition(meal)
 
-        val imageUrl = s3Service.createPresignedGetUrl(meal.imageKey, 10.minutes).toString()
-
-        // TODO: AI에게 name과 icon 반환하게 하기
-        analyzedMeal.name = "엽떡"
-        analyzedMeal.iconId = 1
-
-        return analyzedMeal.toMealResponse(imageUrl)
+        return meal.toMealStatusResponse()
     }
 
     /**
@@ -212,7 +212,7 @@ class MealService(
 
         val imageUrl = s3Service.createPresignedGetUrl(meal.imageKey, 10.minutes).toString()
 
-        return meal.toMealResponse(imageUrl.toString())
+        return meal.toMealResponse(imageUrl)
     }
 
     /**

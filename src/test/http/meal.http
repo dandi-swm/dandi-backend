@@ -21,8 +21,7 @@ Content-Type: application/json
 Authorization: Bearer {{accessToken}}
 
 {
-  "imageKey": "{{imageKey}}",
-  "mealAt": "2026-07-20T07:12:26Z"
+  "imageKey": "{{imageKey}}"
 }
 
 ### 분석 상태 조회 API
