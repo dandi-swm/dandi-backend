@@ -18,24 +18,40 @@ class GeminiNutritionAnalysisClient(
 
     companion object {
 
-        private const val PROMPT = "이 음식 사진을 분석해서 총 칼로리(kcal), 탄수화물(g), 단백질(g), 지방(g)을 정수로 추정해줘."
+        private const val PROMPT =
+            """이 음식 사진을 분석해서 20자 이내의 음식 이름을 지어주고,
+            주어진 아이콘 목록에서 음식과 가장 가까운 것 하나의 id를 골라줘.
+            그리고 총 칼로리(kcal), 탄수화물(g), 단백질(g), 지방(g)을 정수로 추정해줘.
+            이때 다음 규칙을 지켜줘: 칼로리 ≈ 탄수화물*4 + 단백질*4 + 지방*9"""
 
         private val RESPONSE_SCHEMA = mapOf(
             "type" to "OBJECT",
             "properties" to mapOf(
+                "name" to mapOf("type" to "STRING"),
+                "iconId" to mapOf("type" to "INTEGER"),
                 "calory" to mapOf("type" to "INTEGER"),
                 "carbs" to mapOf("type" to "INTEGER"),
                 "protein" to mapOf("type" to "INTEGER"),
                 "fat" to mapOf("type" to "INTEGER"),
             ),
-            "required" to listOf("calory", "carbs", "protein", "fat"),
+            "required" to listOf("name", "iconId", "calory", "carbs", "protein", "fat"),
         )
     }
 
-    override fun analyzeNutrition(imageKey: String): Nutrition {
+    override fun analyzeNutrition(imageKey: String): NutritionAnalysisResult {
         val objectContent = s3Service.downloadObject(imageKey)
         val encodedContent = Base64.encode(objectContent.bytes, 0, objectContent.bytes.size)
         val mimeType = objectContent.contentType
+
+        // TODO: DB에서 icon 읽어옴.
+        val icons = mapOf(
+            1 to "샐러드",
+            3 to "샌드위치",
+            4 to "떡볶이",
+            5 to "밥",
+        )
+
+        val prompt = "$PROMPT 음식 아이콘 목록은 다음과 같아: $icons 만약 뚜렷하게 맞는 것이 없으면 5(밥)를 골라줘."
 
         val requestBody = mapOf(
             "contents" to listOf(
@@ -47,7 +63,7 @@ class GeminiNutritionAnalysisClient(
                                 "data" to encodedContent,
                             ),
                         ),
-                        mapOf("text" to PROMPT),
+                        mapOf("text" to prompt),
                     ),
                 ),
             ),
@@ -69,7 +85,13 @@ class GeminiNutritionAnalysisClient(
             ?.content?.parts?.firstOrNull()?.text
             ?: throw IllegalStateException("Gemini 응답에 결과가 없습니다.")
 
-        return objectMapper.readValue(resultJson, Nutrition::class.java)
+        val parsed = objectMapper.readValue(resultJson, GeminiNutritionResponse::class.java)
+
+        return NutritionAnalysisResult(
+            name = parsed.name,
+            iconId = parsed.iconId,
+            nutrition = Nutrition(parsed.calory, parsed.carbs, parsed.protein, parsed.fat),
+        )
     }
 }
 
@@ -77,3 +99,11 @@ data class GeminiGenerateContentResponse(val candidates: List<GeminiCandidate> =
 data class GeminiCandidate(val content: GeminiContent?)
 data class GeminiContent(val parts: List<GeminiPart> = emptyList())
 data class GeminiPart(val text: String?)
+private data class GeminiNutritionResponse(
+    val name: String,
+    val iconId: Long,
+    val calory: Int,
+    val carbs: Int,
+    val protein: Int,
+    val fat: Int,
+)

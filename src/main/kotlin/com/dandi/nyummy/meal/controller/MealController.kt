@@ -2,8 +2,8 @@ package com.dandi.nyummy.meal.controller
 
 import com.dandi.nyummy.meal.dto.CreateMealRequest
 import com.dandi.nyummy.meal.dto.DailyMealsResponse
-import com.dandi.nyummy.meal.dto.GetStatusResponse
 import com.dandi.nyummy.meal.dto.MealResponse
+import com.dandi.nyummy.meal.dto.MealStatusResponse
 import com.dandi.nyummy.meal.dto.MonthlyMealsResponse
 import com.dandi.nyummy.meal.dto.UploadImageRequest
 import com.dandi.nyummy.meal.dto.UploadImageResponse
@@ -86,28 +86,30 @@ class MealController(private val mealService: MealService, private val analysisS
 
     @Operation(
         summary = "식사 생성",
-        description = "업로드된 이미지 키로 식사를 생성하고 영양 분석을 시작한다. 생성 직후의 분석 상태를 반환한다.",
+        description = "업로드된 이미지 키로 식사를 생성하고 영양 분석을 수행한 뒤, 식사 ID와 분석 상태를 반환한다. " +
+            "영양 정보가 필요하면 식사 단건 조회 API를 사용한다.",
     )
     @PostMapping
-    fun createMeal(@CurrentUser user: AuthUser, @Valid @RequestBody request: CreateMealRequest): MealResponse =
+    fun createMeal(@CurrentUser user: AuthUser, @Valid @RequestBody request: CreateMealRequest): MealStatusResponse =
         mealService.createMeal(user.userId, request)
 
     @Operation(
         summary = "영양 분석 상태 조회",
-        description = "식사의 영양 분석 상태(ANALYSIS/COMPLETED/FAILED/UNKNOWN)를 조회한다. 완료된 경우 영양 정보를 함께 반환한다.",
+        description = "식사의 영양 분석 상태(WAITING/ANALYZING/COMPLETED/FAILED/UNKNOWN)를 조회한다. " +
+            "영양 정보는 포함하지 않으며, COMPLETED 이후 식사 단건 조회 API로 가져온다.",
     )
     @GetMapping("/{mealId}/analysis")
     fun getStatus(
         @CurrentUser user: AuthUser,
         @Parameter(description = "식사 ID") @PathVariable @NotNull @Valid mealId: Long,
-    ): GetStatusResponse = analysisService.getStatus(user.userId, mealId)
+    ): MealStatusResponse = analysisService.getStatus(user.userId, mealId)
 
     @Operation(summary = "영양 분석 재시도", description = "실패한 식사의 영양 분석을 다시 시도하고 변경된 분석 상태를 반환한다.")
     @PostMapping("/{mealId}/analysis")
     fun retryAnalysis(
         @CurrentUser user: AuthUser,
         @Parameter(description = "식사 ID") @PathVariable @NotNull @Valid mealId: Long,
-    ): GetStatusResponse = analysisService.retryNutritionAnalysis(user.userId, mealId)
+    ): MealStatusResponse = analysisService.retryNutritionAnalysis(user.userId, mealId)
 
     @Operation(
         summary = "이미지 업로드 URL 발급",
