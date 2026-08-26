@@ -11,6 +11,7 @@ Authorization: Bearer {{accessToken}}
 ### 발급받은 presigned url로 이미지 S3에 업로드
 PUT {{uploadUrl}}
 Content-Type: image/jpeg
+x-amz-tagging: status=temp
 
 < image/really_crazy.jpg
 

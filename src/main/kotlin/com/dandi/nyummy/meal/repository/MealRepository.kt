@@ -21,4 +21,6 @@ interface MealRepository : JpaRepository<Meal, Long> {
     fun getMealsByUserIdAndPeriod(userId: Long, start: Instant, end: Instant): List<Meal>
 
     fun getMealByIdAndDeletedAtIsNull(mealId: Long): Meal?
+
+    fun existsByImageKey(imageKey: String): Boolean
 }

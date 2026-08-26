@@ -46,17 +46,25 @@ class MealService(
 ) {
 
     /**
-     * 식사 이미지를 임시 경로에 업로드할 수 있는 presigned URL을 발급한다.
+     * 식사 이미지를 업로드할 수 있는 presigned URL을 발급한다.
      *
+     * 발급된 객체 키는 `meals/{userId}/...` 형식으로 서버가 생성하며, 업로드 직후에는
+     * `status=temp` 태그가 붙은 미확정 상태다. [createMeal]로 확정되지 않으면 S3
+     * 라이프사이클 룰이 정리하므로 서버가 따로 삭제하지 않는다.
+     *
+     * @param userId 업로드를 요청한 사용자 ID
      * @param request 업로드할 이미지의 [UploadImageRequest] (MIME 타입, 파일 크기)
-     * @return 업로드 URL/메서드/헤더와 임시 이미지 키를 담은 [UploadImageResponse]
+     * @return 업로드 URL/메서드/헤더와 이미지 키를 담은 [UploadImageResponse].
+     *   [UploadImageResponse.uploadHeaders]는 업로드 요청에 그대로 포함해야 하며,
+     *   누락하면 서명이 일치하지 않아 업로드가 거부된다
      * @throws BusinessException [S3ErrorCode.UNSUPPORTED_CONTENT_TYPE] contentType이 허용되지 않는 경우
      * @throws BusinessException [S3ErrorCode.FILE_SIZE_EXCEEDED] fileSizeBytes가 [MealProperties.maxFileSizeBytes]를 초과하거나 음수인 경우
      */
-    fun createUploadUrl(request: UploadImageRequest): UploadImageResponse {
+    fun createUploadUrl(userId: Long, request: UploadImageRequest): UploadImageResponse {
         val expirationInstant = clock.now() + mealProperties.presignedUrlExpirationMinutes.minutes
 
-        val uploadUrl = s3Service.createUploadUrl(
+        val uploadUrl = s3Service.createMealUploadUrl(
+            userId = userId,
             contentType = request.contentType,
             fileSizeBytes = request.fileSizeBytes,
             maxFileSizeBytes = mealProperties.maxFileSizeBytes,
@@ -64,33 +72,45 @@ class MealService(
         )
 
         return UploadImageResponse(
-            uploadUrl = uploadUrl.url.toString(),
+            uploadUrl = uploadUrl.url,
             imageKey = uploadUrl.key,
             uploadMethod = mealProperties.uploadMethod,
-            uploadHeaders = mapOf("Content-Type" to request.contentType),
+            uploadHeaders = uploadUrl.uploadHeaders,
             expiresAt = expirationInstant.toString(),
         )
     }
 
     /**
-     * 임시 업로드된 이미지를 확정하고 식사 기록을 생성한 뒤, 영양 분석을 수행한다.
+     * 업로드된 이미지를 확정하고 식사 기록을 생성한 뒤, 영양 분석을 수행한다.
+     *
+     * 이미지는 [createUploadUrl]로 발급받은 키에 이미 업로드되어 있어야 한다.
+     * 별도 경로로 복사하지 않고 상태 태그만 `status=committed`로 바꾸므로,
+     * 저장되는 [Meal.imageKey]는 요청으로 받은 키와 동일하다.
+     *
+     * 하나의 imageKey로 식사를 중복 생성할 수 없다. 소프트 삭제된 식사도 검사 대상에 포함되므로,
+     * 한 번 사용된 imageKey는 다시 사용할 수 없다.
      *
      * 분석은 [AnalysisService.analyzeNutrition]에서 동기로 실행되므로,
      * 반환되는 상태는 이미 COMPLETED 또는 FAILED로 확정된 값이다.
      * 식사 시각은 이미지에서 추출할 예정이며, 구현 전까지는 생성 시점의 서버 시각을 사용한다.
      *
      * @param userId 식사를 등록하는 사용자 ID
-     * @param request 식사 생성 정보를 담은 [CreateMealRequest] (임시 이미지 키)
+     * @param request 식사 생성 정보를 담은 [CreateMealRequest] (이미지 키)
      * @return 생성된 [Meal]의 분석 상태를 담은 [MealStatusResponse]
-     * @throws BusinessException [S3ErrorCode.INVALID_KEY] request.imageKey가 `temp/`로 시작하지 않는 경우
-     * @throws BusinessException [S3ErrorCode.OBJECT_NOT_FOUND] request.imageKey에 해당하는 임시 객체가 S3에 없는 경우
+     * @throws BusinessException [MealErrorCode.DUPLICATE_IMAGE_KEY] 이미 식사 기록에 사용된 imageKey인 경우
+     * @throws BusinessException [S3ErrorCode.INVALID_KEY] request.imageKey가 요청자 소유 경로(`meals/{userId}/`)가 아닌 경우
+     * @throws BusinessException [S3ErrorCode.OBJECT_NOT_FOUND] request.imageKey에 해당하는 객체가 S3에 없는 경우
      * @throws BusinessException [S3ErrorCode.FILE_SIZE_EXCEEDED] 실제 업로드된 크기가 0이거나 [MealProperties.maxFileSizeBytes]를 초과하는 경우
-     * @throws BusinessException [S3ErrorCode.UNSUPPORTED_CONTENT_TYPE] 실제 콘텐츠에서 감지된 MIME 타입이 허용되지 않는 경우
+     * @throws BusinessException [S3ErrorCode.UNSUPPORTED_CONTENT_TYPE] 실제 콘텐츠에서 감지된 MIME 타입이 허용되지 않거나, imageKey의 확장자와 다른 경우
      */
     fun createMeal(userId: Long, request: CreateMealRequest): MealStatusResponse {
-        val imageKey = s3Service.confirmUploadedImage(
-            tempKey = request.imageKey,
-            finalKeyPrefix = "meals",
+        if (mealRepository.existsByImageKey(request.imageKey)) {
+            throw BusinessException(MealErrorCode.DUPLICATE_IMAGE_KEY)
+        }
+
+        val imageKey = s3Service.confirmUploadedMealImage(
+            userId = userId,
+            imageKey = request.imageKey,
             maxFileSizeBytes = mealProperties.maxFileSizeBytes,
         )
 
