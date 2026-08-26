@@ -3,8 +3,8 @@ POST {{url}}/api/v1/auth/login
 Content-Type: application/json
 
 {
-  "email": "test@dandi.com",
-  "password": "Test1234!"
+  "email": "dev1@dandi.com",
+  "password": "Password123!"
 }
 
 ### 회원가입 API
