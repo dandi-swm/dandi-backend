@@ -19,14 +19,43 @@ class GeminiNutritionAnalysisClient(
     companion object {
 
         private const val PROMPT =
-            """이 음식 사진을 분석해서 20자 이내의 음식 이름을 지어주고,
-            주어진 아이콘 목록에서 음식과 가장 가까운 것 하나의 id를 골라줘.
-            그리고 총 칼로리(kcal), 탄수화물(g), 단백질(g), 지방(g)을 정수로 추정해줘.
-            이때 다음 규칙을 지켜줘: 칼로리 ≈ 탄수화물*4 + 단백질*4 + 지방*9"""
+            """
+                이 사진이 사용자가 실제로 섭취한 음식의 사진인지 판단하고, 아래 JSON만 출력해.
+                설명이나 마크다운 코드블록 없이 JSON 객체만 반환해.
+
+                [isFood 판단 기준]
+                true: 촬영자 앞에 실제로 놓인, 지금 먹으려는(또는 먹은) 실물 음식
+                false: 위에 해당하지 않는 모든 경우
+
+                false로 판단해야 하는 예시:
+                - 그림, 일러스트, 3D 렌더링 등 실물이 아닌 음식
+                - 화면이나 인쇄물에 찍힌 음식 (메뉴판, 광고, 스마트폰 화면, 책)
+                - 영양성분표, 성분 라벨, 텍스트가 주된 사진
+                - 진열용 음식 모형, 플라스틱 샘플
+                - 반려동물 사료
+                - 음식이 남아있지 않은 빈 그릇
+
+                [출력 형식]
+                {
+                  "isFood": boolean,
+                  "rejectReason": string | null,   // isFood가 false일 때만, 위 예시 중 어디에 해당하는지
+                  "name": string | null,            // 20자 이내 음식 이름
+                  "iconId": number | null,
+                  "calory": number | null,
+                  "carbs": number | null,
+                  "protein": number | null,
+                  "fat": number | null
+                }
+
+                isFood가 false면 name 이하 필드는 모두 null로 채워.
+                영양소 추정 시 calory ≈ carbs*4 + protein*4 + fat*9 를 만족시켜.
+            """
 
         private val RESPONSE_SCHEMA = mapOf(
             "type" to "OBJECT",
             "properties" to mapOf(
+                "isFood" to mapOf("type" to "BOOLEAN"),
+                "rejectReason" to mapOf("type" to "STRING"),
                 "name" to mapOf("type" to "STRING"),
                 "iconId" to mapOf("type" to "INTEGER"),
                 "calory" to mapOf("type" to "INTEGER"),
@@ -34,7 +63,7 @@ class GeminiNutritionAnalysisClient(
                 "protein" to mapOf("type" to "INTEGER"),
                 "fat" to mapOf("type" to "INTEGER"),
             ),
-            "required" to listOf("name", "iconId", "calory", "carbs", "protein", "fat"),
+            "required" to listOf("isFood", "rejectReason", "name", "iconId", "calory", "carbs", "protein", "fat"),
         )
     }
 
@@ -85,7 +114,13 @@ class GeminiNutritionAnalysisClient(
             ?.content?.parts?.firstOrNull()?.text
             ?: throw IllegalStateException("Gemini 응답에 결과가 없습니다.")
 
+        println(resultJson)
+
         val parsed = objectMapper.readValue(resultJson, GeminiNutritionResponse::class.java)
+
+        if (!parsed.isFood) {
+            throw IllegalStateException("음식이 아닙니다.")
+        }
 
         return NutritionAnalysisResult(
             name = parsed.name,
@@ -100,6 +135,8 @@ data class GeminiCandidate(val content: GeminiContent?)
 data class GeminiContent(val parts: List<GeminiPart> = emptyList())
 data class GeminiPart(val text: String?)
 private data class GeminiNutritionResponse(
+    val isFood: Boolean,
+    val rejectReason: String,
     val name: String,
     val iconId: Long,
     val calory: Int,
