@@ -70,7 +70,7 @@
 | 경험치 | Exp | |
 | 프로필 | Profile | 신체/개인 정보 (users에서 분리됨) |
 | 아이콘 | Icon | |
-| 성별 | Gender | TINYINT: 0=남, 1=여 (팀 확정 전 임시 인코딩) |
+| 성별 | Gender | MALE / FEMALE / OTHER. DB는 VARCHAR(20)에 enum 이름 저장 (V0.14에서 TINYINT 0/1 인코딩 대체) |
 | 영양 | Nutrition | 영양 4종(calory/carbs/protein/fat) 값 객체로도 사용 (응답 current/target 공용) |
 | 하루 평가 | DailyNutritionEvaluation | POSITIVE / NEGATIVE / UNRECORDED |
 | 권장 섭취량 | RecommendedDailyIntake | Recommended(권장) + Intake(섭취량). 전용 클래스 없음 — calculateRecommendedDailyIntake()가 Nutrition을 반환 |
