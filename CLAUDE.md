@@ -80,14 +80,14 @@
 | 캘린더 | Calendar | 주 시작 = 일요일 (프론트 확인 전 임시 가정) |
 | 기간 | Period | 시작~종료 구간. 조회는 반개구간 [start, end) |
 | 캘린더 범위 | Range | 달력 그리드의 [시작일, 종료일] 양끝 포함 구간 (calculateMonthlyCalendarRange). 조회용 반개구간은 Period |
-| 식사 상태 | MealStatus | ANALYSIS / COMPLETED / FAILED / UNKNOWN. DB status 문자열을 enum으로 변환해 응답 |
+| 식사 상태 | MealStatus | WAITING / ANALYZING / COMPLETED / FAILED / UNKNOWN. DB status 문자열을 enum으로 변환해 응답 |
 | 현재 섭취량 | Current | 하루 영양 합계. 응답에서 Target과 쌍으로 사용 |
 | 목표 섭취량 | Target | 응답 표기용. 값은 RecommendedDailyIntake 계산 결과 |
 | 칼로리 | Calory | 코드·응답·엔티티/DB 모두 calory로 통일 (calories 금지) |
 | 탄수화물 | Carbs | carbohydrate 아님 |
 | 단백질 | Protein | 단수형 고정 (proteins 아님) |
 | 지방 | Fat | 단수형 고정 (fats 아님) |
-| 분석 | Analysis | 영양 분석. 명사 위치에 사용 (MealStatus.ANALYSIS, AnalysisMealService, retryNutritionAnalysis) |
+| 분석 | Analysis | 영양 분석. 명사 위치에 사용 (AnalysisService, retryNutritionAnalysis). 진행 중 상태는 MealStatus.ANALYZING |
 | 단건 | Single | 식사 단건 개념 (SingleMealService, getSingleMeal 등) |
 | 인증 | Auth | authentication 축약. 패키지명(auth), 에러코드(api.auth.*) 접두로 사용 |
 | 인증된 현재 사용자 | AuthUser | SecurityContext의 principal 타입. Principal, LoginUser, SessionUser 금지 |

@@ -1,6 +1,6 @@
 -- 로컬 개발용 더미 데이터 시드 스크립트
 --
--- Flyway 에러로 DB를 날렸거나 볼륨을 초기화한 뒤, 테이블마다 5건씩 채워 넣는다.
+-- Flyway 에러로 DB를 날렸거나 볼륨을 초기화한 뒤, 테이블마다 몇 건씩 채워 넣는다.
 -- 스키마는 Flyway가 만든 뒤여야 한다 (앱을 한 번 띄워 마이그레이션을 끝내고 실행할 것).
 --
 -- 실행: ./scripts/seed-dev.sh
@@ -23,7 +23,7 @@ TRUNCATE TABLE meal;
 TRUNCATE TABLE cat;
 TRUNCATE TABLE profile;
 TRUNCATE TABLE refresh_token;
-TRUNCATE TABLE email_verification;
+TRUNCATE TABLE code;
 TRUNCATE TABLE icon;
 TRUNCATE TABLE users;
 
@@ -78,10 +78,13 @@ VALUES (1, 1, '냥이', 80, 1200, 3, NOW()),
 
 -- ---------------------------------------------------------------------------
 -- icon
+--
+-- id/name은 GeminiNutritionAnalysisClient가 프롬프트에 넣는 아이콘 목록과 일치시킨다.
+-- AI가 그 목록 밖의 id를 반환할 일이 없어야 meal.icon_id FK가 깨지지 않는다.
+-- 목록에 없는 2번은 비워 둔다 (프롬프트가 DB를 읽도록 바뀌면 이 제약도 사라진다).
 -- ---------------------------------------------------------------------------
 INSERT INTO icon (id, name, image_url)
 VALUES (1, '샐러드', 'https://dummy.dandi.com/icons/salad.png'),
-       (2, '김치찌개', 'https://dummy.dandi.com/icons/kimchi-stew.png'),
        (3, '샌드위치', 'https://dummy.dandi.com/icons/sandwich.png'),
        (4, '떡볶이', 'https://dummy.dandi.com/icons/tteokbokki.png'),
        (5, '밥', 'https://dummy.dandi.com/icons/rice.png');
@@ -93,7 +96,10 @@ VALUES (1, '샐러드', 'https://dummy.dandi.com/icons/salad.png'),
 -- 일간/월간 조회를 바로 확인할 수 있도록 최근 며칠에 흩어 놓는다.
 -- image_key는 실제 업로드 경로 규칙(meals/{userId}/{년}/{월}/{일}/{UUID}.{확장자})을 따르지만
 -- S3에 실제 객체는 없다. 단건 조회 시 presigned URL은 발급되지만 열면 404다.
+-- image_key에는 UNIQUE 제약(uk_meal_image_key)이 걸려 있으므로 행을 늘릴 때 UUID를 겹치지 말 것.
 -- status가 COMPLETED가 아닌 건은 분석 전이므로 영양값이 NULL이다.
+-- MealStatus 전 케이스(WAITING/ANALYZING/COMPLETED/FAILED)를 하나씩 깔아 둔다.
+-- 이 중 WAITING/FAILED만 ANALYZABLE_STATUSES라 재시도 API가 받아준다.
 -- ---------------------------------------------------------------------------
 INSERT INTO meal (id, user_id, name, carbs, protein, fat, score, calory, status, image_key, icon_id, meal_at,
                   created_at, updated_at, deleted_at)
@@ -106,7 +112,7 @@ VALUES (1, 1, '닭가슴살 샐러드', 18, 35, 12, 88, 320, 'COMPLETED',
        (3, 1, '김치찌개와 공기밥', 78, 24, 18, 65, 540, 'COMPLETED',
         CONCAT('meals/1/', DATE_FORMAT(CURDATE() - INTERVAL 1 DAY, '%Y/%c/%e'),
                '/33333333-3333-3333-3333-333333333333.jpg'),
-        2, TIMESTAMP(CURDATE() - INTERVAL 1 DAY, '19:10:00'), NOW(), NOW(), NULL),
+        5, TIMESTAMP(CURDATE() - INTERVAL 1 DAY, '19:10:00'), NOW(), NOW(), NULL),
        (4, 1, '분석 실패 케이스', NULL, NULL, NULL, NULL, NULL, 'FAILED',
         CONCAT('meals/1/', DATE_FORMAT(CURDATE() - INTERVAL 3 DAY, '%Y/%c/%e'),
                '/44444444-4444-4444-4444-444444444444.jpg'),
@@ -114,7 +120,11 @@ VALUES (1, 1, '닭가슴살 샐러드', 18, 35, 12, 88, 320, 'COMPLETED',
        (5, 1, '분석 대기 케이스', NULL, NULL, NULL, NULL, NULL, 'WAITING',
         CONCAT('meals/1/', DATE_FORMAT(CURDATE() - INTERVAL 5 DAY, '%Y/%c/%e'),
                '/55555555-5555-5555-5555-555555555555.jpg'),
-        5, TIMESTAMP(CURDATE() - INTERVAL 5 DAY, '20:25:00'), NOW(), NOW(), NULL);
+        5, TIMESTAMP(CURDATE() - INTERVAL 5 DAY, '20:25:00'), NOW(), NOW(), NULL),
+       (6, 1, '분석 진행 중 케이스', NULL, NULL, NULL, NULL, NULL, 'ANALYZING',
+        CONCAT('meals/1/', DATE_FORMAT(CURDATE() - INTERVAL 5 DAY, '%Y/%c/%e'),
+               '/66666666-6666-6666-6666-666666666666.jpg'),
+        3, TIMESTAMP(CURDATE() - INTERVAL 5 DAY, '08:15:00'), NOW(), NOW(), NULL);
 
 
 -- ---------------------------------------------------------------------------
@@ -132,16 +142,19 @@ VALUES (1, 1, 'dummy-refresh-token-user-1', NOW() + INTERVAL 15 DAY, NOW()),
 
 
 -- ---------------------------------------------------------------------------
--- email_verification
+-- code (이메일 인증 코드 — email UNIQUE)
 --
--- 인증 완료 / 미완료 / 만료(app.mail.valid-time 5m 초과) 케이스를 섞어 둔다.
+-- CodeService 분기를 하나씩 밟아볼 수 있도록 케이스를 섞어 둔다.
+--   - expires_at < NOW() : 만료된 코드. 재발송하면 코드와 만료 시각이 갱신된다
+--   - send_count >= 5    : 발송 한도 도달. 재발송이 거부된다
+-- 유효 기간은 app.jwt.email-challenge-time-to-live(5m)를 따른다.
 -- ---------------------------------------------------------------------------
-INSERT INTO email_verification (id, email, code, is_verified, created_at)
-VALUES (1, 'verify1@dandi.com', '111111', 1, NOW()),
-       (2, 'verify2@dandi.com', '222222', 0, NOW()),
-       (3, 'verify3@dandi.com', '333333', 0, NOW() - INTERVAL 10 MINUTE),
-       (4, 'verify4@dandi.com', '444444', 1, NOW() - INTERVAL 1 DAY),
-       (5, 'verify5@dandi.com', '555555', 0, NOW() - INTERVAL 7 DAY);
+INSERT INTO code (id, email, code, attempt_count, send_count, expires_at)
+VALUES (1, 'verify1@dandi.com', '111111', 0, 1, NOW() + INTERVAL 5 MINUTE),
+       (2, 'verify2@dandi.com', '222222', 2, 3, NOW() + INTERVAL 5 MINUTE),
+       (3, 'verify3@dandi.com', '333333', 0, 1, NOW() - INTERVAL 10 MINUTE),
+       (4, 'verify4@dandi.com', '444444', 0, 5, NOW() + INTERVAL 5 MINUTE),
+       (5, 'verify5@dandi.com', '555555', 4, 2, NOW() - INTERVAL 1 DAY);
 
 
 SELECT 'users' AS table_name, COUNT(*) AS rows_seeded
@@ -162,5 +175,5 @@ UNION ALL
 SELECT 'refresh_token', COUNT(*)
 FROM refresh_token
 UNION ALL
-SELECT 'email_verification', COUNT(*)
-FROM email_verification;
+SELECT 'code', COUNT(*)
+FROM code;
