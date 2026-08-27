@@ -114,8 +114,6 @@ class GeminiNutritionAnalysisClient(
             ?.content?.parts?.firstOrNull()?.text
             ?: throw IllegalStateException("Gemini 응답에 결과가 없습니다.")
 
-        println(resultJson)
-
         val parsed = objectMapper.readValue(resultJson, GeminiNutritionResponse::class.java)
 
         if (!parsed.isFood) {
