@@ -29,6 +29,7 @@ app:
     upload-method: "PUT"
     max-file-size-bytes: 10485760
     presigned-url-expiration-minutes: 10
+    capture-time-tolerance: 1m
   ai:
     api-key: ${GEMINI_API_KEY}
     model: "gemini-3.6-flash"

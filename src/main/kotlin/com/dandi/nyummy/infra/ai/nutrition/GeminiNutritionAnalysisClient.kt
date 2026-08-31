@@ -3,6 +3,8 @@ package com.dandi.nyummy.infra.ai.nutrition
 import com.dandi.nyummy.infra.ai.AiProperties
 import com.dandi.nyummy.infra.aws.s3.S3Service
 import com.dandi.nyummy.meal.dto.Nutrition
+import kotlinx.coroutines.runBlocking
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import org.springframework.web.client.RestClient
 import tools.jackson.databind.ObjectMapper
@@ -65,10 +67,12 @@ class GeminiNutritionAnalysisClient(
             ),
             "required" to listOf("isFood", "rejectReason", "name", "iconId", "calory", "carbs", "protein", "fat"),
         )
+
+        private val logger = LoggerFactory.getLogger(GeminiNutritionAnalysisClient::class.java)
     }
 
     override fun analyzeNutrition(imageKey: String): NutritionAnalysisResult {
-        val objectContent = s3Service.downloadObject(imageKey)
+        val objectContent = runBlocking { s3Service.downloadObject(imageKey) }
         val encodedContent = Base64.encode(objectContent.bytes, 0, objectContent.bytes.size)
         val mimeType = objectContent.contentType
 
@@ -117,6 +121,7 @@ class GeminiNutritionAnalysisClient(
         val parsed = objectMapper.readValue(resultJson, GeminiNutritionResponse::class.java)
 
         if (!parsed.isFood) {
+            logger.info("영양 분석에 실패했습니다: imageKey={}, rejectReason={}", imageKey, parsed.rejectReason)
             throw IllegalStateException("음식이 아닙니다.")
         }
 
