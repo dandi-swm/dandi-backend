@@ -71,6 +71,9 @@ dependencies {
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.1")
 
     runtimeOnly("org.bouncycastle:bcprov-jdk18on:1.82")
+
+    // 이미지 metadata 추출
+    implementation("com.drewnoakes:metadata-extractor:2.19.0")
 }
 
 kotlin {
