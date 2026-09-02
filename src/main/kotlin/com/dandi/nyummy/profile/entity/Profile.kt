@@ -20,11 +20,6 @@ import java.time.LocalDate
 @Table(name = "profile")
 class Profile(
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "id", nullable = false)
-    val id: Long = 0L,
-
     @Column(name = "nickname", length = 100)
     val nickname: String? = null,
 
@@ -41,16 +36,22 @@ class Profile(
     @Column(name = "weight")
     val weight: Int? = null,
 
-    @Column(name = "coin", nullable = false)
-    val coin: Int = 0,
-
     @Column(name = "user_id", nullable = false, unique = true)
-    val userId: Long = 0L,
+    val userId: Long,
+) {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "id", nullable = false)
+    val id: Long = 0L
+
+    @Column(name = "coin", nullable = false)
+    val coin: Int = 0
 
     @LastModifiedDate
     @Column(name = "updated_at")
-    val updatedAt: Instant? = null,
+    var updatedAt: Instant? = null
 
     @Column(name = "last_login_at")
-    val lastLoginAt: Instant? = null,
-)
+    val lastLoginAt: Instant? = null
+}

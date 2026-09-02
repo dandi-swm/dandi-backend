@@ -12,26 +12,26 @@ import java.time.Instant
 @Table(name = "code")
 class Code(
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "id", nullable = false)
-    val id: Long = 0L,
-
     @Column(name = "email", nullable = false, unique = true)
     val email: String,
 
     @Column(name = "code", nullable = false)
     var code: String,
 
-    @Column(name = "attempt_count", nullable = false)
-    var attemptCount: Int = 0,
-
-    @Column(name = "send_count", nullable = false)
-    var sendCount: Int = 0,
-
     @Column(name = "expires_at", nullable = false)
     var expiresAt: Instant,
 ) {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "id", nullable = false)
+    val id: Long = 0L
+
+    @Column(name = "attempt_count", nullable = false)
+    var attemptCount: Int = 0
+
+    @Column(name = "send_count", nullable = false)
+    var sendCount: Int = 0
 
     fun updateCode(code: String) {
         this.code = code

@@ -23,29 +23,6 @@ import java.time.Instant
 @Table(name = "meal")
 class Meal(
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "id", nullable = false)
-    val id: Long = 0L,
-
-    @Column(name = "name", nullable = false, length = 100)
-    var name: String = "",
-
-    @Column(name = "carbs")
-    var carbs: Int? = null,
-
-    @Column(name = "protein")
-    var protein: Int? = null,
-
-    @Column(name = "fat")
-    var fat: Int? = null,
-
-    @Column(name = "score")
-    var score: Int? = null,
-
-    @Column(name = "calory")
-    var calory: Int? = null,
-
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)
     var status: MealStatus,
@@ -56,23 +33,46 @@ class Meal(
     @Column(name = "meal_at", nullable = false)
     val mealAt: Instant,
 
+    @Column(name = "user_id", nullable = false)
+    val userId: Long,
+) {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "id", nullable = false)
+    val id: Long = 0L
+
+    @Column(name = "name", nullable = false, length = 100)
+    var name: String = ""
+
+    @Column(name = "carbs")
+    var carbs: Int? = null
+
+    @Column(name = "protein")
+    var protein: Int? = null
+
+    @Column(name = "fat")
+    var fat: Int? = null
+
+    @Column(name = "score")
+    var score: Int? = null
+
+    @Column(name = "calory")
+    var calory: Int? = null
+
+    @Column(name = "icon_id", nullable = false)
+    var iconId: Long = 1L
+
     @CreatedDate
     @Column(name = "created_at", nullable = false)
-    var createdAt: Instant = Instant.now(),
+    var createdAt: Instant = Instant.now()
 
     @LastModifiedDate
     @Column(name = "updated_at", nullable = false)
-    var updatedAt: Instant = Instant.now(),
+    var updatedAt: Instant = Instant.now()
 
     @Column(name = "deleted_at")
-    var deletedAt: Instant? = null,
-
-    @Column(name = "user_id", nullable = false)
-    val userId: Long = 0L,
-
-    @Column(name = "icon_id", nullable = false)
-    var iconId: Long = 0L,
-) {
+    var deletedAt: Instant? = null
 
     fun updateAnalysisResult(analysisResult: NutritionAnalysisResult) {
         this.name = analysisResult.name

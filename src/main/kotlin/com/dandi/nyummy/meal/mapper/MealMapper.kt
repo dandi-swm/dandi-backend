@@ -14,9 +14,7 @@ fun CreateMealRequest.toEntity(userId: Long, mealAt: Instant, imageKey: String) 
     status = MealStatus.WAITING,
     imageKey = imageKey,
     mealAt = mealAt,
-    createdAt = Instant.now(),
     userId = userId,
-    iconId = 1L,
 )
 
 fun Meal.toNutrition() = Nutrition(

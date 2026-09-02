@@ -16,24 +16,25 @@ import java.time.Instant
 @Table(name = "refresh_token")
 class RefreshToken(
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "id", nullable = false)
-    val id: Long = 0L,
-
     @Column(name = "refresh_token", nullable = false, length = 512)
     var refreshToken: String,
 
     @Column(name = "user_id", unique = true, nullable = false)
-    var userId: Long = 0L,
-
-    @CreatedDate
-    @Column(name = "created_at", nullable = false)
-    var createdAt: Instant = Instant.now(),
+    val userId: Long,
 
     @Column(name = "expires_at", nullable = false)
     var expiresAt: Instant,
 ) {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "id", nullable = false)
+    val id: Long = 0L
+
+    @CreatedDate
+    @Column(name = "created_at", nullable = false)
+    var createdAt: Instant = Instant.now()
+
     fun rotate(refreshToken: String, newExpiresAt: Instant) {
         this.refreshToken = refreshToken
         this.expiresAt = newExpiresAt
