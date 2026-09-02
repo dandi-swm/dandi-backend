@@ -203,7 +203,7 @@ class MealService(
                         meals = mealsByDate[date] ?: emptyList(),
                         recommended = recommended,
                     ),
-                    foodIconIds = emptyList(),
+                    foodIconIds = pickFoodIconIds(mealsByDate[date] ?: emptyList()),
                 ),
             )
             date = date.plusDays(1)
@@ -214,6 +214,22 @@ class MealService(
             month = month,
             days = days,
         )
+    }
+
+    private fun pickFoodIconIds(meals: List<Meal>): List<Long> {
+        val iconIdsByMealAt = meals.sortedBy { it.mealAt }.map { it.iconId }
+        if (iconIdsByMealAt.size <= 2) {
+            return iconIdsByMealAt
+        }
+
+        val distinctIconIds = iconIdsByMealAt.distinct()
+
+        if (distinctIconIds.size < 2) {
+            return iconIdsByMealAt.take(2)
+        }
+
+        val pickedIconIds = distinctIconIds.shuffled().take(2).toSet()
+        return distinctIconIds.filter { it in pickedIconIds }
     }
 
     /**
