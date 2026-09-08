@@ -13,7 +13,7 @@ class Icon {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id", nullable = false)
-    val id: Long? = 0L
+    val id: Long = 0L
 
     @Column(name = "name", nullable = false)
     val name: String = ""

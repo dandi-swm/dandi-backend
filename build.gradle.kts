@@ -74,6 +74,10 @@ dependencies {
 
     // 이미지 metadata 추출
     implementation("com.drewnoakes:metadata-extractor:2.19.0")
+
+    // 로컬 캐시 Caffeine
+    implementation("org.springframework.boot:spring-boot-starter-cache")
+    implementation("com.github.ben-manes.caffeine:caffeine")
 }
 
 kotlin {
