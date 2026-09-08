@@ -3,6 +3,7 @@ package com.dandi.nyummy.infra.ai.nutrition
 import com.dandi.nyummy.infra.ai.AiProperties
 import com.dandi.nyummy.infra.aws.s3.S3Service
 import com.dandi.nyummy.meal.dto.Nutrition
+import com.dandi.nyummy.meal.repository.IconRepository
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
@@ -16,6 +17,7 @@ class GeminiNutritionAnalysisClient(
     private val aiProperties: AiProperties,
     private val s3Service: S3Service,
     private val objectMapper: ObjectMapper,
+    private val iconRepository: IconRepository,
 ) : NutritionAnalysisClient {
 
     companion object {
@@ -76,15 +78,10 @@ class GeminiNutritionAnalysisClient(
         val encodedContent = Base64.encode(objectContent.bytes, 0, objectContent.bytes.size)
         val mimeType = objectContent.contentType
 
-        // TODO: DB에서 icon 읽어옴.
-        val icons = mapOf(
-            1 to "샐러드",
-            3 to "샌드위치",
-            4 to "떡볶이",
-            5 to "밥",
-        )
+        val icons = iconRepository.findAllProjectedBy()
+        val iconsJson = objectMapper.writeValueAsString(icons)
 
-        val prompt = "$PROMPT 음식 아이콘 목록은 다음과 같아: $icons 만약 뚜렷하게 맞는 것이 없으면 5(밥)를 골라줘."
+        val prompt = "$PROMPT 음식 아이콘 목록은 다음과 같아: $iconsJson 만약 뚜렷하게 맞는 것이 없으면 5(밥)를 골라줘."
 
         val requestBody = mapOf(
             "contents" to listOf(
