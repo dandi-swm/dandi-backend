@@ -19,13 +19,12 @@ class RefreshToken(
     @Column(name = "refresh_token", nullable = false, length = 512)
     var refreshToken: String,
 
+    @Column(name = "absolute_expires_at", nullable = false)
+    var absoluteExpiresAt: Instant,
+
     @Column(name = "user_id", unique = true, nullable = false)
     val userId: Long,
-
-    @Column(name = "expires_at", nullable = false)
-    var expiresAt: Instant,
 ) {
-
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id", nullable = false)
@@ -35,8 +34,16 @@ class RefreshToken(
     @Column(name = "created_at", nullable = false)
     var createdAt: Instant = Instant.now()
 
-    fun rotate(refreshToken: String, newExpiresAt: Instant) {
+    // 재발급: 토큰만 교체, 절대 만료는 그대로
+    fun rotate(refreshToken: String) {
         this.refreshToken = refreshToken
-        this.expiresAt = newExpiresAt
     }
+
+    // 로그인/회원가입: 새 세션 시작 -> 90일
+    fun restart(refreshToken: String, absoluteExpiresAt: Instant) {
+        this.refreshToken = refreshToken
+        this.absoluteExpiresAt = absoluteExpiresAt
+    }
+
+    fun isAbsoluteExpired(now: Instant): Boolean = absoluteExpiresAt.isBefore(now)
 }

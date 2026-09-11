@@ -28,6 +28,8 @@ import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.time.Instant
+import java.time.temporal.ChronoUnit
 
 @Service
 class AuthService(
@@ -61,18 +63,19 @@ class AuthService(
         val userId = user.id
 
         val (newAccessToken, newRefreshToken) = tokenService.createTokenPair(userId)
-        val newExpiresAt = tokenService.getExpiration(newRefreshToken, TokenType.REFRESH).toInstant()
 
         val existingToken = refreshTokenRepository.findByUserId(userId)
 
+        val absoluteExpiresAt = Instant.now().plus(90, ChronoUnit.DAYS)
+
         if (existingToken != null) {
-            existingToken.rotate(newRefreshToken, newExpiresAt)
+            existingToken.restart(newRefreshToken, absoluteExpiresAt)
         } else {
             refreshTokenRepository.save(
                 RefreshToken(
                     refreshToken = newRefreshToken,
+                    absoluteExpiresAt = absoluteExpiresAt,
                     userId = userId,
-                    expiresAt = newExpiresAt,
                 ),
             )
         }
@@ -125,13 +128,13 @@ class AuthService(
         )
 
         val (accessToken, refreshToken) = tokenService.createTokenPair(userId)
-        val newExpiresAt = tokenService.getExpiration(refreshToken, TokenType.REFRESH).toInstant()
+        val absoluteExpiresAt = Instant.now().plus(90, ChronoUnit.DAYS)
 
         refreshTokenRepository.save(
             RefreshToken(
                 refreshToken = refreshToken,
+                absoluteExpiresAt = absoluteExpiresAt,
                 userId = userId,
-                expiresAt = newExpiresAt,
             ),
         )
 
@@ -160,14 +163,17 @@ class AuthService(
         val existingToken = refreshTokenRepository.findByUserId(userId)
             ?: throw BusinessException(AuthErrorCode.INVALID_REFRESH_TOKEN)
 
+        if (existingToken.isAbsoluteExpired(Instant.now())) {
+            throw BusinessException(AuthErrorCode.INVALID_REFRESH_TOKEN)
+        }
+
         if (existingToken.refreshToken != request.refreshToken) {
             throw BusinessException(AuthErrorCode.INVALID_REFRESH_TOKEN)
         }
 
         val (newAccessToken, newRefreshToken) = tokenService.createTokenPair(userId)
-        val newExpiresAt = tokenService.getExpiration(newRefreshToken, TokenType.REFRESH).toInstant()
 
-        existingToken.rotate(newRefreshToken, newExpiresAt)
+        existingToken.rotate(newRefreshToken)
 
         return RefreshResponse(newAccessToken, newRefreshToken)
     }
