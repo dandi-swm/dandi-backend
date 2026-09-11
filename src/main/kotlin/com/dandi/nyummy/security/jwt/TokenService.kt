@@ -1,9 +1,9 @@
 package com.dandi.nyummy.security.jwt
 
 import com.dandi.nyummy.auth.enum.AuthPurpose
+import com.dandi.nyummy.auth.repository.TokenInvalidationRepository
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.AuthErrorCode
-import com.dandi.nyummy.auth.repository.TokenInvalidationRepository
 import com.dandi.nyummy.security.AuthUser
 import io.jsonwebtoken.ExpiredJwtException
 import io.jsonwebtoken.JwtException

@@ -295,7 +295,10 @@ class AuthService(
     /**
      * 비밀번호 찾기 용도의 emailVerifiedToken을 검증하고, 임시 비밀번호로 교체한 뒤 이메일로 발송한다.
      *
-     * 토큰 파싱(트랜잭션 없음) → 비밀번호 교체([PasswordService] 트랜잭션) → 이메일 발송(트랜잭션 밖) 순으로
+     * 비밀번호가 바뀌면 이전에 발급된 AccessToken도 무효화한다(로그아웃과 같은 메커니즘).
+     * Redis 기록 실패는 로그만 남기고 진행한다 — 이미 커밋된 비밀번호 교체를 되돌릴 수 없기 때문이다.
+     *
+     * 토큰 파싱(트랜잭션 없음) → 비밀번호 교체([PasswordService] 트랜잭션) → 토큰 무효화 → 이메일 발송 순으로
      * 순차 실행된다 — 발송이 실패하면 사용자는 코드 발송부터 플로우를 재시작해야 한다.
      *
      * @param request 비밀번호 재설정 요청 정보를 담은 [PasswordResetRequest] (emailVerifiedToken)
@@ -316,7 +319,7 @@ class AuthService(
         }
 
         val user = userRepository.findByEmail(email)
-            ?: throw BusinessException(AuthErrorCode.UNAUTHORIZED)
+            ?: throw BusinessException(AuthErrorCode.EMAIL_NOT_FOUND)
 
         val tempPassword = passwordService.createTempPasswordByEmail(email)
 
