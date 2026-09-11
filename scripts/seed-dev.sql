@@ -37,18 +37,26 @@ SET FOREIGN_KEY_CHECKS = 1;
 -- app.argon2 설정(salt 16 / hash 32 / parallelism 1 / memory 19456 / iterations 2)으로
 -- 생성한 실제 Argon2id 해시라서 로그인 API가 그대로 통과한다.
 -- 파라미터를 바꾸면 이 해시도 다시 만들어야 한다.
+--
+-- is_temp_password(V0.16): 비밀번호 찾기로 임시 비밀번호를 받은 상태인지.
+-- user 4만 1로 두어 임시 비밀번호 분기를 밟아볼 수 있게 한다 (비밀번호 자체는 동일).
 -- ---------------------------------------------------------------------------
-INSERT INTO users (id, email, password, created_at)
+INSERT INTO users (id, email, password, is_temp_password, created_at)
 VALUES (1, 'dev1@dandi.com',
-        '$argon2id$v=19$m=19456,t=2,p=1$pL4sL6VO3Iq9+hc4qr05EQ$gwNSjBq4EmwKnNu4h9LKT1s1pJvhDjROvIaPgXp4oTg', NOW()),
+        '$argon2id$v=19$m=19456,t=2,p=1$pL4sL6VO3Iq9+hc4qr05EQ$gwNSjBq4EmwKnNu4h9LKT1s1pJvhDjROvIaPgXp4oTg', 0,
+        NOW()),
        (2, 'dev2@dandi.com',
-        '$argon2id$v=19$m=19456,t=2,p=1$pL4sL6VO3Iq9+hc4qr05EQ$gwNSjBq4EmwKnNu4h9LKT1s1pJvhDjROvIaPgXp4oTg', NOW()),
+        '$argon2id$v=19$m=19456,t=2,p=1$pL4sL6VO3Iq9+hc4qr05EQ$gwNSjBq4EmwKnNu4h9LKT1s1pJvhDjROvIaPgXp4oTg', 0,
+        NOW()),
        (3, 'dev3@dandi.com',
-        '$argon2id$v=19$m=19456,t=2,p=1$pL4sL6VO3Iq9+hc4qr05EQ$gwNSjBq4EmwKnNu4h9LKT1s1pJvhDjROvIaPgXp4oTg', NOW()),
+        '$argon2id$v=19$m=19456,t=2,p=1$pL4sL6VO3Iq9+hc4qr05EQ$gwNSjBq4EmwKnNu4h9LKT1s1pJvhDjROvIaPgXp4oTg', 0,
+        NOW()),
        (4, 'dev4@dandi.com',
-        '$argon2id$v=19$m=19456,t=2,p=1$pL4sL6VO3Iq9+hc4qr05EQ$gwNSjBq4EmwKnNu4h9LKT1s1pJvhDjROvIaPgXp4oTg', NOW()),
+        '$argon2id$v=19$m=19456,t=2,p=1$pL4sL6VO3Iq9+hc4qr05EQ$gwNSjBq4EmwKnNu4h9LKT1s1pJvhDjROvIaPgXp4oTg', 1,
+        NOW()),
        (5, 'dev5@dandi.com',
-        '$argon2id$v=19$m=19456,t=2,p=1$pL4sL6VO3Iq9+hc4qr05EQ$gwNSjBq4EmwKnNu4h9LKT1s1pJvhDjROvIaPgXp4oTg', NOW());
+        '$argon2id$v=19$m=19456,t=2,p=1$pL4sL6VO3Iq9+hc4qr05EQ$gwNSjBq4EmwKnNu4h9LKT1s1pJvhDjROvIaPgXp4oTg', 0,
+        NOW());
 
 
 -- ---------------------------------------------------------------------------
@@ -80,19 +88,37 @@ VALUES (1, 1, '냥이', 80, 1200, 3, NOW()),
 -- ---------------------------------------------------------------------------
 -- icon
 --
--- id/name은 GeminiNutritionAnalysisClient가 프롬프트에 넣는 아이콘 목록과 일치시킨다.
--- AI가 그 목록 밖의 id를 반환할 일이 없어야 meal.icon_id FK가 깨지지 않는다.
--- 목록에 없는 2번은 비워 둔다 (프롬프트가 DB를 읽도록 바뀌면 이 제약도 사라진다).
+-- 여기만 더미가 아니라 실제 운영 데이터다. 아이콘은 추가만 되고 기존 행은 바뀌지 않는
+-- append-only 테이블이라, DB를 새로 만들더라도 아래 행이 id까지 그대로 들어가야 한다.
+-- meal.icon_id가 이 id를 그대로 가리키고, 앱이 내려주는 이미지 URL도 여기서 나온다.
+--
+-- 아래 12건은 2026-09-11 기준 실제 icon 테이블을 그대로 옮긴 것이다.
+-- 운영에 아이콘을 추가하면 이 목록에도 같은 id/name/image_url로 추가할 것.
+--
+-- GeminiNutritionAnalysisClient는 IconService.getAllIcons()로 이 테이블을 읽어
+-- 프롬프트에 아이콘 목록을 넣는다. 즉 여기 없는 id는 AI도 고를 수 없다.
+-- 프롬프트가 "뚜렷하게 맞는 것이 없으면 5(밥)"를 fallback으로 지정하므로 id 5는 반드시 있어야 한다.
+--
+-- IconService는 @Cacheable("icons")로 Caffeine 캐시를 타므로,
+-- 앱이 떠 있는 상태에서 이 스크립트를 돌렸다면 앱을 재시작해야 새 아이콘이 반영된다.
 -- ---------------------------------------------------------------------------
 INSERT INTO icon (id, name, image_url)
-VALUES (1, '샐러드', 'https://dummy.dandi.com/icons/salad.png'),
-       (3, '샌드위치', 'https://dummy.dandi.com/icons/sandwich.png'),
-       (4, '떡볶이', 'https://dummy.dandi.com/icons/tteokbokki.png'),
-       (5, '밥', 'https://dummy.dandi.com/icons/rice.png');
+VALUES (1, '샐러드', 'https://cdn.nyummy.co.kr/icons/1.jpeg'),
+       (2, '빵', 'https://cdn.nyummy.co.kr/icons/2.jpeg'),
+       (3, '샌드위치', 'https://cdn.nyummy.co.kr/icons/3.jpeg'),
+       (4, '떡볶이', 'https://cdn.nyummy.co.kr/icons/4.jpeg'),
+       (5, '밥', 'https://cdn.nyummy.co.kr/icons/5.jpeg'),
+       (6, '아이스아메리카노', 'https://cdn.nyummy.co.kr/icons/6.jpeg'),
+       (7, '햄버거', 'https://cdn.nyummy.co.kr/icons/7.jpeg'),
+       (8, '피자', 'https://cdn.nyummy.co.kr/icons/8.jpeg'),
+       (9, '케이크', 'https://cdn.nyummy.co.kr/icons/9.jpeg'),
+       (10, '치킨', 'https://cdn.nyummy.co.kr/icons/10.jpeg'),
+       (11, '김밥', 'https://cdn.nyummy.co.kr/icons/11.jpeg'),
+       (12, '스파게티', 'https://cdn.nyummy.co.kr/icons/12.jpeg');
 
 
 -- ---------------------------------------------------------------------------
--- meal (전부 user 1 소유)
+-- meal (id 1~7은 user 1, id 8은 user 2 소유)
 --
 -- 일간/월간 조회를 바로 확인할 수 있도록 최근 며칠에 흩어 놓는다.
 -- image_key는 실제 업로드 경로 규칙(meals/{userId}/{년}/{월}/{일}/{UUID}.{확장자})을 따르지만
@@ -101,6 +127,9 @@ VALUES (1, '샐러드', 'https://dummy.dandi.com/icons/salad.png'),
 -- status가 COMPLETED가 아닌 건은 분석 전이므로 영양값이 NULL이다.
 -- MealStatus 전 케이스(WAITING/ANALYZING/COMPLETED/FAILED)를 하나씩 깔아 둔다.
 -- 이 중 WAITING/FAILED만 ANALYZABLE_STATUSES라 재시도 API가 받아준다.
+--
+-- id 7은 deleted_at이 찍힌 소프트 삭제 건이라 조회 쿼리(deletedAt is null)에서 빠진다.
+-- id 8은 user 2 소유라 user 1 토큰으로 단건 조회하면 MEAL_NOT_FOUND가 나온다 (validateOwnership 확인용).
 -- ---------------------------------------------------------------------------
 INSERT INTO meal (id, user_id, name, carbs, protein, fat, score, calory, status, image_key, icon_id, meal_at,
                   created_at, updated_at, deleted_at)
@@ -125,7 +154,14 @@ VALUES (1, 1, '닭가슴살 샐러드', 18, 35, 12, 88, 320, 'COMPLETED',
        (6, 1, '분석 진행 중 케이스', NULL, NULL, NULL, NULL, NULL, 'ANALYZING',
         CONCAT('meals/1/', DATE_FORMAT(CURDATE() - INTERVAL 5 DAY, '%Y/%c/%e'),
                '/66666666-6666-6666-6666-666666666666.jpg'),
-        3, TIMESTAMP(CURDATE() - INTERVAL 5 DAY, '08:15:00'), NOW(), NOW(), NULL);
+        3, TIMESTAMP(CURDATE() - INTERVAL 5 DAY, '08:15:00'), NOW(), NOW(), NULL),
+       (7, 1, '삭제된 케이스', 55, 20, 15, 70, 480, 'COMPLETED',
+        CONCAT('meals/1/', DATE_FORMAT(CURDATE() - INTERVAL 2 DAY, '%Y/%c/%e'),
+               '/77777777-7777-7777-7777-777777777777.jpg'),
+        2, TIMESTAMP(CURDATE() - INTERVAL 2 DAY, '12:00:00'), NOW(), NOW(), NOW()),
+       (8, 2, '다른 유저의 식사', 40, 30, 9, 75, 400, 'COMPLETED',
+        CONCAT('meals/2/', DATE_FORMAT(CURDATE(), '%Y/%c/%e'), '/88888888-8888-8888-8888-888888888888.jpg'),
+        7, TIMESTAMP(CURDATE(), '13:20:00'), NOW(), NOW(), NULL);
 
 
 -- ---------------------------------------------------------------------------
@@ -133,8 +169,12 @@ VALUES (1, 1, '닭가슴살 샐러드', 18, 35, 12, 88, 320, 'COMPLETED',
 --
 -- 실제 서명된 JWT가 아니라 자리만 채우는 더미 문자열이다.
 -- 재발급 API를 테스트하려면 로그인해서 진짜 토큰을 받아야 한다.
+--
+-- expires_at은 V0.18에서 없어졌고, V0.17의 absolute_expires_at(재로그인 없이 유지되는 상한)이 대신 들어간다.
+-- 값은 app.jwt.refresh-time-to-live(15d)를 기준으로 잡았다.
+-- user 5만 이미 지난 시각이라 절대 만료된 세션 케이스가 된다.
 -- ---------------------------------------------------------------------------
-INSERT INTO refresh_token (id, user_id, refresh_token, expires_at, created_at)
+INSERT INTO refresh_token (id, user_id, refresh_token, absolute_expires_at, created_at)
 VALUES (1, 1, 'dummy-refresh-token-user-1', NOW() + INTERVAL 15 DAY, NOW()),
        (2, 2, 'dummy-refresh-token-user-2', NOW() + INTERVAL 15 DAY, NOW()),
        (3, 3, 'dummy-refresh-token-user-3', NOW() + INTERVAL 15 DAY, NOW()),

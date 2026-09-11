@@ -1,0 +1,2 @@
+ALTER TABLE users
+    ADD COLUMN is_temp_password TINYINT(1) NOT NULL DEFAULT 0;

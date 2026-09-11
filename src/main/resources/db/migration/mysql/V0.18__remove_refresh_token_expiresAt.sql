@@ -1,0 +1,1 @@
+ALTER TABLE refresh_token DROP expires_at
