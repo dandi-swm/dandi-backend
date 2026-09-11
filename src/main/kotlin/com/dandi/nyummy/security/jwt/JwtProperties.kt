@@ -14,6 +14,8 @@ class JwtProperties(
 
     val refreshTimeToLive: Duration,
 
+    val refreshAbsoluteTimeToLive: Duration,
+
     val emailChallengeTimeToLive: Duration,
 
     val emailVerifiedTimeToLive: Duration,

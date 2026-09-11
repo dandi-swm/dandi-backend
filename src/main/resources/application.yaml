@@ -46,6 +46,7 @@ app:
     encryption-key: ${JWT_ENCRYPTION_KEY}
     access-time-to-live: 30m
     refresh-time-to-live: 15d
+    refresh-absolute-time-to-live: 90d
     email-challenge-time-to-live: 5m
     email-verified-time-to-live: 30m
   argon2:
