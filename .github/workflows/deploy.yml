@@ -50,6 +50,9 @@ jobs:
           MYSQL_DB: nyummy_test
           MYSQL_USER: test
           MYSQL_PASSWORD: test
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: "6379"
+          REDIS_PASSWORD: ""
           AWS_ACCESS_KEY: dummy
           AWS_SECRET_ACCESS_KEY: dummy
           AWS_REGION: ap-northeast-2

@@ -11,6 +11,7 @@ import io.jsonwebtoken.security.Keys
 import org.springframework.stereotype.Component
 import java.time.Clock
 import java.time.Duration
+import java.time.Instant
 import java.util.*
 import javax.crypto.SecretKey
 import javax.crypto.spec.SecretKeySpec
@@ -45,6 +46,17 @@ class JwtProvider(private val jwtProperties: JwtProperties, private val clock: C
         }
 
         return claims
+    }
+
+    /**
+     * AccessToken에서 사용자 ID와 발급 시각(iat)을 함께 꺼낸다.
+     *
+     * 둘을 따로 조회하면 매 요청 토큰을 두 번 파싱해 서명 검증도 두 번 하게 되므로, 한 번에 읽는다.
+     */
+    fun getAccessTokenClaims(token: String): AccessTokenClaims {
+        val claims = getClaims(token, TokenType.ACCESS)
+        val userId = claims.subject?.toLongOrNull() ?: throw BusinessException(AuthErrorCode.UNAUTHORIZED)
+        return AccessTokenClaims(userId, claims.issuedAt.toInstant())
     }
 
     private fun createToken(userId: Long, type: TokenType): String {

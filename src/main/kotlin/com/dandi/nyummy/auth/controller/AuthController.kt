@@ -113,7 +113,7 @@ class AuthController(private val authService: AuthService) {
     @ApiResponse(responseCode = "401", description = "인증이 필요합니다.")
     @PostMapping("/logout")
     fun logout(@CurrentUser user: AuthUser): ResponseEntity<Void> {
-        authService.logout(user.userId, user.accessToken)
+        authService.logout(user.userId)
 
         return ResponseEntity
             .noContent()

@@ -7,8 +7,12 @@ services:
     environment:
       MYSQL_HOST: mysql-db
       MYSQL_PORT: "3306"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
     depends_on:
       mysql-db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
   mysql-db:
     image: mysql:8.4.9
@@ -31,6 +35,16 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+  redis:
+    image: valkey/valkey:9.1-alpine
+    container_name: nyummy-redis
+    ports:
+      - "6380:6379"
+    command: ["redis-server", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
 
 volumes:
   mysql-data:

@@ -78,6 +78,9 @@ dependencies {
     // 로컬 캐시 Caffeine
     implementation("org.springframework.boot:spring-boot-starter-cache")
     implementation("com.github.ben-manes.caffeine:caffeine")
+
+    // Redis
+    implementation("org.springframework.boot:spring-boot-starter-data-redis")
 }
 
 kotlin {
