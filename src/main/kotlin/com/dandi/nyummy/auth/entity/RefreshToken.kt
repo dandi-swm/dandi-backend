@@ -34,16 +34,25 @@ class RefreshToken(
     @Column(name = "created_at", nullable = false)
     var createdAt: Instant = Instant.now()
 
-    // 재발급: 토큰만 교체, 절대 만료는 그대로
+    /**
+     * 재발급 시 토큰만 교체한다. 절대 만료는 세션이 시작된 시점 기준이므로 건드리지 않는다.
+     */
     fun rotate(refreshToken: String) {
         this.refreshToken = refreshToken
     }
 
-    // 로그인/회원가입: 새 세션 시작 -> 90일
+    /**
+     * 로그인으로 세션을 다시 시작한다. 토큰을 교체하고 절대 만료도 새로 찍는다.
+     *
+     * user_id가 UNIQUE라 사용자당 행이 하나뿐이므로, 재로그인 시 기존 행을 지우지 않고 이 메서드로 갱신한다.
+     */
     fun restart(refreshToken: String, absoluteExpiresAt: Instant) {
         this.refreshToken = refreshToken
         this.absoluteExpiresAt = absoluteExpiresAt
     }
 
+    /**
+     * 절대 만료가 지났는지 확인한다. 지났다면 재발급이 불가능해 다시 로그인해야 한다.
+     */
     fun isAbsoluteExpired(now: Instant): Boolean = absoluteExpiresAt.isBefore(now)
 }
