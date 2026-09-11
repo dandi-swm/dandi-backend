@@ -31,7 +31,6 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
 import java.time.Instant
-import java.time.temporal.ChronoUnit
 
 @Service
 class AuthService(
@@ -132,7 +131,7 @@ class AuthService(
         )
 
         val (accessToken, refreshToken) = tokenService.createTokenPair(userId)
-        val absoluteExpiresAt = Instant.now().plus(90, ChronoUnit.DAYS)
+        val absoluteExpiresAt = Instant.now(clock).plus(jwtProperties.refreshAbsoluteTimeToLive)
 
         refreshTokenRepository.save(
             RefreshToken(
@@ -167,7 +166,7 @@ class AuthService(
         val existingToken = refreshTokenRepository.findByUserId(userId)
             ?: throw BusinessException(AuthErrorCode.INVALID_REFRESH_TOKEN)
 
-        if (existingToken.isAbsoluteExpired(Instant.now())) {
+        if (existingToken.isAbsoluteExpired(Instant.now(clock))) {
             throw BusinessException(AuthErrorCode.INVALID_REFRESH_TOKEN)
         }
 
