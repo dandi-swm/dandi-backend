@@ -315,7 +315,16 @@ class AuthService(
             throw BusinessException(AuthErrorCode.UNAUTHORIZED)
         }
 
+        val user = userRepository.findByEmail(email)
+            ?: throw BusinessException(AuthErrorCode.UNAUTHORIZED)
+
         val tempPassword = passwordService.createTempPasswordByEmail(email)
+
+        try {
+            tokenInvalidationRepository.createInvalidatedAt(user.id, Instant.now(clock))
+        } catch (e: DataAccessException) {
+            logger.error("토큰 무효화 기록 실패: userId={}", user.id, e)
+        }
 
         sesService.sendTempPassword(email, tempPassword)
     }
