@@ -18,6 +18,7 @@ out/
 
 # 환경 파일
 .env
+.env.*
 
 # 기타
 .DS_Store

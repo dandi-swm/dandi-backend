@@ -48,3 +48,5 @@ src/test/http/http-client.private.env.json
 
 ### Others ###
 .env
+.env.*
+!.env.*.example

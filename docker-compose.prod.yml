@@ -1,0 +1,12 @@
+# 운영 EC2. DB는 RDS, Redis는 ElastiCache를 쓰므로 app 컨테이너만 띄운다.
+# COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml
+services:
+  app:
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=75.0"
+    deploy:
+      resources:
+        limits:
+          # 인스턴스 타입 바뀌면 여기를 고친다. 힙은 이 값의 75%(JAVA_TOOL_OPTIONS).
+          memory: 1g

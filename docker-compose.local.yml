@@ -1,10 +1,14 @@
+# 내 노트북. 소스에서 직접 빌드하고, DB 포트를 호스트에 열어 둔다.
+# COMPOSE_FILE=docker-compose.yml:docker-compose.local.yml
 services:
   app:
     build:
       context: .
       dockerfile: Dockerfile
-    image: nyummy-app:local
+    env_file:
+      - .env.local
     environment:
+      SPRING_PROFILES_ACTIVE: local
       MYSQL_HOST: mysql-db
       MYSQL_PORT: "3306"
       REDIS_HOST: redis
@@ -14,9 +18,11 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+
   mysql-db:
     image: mysql:8.4.9
     container_name: nyummy-mysql
+    restart: unless-stopped
     ports:
       - "3307:3306"
     environment:
@@ -28,6 +34,9 @@ services:
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
+      # 개발 서버(dev)와 DB 설정을 맞춰 둔다. 메모리 상한은 로컬이라 걸지 않는다.
+      - --performance-schema=OFF
+      - --innodb-buffer-pool-size=128M
     volumes:
       - mysql-data:/var/lib/mysql
     healthcheck:
@@ -35,14 +44,18 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
   redis:
     image: valkey/valkey:9.1-alpine
     container_name: nyummy-redis
+    restart: unless-stopped
     ports:
       - "6380:6379"
-    command: ["redis-server", "--appendonly", "no"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    command: [ "redis-server", "--appendonly", "no", "--requirepass", "${REDIS_PASSWORD}" ]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD-SHELL", "redis-cli --no-auth-warning -a \"$$REDIS_PASSWORD\" ping | grep -q PONG" ]
       interval: 5s
       timeout: 3s
 

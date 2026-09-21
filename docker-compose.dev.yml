@@ -1,0 +1,89 @@
+# 개발 EC2 (t4g.small / arm64 / 2GB). ECR 이미지를 받아 쓴다.
+# 한 인스턴스에 app + mysql + valkey가 같이 뜨므로 컨테이너마다 메모리 상한을 둔다.
+#   app 768m(힙 576m) + mysql 512m + valkey 256m = 1.5GB, 나머지 약 500MB는 OS/도커 몫.
+# DB 포트는 루프백에만 열린다. 밖에서 붙으려면 SSH 터널:
+#   ssh -L 3307:127.0.0.1:3307 <dev-host>
+# COMPOSE_FILE=docker-compose.yml:docker-compose.dev.yml
+services:
+  app:
+    env_file:
+      - .env.dev
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=75.0"
+      MYSQL_HOST: mysql-db
+      MYSQL_PORT: "3306"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+    deploy:
+      resources:
+        limits:
+          memory: 768m
+    depends_on:
+      mysql-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  mysql-db:
+    image: mysql:8.4.9
+    container_name: nyummy-mysql
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3307:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DB}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      TZ: Asia/Seoul
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      # 8.4 기본 performance_schema는 자동 사이징으로 250MB 넘게 먹는다.
+      # 끄면 아이들 477MB -> 204MB. 개발 서버에서는 진단 기능보다 메모리가 아쉽다.
+      - --performance-schema=OFF
+      - --innodb-buffer-pool-size=128M
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost" ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: valkey/valkey:9.1-alpine
+    container_name: nyummy-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6380:6379"
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    # maxmemory를 컨테이너 상한보다 낮게 둬야 OOM kill(=전체 데이터 소실) 대신
+    # 만료 예정 키부터 지운다. 이 앱의 Redis 키는 전부 TTL이 있으므로 volatile-lru.
+    command:
+      - redis-server
+      - --appendonly
+      - "no"
+      - --requirepass
+      - ${REDIS_PASSWORD}
+      - --maxmemory
+      - 192mb
+      - --maxmemory-policy
+      - volatile-lru
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+    healthcheck:
+      test: [ "CMD-SHELL", "redis-cli --no-auth-warning -a \"$$REDIS_PASSWORD\" ping | grep -q PONG" ]
+      interval: 5s
+      timeout: 3s
+
+volumes:
+  mysql-data:

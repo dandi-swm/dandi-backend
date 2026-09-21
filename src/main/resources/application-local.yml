@@ -1,0 +1,31 @@
+spring:
+  # bootRun으로 띄울 때 .env.local의 값을 읽는다.
+  # 도커로 띄울 때는 compose의 env_file이 같은 값을 환경변수로 주므로 이 import는 무시된다.
+  config:
+    import: optional:file:.env.local[.properties]
+
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3307}/${MYSQL_DB}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&useUnicode=true&characterEncoding=UTF-8
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6380}
+      password: ${REDIS_PASSWORD:}
+      timeout: 300ms
+      connect-timeout: 200ms
+
+  flyway:
+    baseline-on-migrate: true
+
+  jpa:
+    show-sql: true
+
+  devtools:
+    restart:
+      additional-exclude: "db/migration/**"
+
+logging:
+  level:
+    com.dandi.nyummy: DEBUG
+    org.hibernate.orm.jdbc.bind: TRACE

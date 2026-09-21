@@ -1,36 +1,22 @@
 spring:
   application:
     name: nyummy
-  config:
-    import: optional:file:.env[.properties]
+  profiles:
+    default: local
+
   datasource:
-    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3307}/${MYSQL_DB}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&useUnicode=true&characterEncoding=UTF-8
     username: ${MYSQL_USER}
     password: ${MYSQL_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
-  data:
-    redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6380}
-      password: ${REDIS_PASSWORD:}
-      timeout: 300ms
-      connect-timeout: 200ms
-
   flyway:
     enabled: true
-    baseline-on-migrate: true
     locations: classpath:db/migration/mysql
 
   jpa:
     hibernate:
       ddl-auto: validate
-    show-sql: true
     open-in-view: false
-
-  devtools:
-    restart:
-      additional-exclude: "db/migration/**"
 
 server:
   forward-headers-strategy: framework

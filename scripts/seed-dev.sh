@@ -13,13 +13,15 @@ CONTAINER="${MYSQL_CONTAINER:-nyummy-mysql}"
 
 cd "$(dirname "$0")/.."
 
-if [[ ! -f .env ]]; then
-    echo "[seed] .env를 찾을 수 없습니다. 프로젝트 루트에서 실행했는지 확인하세요." >&2
+ENV_FILE="${ENV_FILE:-.env.local}"
+
+if [[ ! -f "$ENV_FILE" ]]; then
+    echo "[seed] $ENV_FILE 를 찾을 수 없습니다. 프로젝트 루트에서 실행했는지 확인하세요." >&2
     exit 1
 fi
 
 set -a
-source .env
+source "$ENV_FILE"
 set +a
 
 if ! docker ps --format '{{.Names}}' | grep -qx "$CONTAINER"; then

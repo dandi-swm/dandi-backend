@@ -1,0 +1,35 @@
+spring:
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST}:${MYSQL_PORT:3306}/${MYSQL_DB}?sslMode=REQUIRED&serverTimezone=Asia/Seoul&useUnicode=true&characterEncoding=UTF-8
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+      minimum-idle: ${DB_POOL_SIZE:10}
+      connection-timeout: 3000
+      max-lifetime: 1200000
+
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      ssl:
+        enabled: true
+      timeout: 1s
+      connect-timeout: 1s
+
+  flyway:
+    baseline-on-migrate: false
+
+  jpa:
+    show-sql: false
+
+  web:
+    error:
+      include-stacktrace: never
+      include-message: never
+
+logging:
+  level:
+    root: INFO
+    com.dandi.nyummy: INFO
+
