@@ -7,6 +7,10 @@ pipeline {
         timestamps()
     }
 
+    triggers {
+        pollSCM('H/5 * * * *')
+    }
+
     environment {
         AWS_REGION = 'ap-northeast-2'
         ECR_REPOSITORY = 'nyummy-backend'
