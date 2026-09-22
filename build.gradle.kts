@@ -87,6 +87,8 @@ dependencies {
     testImplementation("org.springframework.boot:spring-boot-testcontainers")
     testImplementation("org.testcontainers:testcontainers-junit-jupiter")
     testImplementation("org.testcontainers:testcontainers-mysql")
+
+    implementation("org.springframework.boot:spring-boot-starter-actuator")
 }
 
 kotlin {

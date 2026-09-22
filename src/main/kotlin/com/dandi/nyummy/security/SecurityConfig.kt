@@ -25,6 +25,7 @@ class SecurityConfig(
             sessionManagement { sessionCreationPolicy = SessionCreationPolicy.STATELESS }
             authorizeHttpRequests {
                 authorize(DispatcherTypeRequestMatcher(DispatcherType.ERROR), permitAll)
+                authorize("/actuator/health", permitAll)
                 authorize("/api/v1/auth/logout", authenticated)
                 authorize("/api/v1/auth/**", permitAll)
                 authorize("/swagger-ui/**", permitAll)
