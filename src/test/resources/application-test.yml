@@ -1,0 +1,47 @@
+# 테스트 전용 설정. @ActiveProfiles("test")가 붙은 테스트에서만 로드된다.
+#
+# 목적은 두 가지다.
+#   1. CI마다 환경변수를 손으로 맞추지 않아도 컨텍스트가 뜨게 한다.
+#   2. 실수로 개발/운영 자원(S3, SES, Gemini)에 붙지 않게 전부 더미로 고정한다.
+#
+# spring.datasource가 여기 없는 건 의도된 것이다. 테스트가 Testcontainers로 MySQL을
+# 직접 띄우고, @ServiceConnection이 접속 정보(url/username/password)를 주입한다.
+# 여기에 datasource를 적어도 ConnectionDetails가 이기므로 죽은 설정이 된다.
+# 마이그레이션이 MySQL 전용이라(flyway-mysql, db/migration/mysql) H2로는 대체할 수 없다.
+#
+# 따라서 CI에 필요한 건 도커 데몬뿐이다. 환경변수는 하나도 주지 않아도 된다.
+
+spring:
+  data:
+    redis:
+      # 테스트 중 Redis에 실제로 붙지는 않는다(Lettuce 지연 연결, 기동 시 접근 코드 없음).
+      # 빈 생성에 필요한 값만 채워 둔다.
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+
+  flyway:
+    baseline-on-migrate: true
+
+  jpa:
+    show-sql: false
+
+logging:
+  level:
+    root: WARN
+    com.dandi.nyummy: INFO
+
+app:
+  ai:
+    api-key: test-gemini-key
+  jwt:
+    # Base64 32바이트. HS256 서명과 A256GCM 암호화에 그대로 쓰이므로 길이가 맞아야 한다.
+    secret-key: c83mV3J9dm3u1nGB93mdHgHbZTE3mciNNc93nMvfi3m=
+    encryption-key: 50Vnh94kKrp9/+/v1woFnggXrPXNP3bvnsgbGK/quD0=
+
+# S3Config / SesConfig가 @Value로 직접 읽는 값들. app.* 아래가 아니라 최상위여야 한다.
+AWS_ACCESS_KEY: test
+AWS_SECRET_ACCESS_KEY: test
+AWS_REGION: ap-northeast-2
+AWS_S3_BUCKET_NAME: test-bucket
+AWS_SES_FROM_ADDRESS: test@dandi.com

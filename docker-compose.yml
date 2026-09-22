@@ -4,7 +4,7 @@ services:
     container_name: nyummy-app
     # env_file은 환경별 파일(local/dev)에서 지정한다.
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     restart: unless-stopped
     logging:
       driver: json-file

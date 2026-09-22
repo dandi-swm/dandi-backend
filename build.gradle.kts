@@ -81,6 +81,12 @@ dependencies {
 
     // Redis
     implementation("org.springframework.boot:spring-boot-starter-data-redis")
+
+    // Testcontainers (버전은 Boot BOM이 관리 — 4.1.0 기준 2.0.5)
+    // 2.0부터 모듈 아티팩트에 testcontainers- 접두사가 붙는다. (구: junit-jupiter, mysql)
+    testImplementation("org.springframework.boot:spring-boot-testcontainers")
+    testImplementation("org.testcontainers:testcontainers-junit-jupiter")
+    testImplementation("org.testcontainers:testcontainers-mysql")
 }
 
 kotlin {
