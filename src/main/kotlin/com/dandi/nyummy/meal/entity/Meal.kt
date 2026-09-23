@@ -60,6 +60,9 @@ class Meal(
     @Column(name = "calory")
     var calory: Int? = null
 
+    @Column(name = "cat_comment", length = 255)
+    var catComment: String? = null
+
     @Column(name = "icon_id", nullable = false)
     var iconId: Long = 1L
 
@@ -81,6 +84,7 @@ class Meal(
         this.carbs = analysisResult.nutrition.carbs
         this.protein = analysisResult.nutrition.protein
         this.fat = analysisResult.nutrition.fat
+        this.catComment = analysisResult.catComment
     }
 
     fun updateStatus(status: MealStatus) {

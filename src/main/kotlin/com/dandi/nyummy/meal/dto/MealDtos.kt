@@ -44,6 +44,8 @@ data class MealResponse(
 
     val imageUrl: String,
 
+    val catComment: String? = "",
+
     val iconId: Long? = 1,
 )
 

@@ -47,5 +47,6 @@ fun Meal.toMealResponse(imageUrl: String) = MealResponse(
     status = this.status,
     nutrition = this.toNutrition(),
     imageUrl = imageUrl,
+    catComment = this.catComment,
     iconId = this.iconId,
 )

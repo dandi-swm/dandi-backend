@@ -49,11 +49,14 @@ class GeminiNutritionAnalysisClient(
                   "calory": number | null,
                   "carbs": number | null,
                   "protein": number | null,
-                  "fat": number | null
+                  "fat": number | null,
+                  "catComment": String | null,
                 }
 
                 isFood가 false면 name 이하 필드는 모두 null로 채워.
                 영양소 추정 시 calory ≈ carbs*4 + protein*4 + fat*9 를 만족시켜.
+                catComment에는 고양이 말투로 식사에 대해 영양 분석과 관련해서 피드백을 해줘.
+                이때 다음 식사는 건강을 위해 어떤 음식을 먹으면 좋을지도 추천해줘 (100자 내외).
             """
 
         private val RESPONSE_SCHEMA = mapOf(
@@ -67,8 +70,10 @@ class GeminiNutritionAnalysisClient(
                 "carbs" to mapOf("type" to "INTEGER"),
                 "protein" to mapOf("type" to "INTEGER"),
                 "fat" to mapOf("type" to "INTEGER"),
+                "catComment" to mapOf("type" to "STRING"),
             ),
-            "required" to listOf("isFood", "rejectReason", "name", "iconId", "calory", "carbs", "protein", "fat"),
+            "required" to
+                listOf("isFood", "rejectReason", "name", "iconId", "calory", "carbs", "protein", "fat", "catComment"),
         )
 
         private val logger = LoggerFactory.getLogger(GeminiNutritionAnalysisClient::class.java)
@@ -125,8 +130,9 @@ class GeminiNutritionAnalysisClient(
 
         return NutritionAnalysisResult(
             name = parsed.name,
-            iconId = parsed.iconId,
             nutrition = Nutrition(parsed.calory, parsed.carbs, parsed.protein, parsed.fat),
+            catComment = parsed.catComment,
+            iconId = parsed.iconId,
         )
     }
 }
@@ -144,4 +150,5 @@ private data class GeminiNutritionResponse(
     val carbs: Int,
     val protein: Int,
     val fat: Int,
+    val catComment: String,
 )
