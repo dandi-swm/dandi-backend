@@ -38,6 +38,9 @@ app:
     # Base64 32바이트. HS256 서명과 A256GCM 암호화에 그대로 쓰이므로 길이가 맞아야 한다.
     secret-key: c83mV3J9dm3u1nGB93mdHgHbZTE3mciNNc93nMvfi3m=
     encryption-key: 50Vnh94kKrp9/+/v1woFnggXrPXNP3bvnsgbGK/quD0=
+  oauth:
+    kakao:
+      app-key: test-kakao-app-key
 
 # S3Config / SesConfig가 @Value로 직접 읽는 값들. app.* 아래가 아니라 최상위여야 한다.
 AWS_ACCESS_KEY: test

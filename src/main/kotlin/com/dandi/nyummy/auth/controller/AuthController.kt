@@ -4,6 +4,9 @@ import com.dandi.nyummy.auth.dto.ConfirmAuthCodeRequest
 import com.dandi.nyummy.auth.dto.ConfirmAuthCodeResponse
 import com.dandi.nyummy.auth.dto.LoginRequest
 import com.dandi.nyummy.auth.dto.LoginResponse
+import com.dandi.nyummy.auth.dto.OAuthLoginRequest
+import com.dandi.nyummy.auth.dto.OAuthLoginResponse
+import com.dandi.nyummy.auth.dto.OAuthSignUpRequest
 import com.dandi.nyummy.auth.dto.PasswordResetRequest
 import com.dandi.nyummy.auth.dto.RefreshRequest
 import com.dandi.nyummy.auth.dto.RefreshResponse
@@ -27,7 +30,7 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
-@Tag(name = "Auth", description = "회원가입 · 로그인 · 로그아웃 · 이메일 인증 API")
+@Tag(name = "Auth", description = "회원가입 · 로그인 · 로그아웃 · 이메일 인증 · 소셜 로그인 API")
 @RestController
 @RequestMapping("/api/v1/auth")
 @SecurityRequirements
@@ -47,6 +50,35 @@ class AuthController(private val authService: AuthService) {
     @PostMapping("/signup")
     fun signup(@Valid @RequestBody request: SignUpRequest): ResponseEntity<SignUpResponse> {
         val response = authService.signup(request)
+
+        return ResponseEntity
+            .status(HttpStatus.CREATED)
+            .body(response)
+    }
+
+    @Operation(
+        summary = "소셜 로그인",
+        description = "앱 SDK로 받은 소셜 제공자의 ID 토큰을 검증한다. 기존 회원이면 AccessToken·RefreshToken을 발급하고 " +
+            "redirectUrl은 홈, 신규 회원이면 oauthVerifiedToken을 발급하고 redirectUrl은 프로필 입력 화면이다. " +
+            "nonce는 앱이 SDK 로그인 시 전달한 값 그대로 보낸다.",
+    )
+    @ApiResponse(responseCode = "200", description = "기존 회원: accessToken·refreshToken / 신규 회원: oauthVerifiedToken")
+    @ApiResponse(responseCode = "400", description = "지원하지 않는 소셜 로그인 제공자입니다.")
+    @ApiResponse(responseCode = "401", description = "유효하지 않은 소셜 로그인 토큰입니다.")
+    @ApiResponse(responseCode = "503", description = "소셜 로그인 제공자와 통신할 수 없습니다.")
+    @PostMapping("/oauth/login")
+    fun oauthLogin(@Valid @RequestBody request: OAuthLoginRequest): OAuthLoginResponse = authService.oauthLogin(request)
+
+    @Operation(
+        summary = "소셜 회원가입",
+        description = "소셜 로그인 응답의 oauthVerifiedToken과 닉네임으로 회원가입하고 " +
+            "AccessToken과 RefreshToken을 발급받는다. 신체 정보(gender·birth·height·weight)는 선택 입력이다.",
+    )
+    @ApiResponse(responseCode = "401", description = "소셜 로그인 인증이 만료되었거나 토큰이 유효하지 않습니다.")
+    @ApiResponse(responseCode = "409", description = "이미 가입된 소셜 계정입니다.")
+    @PostMapping("/oauth/signup")
+    fun oauthSignup(@Valid @RequestBody request: OAuthSignUpRequest): ResponseEntity<SignUpResponse> {
+        val response = authService.oauthSignup(request)
 
         return ResponseEntity
             .status(HttpStatus.CREATED)

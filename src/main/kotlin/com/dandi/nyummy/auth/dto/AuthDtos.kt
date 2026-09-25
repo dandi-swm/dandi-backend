@@ -1,5 +1,6 @@
 package com.dandi.nyummy.auth.dto
 
+import com.dandi.nyummy.auth.enum.AuthProvider
 import com.dandi.nyummy.auth.enum.AuthPurpose
 import com.dandi.nyummy.profile.enum.Gender
 import jakarta.validation.constraints.AssertTrue
@@ -94,4 +95,43 @@ data class PasswordResetRequest(
 
     @field:NotBlank
     val emailVerifiedToken: String,
+)
+
+data class OAuthLoginRequest(
+
+    val provider: AuthProvider,
+
+    @field:NotBlank
+    val idToken: String,
+
+    @field:NotBlank
+    val nonce: String,
+)
+
+data class OAuthLoginResponse(
+    val redirectUrl: String,
+    val accessToken: String? = null,
+    val refreshToken: String? = null,
+    val oauthVerifiedToken: String? = null,
+)
+
+data class OAuthSignUpRequest(
+
+    @field:NotBlank
+    val oauthVerifiedToken: String,
+
+    @field:NotBlank
+    @field:Size(max = 100)
+    val nickname: String,
+
+    val gender: Gender? = null,
+
+    @field:Past
+    val birth: LocalDate? = null,
+
+    @field:Positive
+    val height: Int? = null,
+
+    @field:Positive
+    val weight: Int? = null,
 )

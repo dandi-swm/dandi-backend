@@ -62,6 +62,9 @@ dependencies {
     // Spring-Security
     implementation("org.springframework.boot:spring-boot-starter-security")
 
+    // OIDC ID 토큰 검증 (NimbusJwtDecoder, JWKS)
+    implementation("org.springframework.security:spring-security-oauth2-jose")
+
     // jjwt 설정
     implementation("io.jsonwebtoken:jjwt-api:0.12.6")
     runtimeOnly("io.jsonwebtoken:jjwt-impl:0.12.6")

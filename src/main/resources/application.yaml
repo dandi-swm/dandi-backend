@@ -35,6 +35,14 @@ app:
     read-timeout: 30s
   auth:
     login-redirect-url: "dandi://home"
+    signup-redirect-url: "dandi://signup"
+  oauth:
+    kakao:
+      issuer: "https://kauth.kakao.com"
+      jwk-set-uri: "https://kauth.kakao.com/.well-known/jwks.json"
+      app-key: ${KAKAO_NATIVE_APP_KEY}
+      connect-timeout: 5s
+      read-timeout: 5s
   jwt:
     secret-key: ${JWT_SECRET_KEY}
     encryption-key: ${JWT_ENCRYPTION_KEY}
@@ -43,6 +51,7 @@ app:
     refresh-absolute-time-to-live: 90d
     email-challenge-time-to-live: 5m
     email-verified-time-to-live: 30m
+    oauth-verified-time-to-live: 30m
   argon2:
     salt-length: 16
     hash-length: 32

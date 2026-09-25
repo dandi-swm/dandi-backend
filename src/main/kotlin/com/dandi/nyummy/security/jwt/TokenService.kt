@@ -1,5 +1,6 @@
 package com.dandi.nyummy.security.jwt
 
+import com.dandi.nyummy.auth.enum.AuthProvider
 import com.dandi.nyummy.auth.enum.AuthPurpose
 import com.dandi.nyummy.auth.repository.TokenInvalidationRepository
 import com.dandi.nyummy.exception.BusinessException
@@ -61,6 +62,23 @@ class TokenService(
     fun createEmailVerifiedToken(email: String, purpose: AuthPurpose): String =
         jwtProvider.createEmailVerifiedToken(email, purpose)
 
+    /**
+     * 소셜 로그인 검증을 마쳤지만 아직 가입하지 않은 사용자를 위한 oauthVerifiedToken을 발급한다.
+     *
+     * emailVerifiedToken과 같은 역할이다 — 검증 완료와 회원가입 사이(프로필 입력 구간)를 잇는 다리.
+     * 검증 결과(provider, providerUserId, email)를 클레임으로 실어 가입 시 재검증 없이 사용자를 만든다.
+     */
+    fun createOAuthVerifiedToken(provider: AuthProvider, providerUserId: String, email: String?): String =
+        jwtProvider.createOAuthVerifiedToken(provider, providerUserId, email)
+
+    fun getOAuthVerifiedClaims(token: String): OAuthVerifiedClaims = try {
+        jwtProvider.getOAuthVerifiedClaims(token)
+    } catch (e: ExpiredJwtException) {
+        throw BusinessException(AuthErrorCode.OAUTH_VERIFICATION_EXPIRED)
+    } catch (e: JwtException) {
+        throw BusinessException(AuthErrorCode.UNAUTHORIZED)
+    }
+
     fun getPurpose(token: String, type: TokenType): AuthPurpose = jwtProvider.getPurpose(token, type)
 
     fun getUserId(token: String, type: TokenType): Long = jwtProvider.getUserId(token, type)
@@ -71,3 +89,5 @@ class TokenService(
 }
 
 data class AccessTokenClaims(val userId: Long, val issuedAt: Instant)
+
+data class OAuthVerifiedClaims(val provider: AuthProvider, val providerUserId: String, val email: String?)

@@ -57,6 +57,30 @@ Content-Type: application/json
   "emailVerifiedToken": "{{emailVerifiedToken}}"
 }
 
+### 소셜 로그인 API - 기존 회원이면 accessToken·refreshToken, 신규면 oauthVerifiedToken 응답
+# idToken은 앱 Kakao SDK가 준 ID 토큰, nonce는 SDK 로그인 시 앱이 넘긴 값 그대로
+POST {{url}}/api/v1/auth/oauth/login
+Content-Type: application/json
+
+{
+  "provider": "KAKAO",
+  "idToken": "{{idToken}}",
+  "nonce": "{{nonce}}"
+}
+
+### 소셜 회원가입 API - 위 응답의 oauthVerifiedToken 사용, 재사용하면 409
+POST {{url}}/api/v1/auth/oauth/signup
+Content-Type: application/json
+
+{
+  "oauthVerifiedToken": "{{oauthVerifiedToken}}",
+  "nickname": "카카오 집사",
+  "gender": "FEMALE",
+  "birth": "2000-01-01",
+  "height": 165,
+  "weight": 55
+}
+
 ### access token 재발급 API
 POST {{url}}/api/v1/auth/refresh
 Content-Type: application/json

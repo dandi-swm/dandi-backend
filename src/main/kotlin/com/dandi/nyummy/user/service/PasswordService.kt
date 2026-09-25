@@ -1,5 +1,6 @@
 package com.dandi.nyummy.user.service
 
+import com.dandi.nyummy.auth.enum.AuthProvider
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.AuthErrorCode
 import com.dandi.nyummy.user.repository.UserRepository
@@ -32,7 +33,7 @@ class PasswordService(private val userRepository: UserRepository, private val pa
      */
     @Transactional
     fun createTempPasswordByEmail(email: String): String {
-        val user = userRepository.findByEmail(email)
+        val user = userRepository.findByProviderAndEmail(AuthProvider.EMAIL, email)
             ?: throw BusinessException(AuthErrorCode.EMAIL_NOT_FOUND)
 
         val tempPassword = createRandomTempPassword()
