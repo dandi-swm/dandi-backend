@@ -35,6 +35,9 @@ dependencies {
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 
+    // Mock (Kotlin 전용)
+    testImplementation("io.mockk:mockk:1.14.11")
+
     // Flyway
     implementation("org.springframework.boot:spring-boot-flyway")
     implementation("org.flywaydb:flyway-core")
