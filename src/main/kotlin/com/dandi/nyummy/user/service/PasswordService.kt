@@ -3,7 +3,9 @@ package com.dandi.nyummy.user.service
 import com.dandi.nyummy.auth.enum.AuthProvider
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.AuthErrorCode
+import com.dandi.nyummy.exception.errorcode.UserErrorCode
 import com.dandi.nyummy.user.repository.UserRepository
+import org.springframework.data.repository.findByIdOrNull
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -41,6 +43,39 @@ class PasswordService(private val userRepository: UserRepository, private val pa
         user.updateTempPassword(encodePassword(tempPassword))
 
         return tempPassword
+    }
+
+    /**
+     * 현재 비밀번호를 확인한 뒤 새 비밀번호로 교체하고, 임시 비밀번호 상태를 해제한다.
+     *
+     * 소셜 로그인 계정이거나 비밀번호가 없는 계정은 변경할 수 없다.
+     * 현재 비밀번호 불일치는 401이 아닌 400으로 응답한다 — 인증된 경로에서 401을 쓰면
+     * 클라이언트가 토큰 만료로 오인해 재발급·로그아웃 흐름을 탈 수 있기 때문이다.
+     *
+     * @param userId 비밀번호를 변경할 사용자 ID
+     * @param currentPassword 현재 평문 비밀번호
+     * @param newPassword 새 평문 비밀번호
+     * @throws BusinessException [UserErrorCode.USER_NOT_FOUND] 사용자가 없는 경우
+     * @throws BusinessException [UserErrorCode.PASSWORD_NOT_SET] 소셜 로그인 계정이라 비밀번호가 없는 경우
+     * @throws BusinessException [UserErrorCode.PASSWORD_MISMATCH] 현재 비밀번호가 일치하지 않는 경우
+     */
+    @Transactional
+    fun updatePassword(userId: Long, currentPassword: String, newPassword: String) {
+        val user = userRepository.findByIdOrNull(userId)
+            ?: throw BusinessException(UserErrorCode.USER_NOT_FOUND)
+
+        if (user.provider.isSocial) {
+            throw BusinessException(UserErrorCode.PASSWORD_NOT_SET)
+        }
+
+        val encodedPassword = user.password
+            ?: throw BusinessException(UserErrorCode.PASSWORD_NOT_SET)
+
+        if (!matchesPassword(currentPassword, encodedPassword)) {
+            throw BusinessException(UserErrorCode.PASSWORD_MISMATCH)
+        }
+
+        user.updatePassword(encodePassword(newPassword))
     }
 
     /**
