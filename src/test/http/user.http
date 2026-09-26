@@ -1,4 +1,4 @@
-### 비밀번호 변경 API
+### 비밀번호 변경 API - 200이면 응답의 accessToken/refreshToken으로 즉시 교체 (기존 RefreshToken 교체, AccessToken 무효화 기준 기록)
 PATCH {{url}}/api/v1/users/me/password
 Content-Type: application/json
 Authorization: Bearer {{accessToken}}
@@ -11,3 +11,23 @@ Authorization: Bearer {{accessToken}}
 ### 프로필 API
 GET {{url}}/api/v1/users/me
 Authorization: Bearer {{accessToken}}
+
+### 비밀번호 변경 API - 현재 비밀번호 틀림 (400 api.user.passwordMismatch, 세션은 유지됨)
+PATCH {{url}}/api/v1/users/me/password
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "password": "WrongPassword1",
+  "newPassword": "NewPassword123!"
+}
+
+### 비밀번호 변경 API - 새 비밀번호 정책 위반 (400 api.common.invalidInputValue, 8~64자·영문·숫자 모두 포함)
+PATCH {{url}}/api/v1/users/me/password
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "password": "Password123!",
+  "newPassword": "12345678"
+}
