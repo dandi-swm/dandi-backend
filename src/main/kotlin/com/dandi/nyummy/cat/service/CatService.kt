@@ -4,7 +4,6 @@ import com.dandi.nyummy.cat.calculator.calculateWeightStep
 import com.dandi.nyummy.cat.calculator.isWeightUpdateDue
 import com.dandi.nyummy.cat.config.CatProperties
 import com.dandi.nyummy.cat.dto.CatResponse
-import com.dandi.nyummy.cat.entity.Cat
 import com.dandi.nyummy.cat.mapper.toCatResponse
 import com.dandi.nyummy.cat.repository.CatRepository
 import com.dandi.nyummy.exception.BusinessException
@@ -14,19 +13,12 @@ import com.dandi.nyummy.meal.calculator.calculateRecommendedDailyIntake
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.repository.MealRepository
 import com.dandi.nyummy.profile.repository.ProfileRepository
-import com.dandi.nyummy.security.jwt.TokenService
-import com.dandi.nyummy.user.repository.UserRepository
 import org.slf4j.LoggerFactory
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
-import java.time.Duration
 import java.time.Instant
-import java.time.LocalDate
 import java.time.ZoneId
-import java.time.temporal.ChronoUnit
-import java.time.temporal.TemporalQueries.zone
-import kotlin.time.Duration.Companion.days
 
 @Service
 class CatService(
@@ -34,7 +26,6 @@ class CatService(
     private val mealRepository: MealRepository,
     private val profileRepository: ProfileRepository,
     private val catProperties: CatProperties,
-    private val userRepository: UserRepository,
 ) {
 
     companion object {

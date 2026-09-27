@@ -1,8 +1,5 @@
 package com.dandi.nyummy.cat.calculator
 
-import com.dandi.nyummy.cat.entity.Cat
-import com.dandi.nyummy.meal.calculator.calculateRecommendedDailyIntake
-import com.dandi.nyummy.meal.enum.MealStatus
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
