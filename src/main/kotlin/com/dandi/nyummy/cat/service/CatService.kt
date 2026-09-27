@@ -17,6 +17,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.time.Clock
 import java.time.Instant
 import java.time.ZoneId
 
@@ -26,6 +27,7 @@ class CatService(
     private val mealRepository: MealRepository,
     private val profileRepository: ProfileRepository,
     private val catProperties: CatProperties,
+    private val clock: Clock,
 ) {
 
     companion object {
@@ -83,7 +85,7 @@ class CatService(
 
         // TODO: 사용자별 timezone에 맞게 계산
         val zone = ZoneId.of("Asia/Seoul")
-        val today = Instant.now().atZone(zone).toLocalDate()
+        val today = Instant.now(clock).atZone(zone).toLocalDate()
         val intervalDays = catProperties.weightUpdateIntervalDays
 
         if (!isWeightUpdateDue(cat.weightUpdatedAt, today, zone, intervalDays)) {
