@@ -27,6 +27,9 @@ app:
     max-file-size-bytes: 10485760
     presigned-url-expiration-minutes: 10
     capture-time-tolerance: 1h
+  cat:
+    weight-update-interval-days: 3
+    weight-update-tolerance: 0.2
   ai:
     api-key: ${GEMINI_API_KEY}
     model: "gemini-3.6-flash"
