@@ -1,0 +1,2 @@
+ALTER TABLE cat
+    ADD COLUMN weight_updated_at TIMESTAMP NOT NULL default CURRENT_TIMESTAMP;

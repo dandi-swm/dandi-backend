@@ -141,6 +141,7 @@ class MealService(
      */
     @Transactional(readOnly = true)
     fun getDailyMeals(userId: Long, year: Int, month: Int, day: Int): DailyMealsResponse {
+        // TODO: 사용자별 timezone에 맞게 계산
         val zone = ZoneId.of("Asia/Seoul")
         val date = LocalDate.of(year, month, day)
         val start = date.atStartOfDay(zone).toInstant()
