@@ -1,0 +1,7 @@
+### 식사 리마인더 푸시 알림
+POST {{url}}/api/v1/internal/batch/meals/reminders
+Authorization: Bearer {{accessToken}}
+
+### 리텐션 푸시 알림
+POST {{url}}//api/v1/internal/batch/retentions/daily-check
+Authorization: Bearer {{accessToken}}

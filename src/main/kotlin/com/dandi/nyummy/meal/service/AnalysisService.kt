@@ -1,5 +1,6 @@
 package com.dandi.nyummy.meal.service
 
+import com.dandi.nyummy.cat.repository.CatRepository
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.MealErrorCode
 import com.dandi.nyummy.infra.ai.nutrition.NutritionAnalysisClient
@@ -17,6 +18,7 @@ class AnalysisService(
     private val updateMealService: UpdateMealService,
     private val mealRepository: MealRepository,
     private val nutritionAnalysisClient: NutritionAnalysisClient,
+    private val catRepository: CatRepository,
 ) {
     /**
      * 식사의 영양 분석 상태를 조회한다.

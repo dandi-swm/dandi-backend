@@ -5,6 +5,7 @@ import com.dandi.nyummy.cat.calculator.isWeightUpdateDue
 import com.dandi.nyummy.cat.config.CatProperties
 import com.dandi.nyummy.cat.dto.CatAnimationResponse
 import com.dandi.nyummy.cat.dto.CatResponse
+import com.dandi.nyummy.cat.entity.Cat
 import com.dandi.nyummy.cat.enum.CatWeight
 import com.dandi.nyummy.cat.mapper.toCatResponse
 import com.dandi.nyummy.cat.repository.CatAnimationLoader
@@ -37,7 +38,7 @@ class CatService(
     }
 
     /**
-     * 사용자의 고양이 정보를 조회한다. 체형 평가는 하지 않으므로, 평가까지 필요하면 [updateCatWeight]를 사용한다.
+     * 사용자의 고양이 정보를 조회한다. 체형 평가는 배치([updateCatWeight])에서만 하므로 여기서는 저장된 값을 그대로 읽는다.
      *
      * 고양이는 사용자당 하나이고 userId로 조회하므로, 다른 사용자의 고양이가 조회될 수 없다.
      *
@@ -54,8 +55,8 @@ class CatService(
     }
 
     /**
-     * 평가 주기가 지났으면 직전 구간의 섭취 칼로리로 체형을 한 단계 갱신하고 현재 체형을 반환한다.
-     * 주기가 지나지 않았으면 아무것도 쓰지 않고 저장된 체형을 반환한다.
+     * 평가 주기가 지났으면 직전 구간의 섭취 칼로리로 체형을 한 단계 갱신한다.
+     * 주기가 지나지 않았으면 아무것도 쓰지 않는다.
      *
      * **의도적으로 직전 한 구간만 평가한다.** 한 달 만에 접속해도 그동안의 미기록 구간은 누적되지 않고
      * 버려진다. 고양이가 최저 체형에 고정되고 되돌리려면 과식을 반복해야 하는 상황이 게임 목적에
@@ -66,14 +67,17 @@ class CatService(
      * 동시성 제어는 하지 않는다. 병렬 호출 시 두 단계 변할 수 있어, intro API로 트리거를 옮긴 뒤
      * 낙관적 락을 검토한다.
      *
-     * @param userId 요청한 사용자 ID
-     * @return 갱신 결과가 반영된 [CatResponse]
-     * @throws BusinessException [CatErrorCode.CAT_NOT_FOUND] 사용자의 고양이가 없는 경우
+     * 배치에서 고양이를 순회하며 호출하므로 조회된 [Cat]을 그대로 받는다. userId로 다시 조회하면
+     * 고양이 수만큼 쿼리가 늘어난다.
+     *
+     * 전달된 엔티티가 준영속 상태일 수 있어 변경 후 명시적으로 저장한다. 건별로 커밋되므로
+     * 한 고양이의 갱신이 실패해도 나머지는 반영된다.
+     *
+     * @param cat 평가할 고양이
      */
     @Transactional
-    fun updateCatWeight(userId: Long): CatResponse {
-        val cat = catRepository.findByUserId(userId)
-            ?: throw BusinessException(CatErrorCode.CAT_NOT_FOUND)
+    fun updateCatWeight(cat: Cat) {
+        val userId = cat.userId
 
         // TODO: 사용자별 timezone에 맞게 계산
         val zone = ZoneId.of("Asia/Seoul")
@@ -81,7 +85,7 @@ class CatService(
         val intervalDays = catProperties.weightUpdateIntervalDays
 
         if (!isWeightUpdateDue(cat.weightUpdatedAt, today, zone, intervalDays)) {
-            return cat.toCatResponse()
+            return
         }
 
         // 아직 끝나지 않은 오늘은 제외한다. 직전 평가 구간과 맞물려 중복도 간극도 없다.
@@ -97,11 +101,11 @@ class CatService(
 
         val step = calculateWeightStep(totalCalory, targetCalory, catProperties.weightUpdateTolerance)
         // 평가 시각을 호출 시각이 아니라 구간 종료 시각(end)으로 저장해 다음 평가 경계가 밀리지 않게 한다.
-        cat.updateWeight(step, end)
+        cat.setWeight(step, end)
+
+        catRepository.save(cat)
 
         logger.info("고양이 체형 변화: userId = {}, step = {}, weight = {}", userId, step, cat.weight)
-
-        return cat.toCatResponse()
     }
 
     /**

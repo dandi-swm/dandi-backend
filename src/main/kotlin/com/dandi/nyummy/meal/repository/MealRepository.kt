@@ -1,8 +1,10 @@
 package com.dandi.nyummy.meal.repository
 
 import com.dandi.nyummy.meal.entity.Meal
+import com.dandi.nyummy.meal.enum.MealStatus
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
+import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
 import java.time.Instant
 
@@ -23,4 +25,20 @@ interface MealRepository : JpaRepository<Meal, Long> {
     fun getMealByIdAndDeletedAtIsNull(mealId: Long): Meal?
 
     fun existsByImageKey(imageKey: String): Boolean
+
+    @Query(
+        """
+        select COUNT(m) > 0
+        from Meal as m
+        where m.userId = :userId
+            and m.deletedAt is null
+            and m.status = :status
+            and m.mealAt > :mealAt
+    """,
+    )
+    fun existsCompletedMealAfter(
+        @Param("userId") userId: Long,
+        @Param("status") status: MealStatus,
+        @Param("mealAt") mealAt: Instant,
+    ): Boolean
 }
