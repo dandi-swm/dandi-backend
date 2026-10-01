@@ -13,7 +13,7 @@ import java.util.concurrent.TimeUnit
 class CacheConfig {
     @Bean
     fun cacheManager(): CacheManager {
-        val cacheManager = CaffeineCacheManager("icons")
+        val cacheManager = CaffeineCacheManager("icons", "catAnimations")
         cacheManager.setCaffeine(
             Caffeine.newBuilder()
                 .expireAfterWrite(1, TimeUnit.HOURS)

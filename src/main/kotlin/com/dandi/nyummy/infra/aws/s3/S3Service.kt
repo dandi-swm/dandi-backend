@@ -3,6 +3,7 @@ package com.dandi.nyummy.infra.aws.s3
 import aws.sdk.kotlin.services.s3.S3Client
 import aws.sdk.kotlin.services.s3.headObject
 import aws.sdk.kotlin.services.s3.model.GetObjectRequest
+import aws.sdk.kotlin.services.s3.model.NoSuchKey
 import aws.sdk.kotlin.services.s3.model.NotFound
 import aws.sdk.kotlin.services.s3.model.PutObjectRequest
 import aws.sdk.kotlin.services.s3.model.PutObjectTaggingRequest
@@ -268,6 +269,17 @@ class S3Service(
                 }
             },
         )
+    }
+
+    fun downloadText(key: String): String = runBlocking {
+        val content = try {
+            downloadObject(key)
+        } catch (e: NoSuchKey) {
+            logger.error("S3 객체를 찾을 수 없습니다: key={}", key, e)
+            throw BusinessException(S3ErrorCode.OBJECT_READ_FAILED)
+        }
+
+        content.bytes.toString(Charsets.UTF_8)
     }
 
     suspend fun downloadObject(key: String): S3ObjectContent {

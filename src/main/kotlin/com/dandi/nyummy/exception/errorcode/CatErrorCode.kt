@@ -6,4 +6,9 @@ enum class CatErrorCode(override val status: HttpStatus, override val code: Stri
     ErrorCode {
 
     CAT_NOT_FOUND(HttpStatus.NOT_FOUND, "api.cat.notFound", "요청한 catId가 데이터베이스에 존재하지 않습니다."),
+    ANIMATION_METADATA_INVALID(
+        HttpStatus.INTERNAL_SERVER_ERROR,
+        "api.cat.animationMetadataInvalid",
+        "고양이 애니메이션 정보를 읽을 수 없습니다.",
+    ),
 }

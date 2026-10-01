@@ -8,6 +8,8 @@ enum class CatWeight(val weight: Int, val description: String) {
     PLUMP(2, "뚱냥이"),
     ;
 
+    val slug: String get() = name.lowercase()
+
     companion object {
         private val weightMap = entries.associateBy { it.weight }
 

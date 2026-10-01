@@ -1,5 +1,6 @@
 package com.dandi.nyummy.cat.controller
 
+import com.dandi.nyummy.cat.dto.CatAnimationResponse
 import com.dandi.nyummy.cat.dto.CatResponse
 import com.dandi.nyummy.cat.service.CatService
 import com.dandi.nyummy.security.AuthUser
@@ -14,7 +15,7 @@ import org.springframework.web.bind.annotation.RestController
 
 @Tag(name = "Cat", description = "고양이 캐릭터 체형 조회 API")
 @RestController
-@RequestMapping("/api/v1/cat")
+@RequestMapping("/api/v1/cats")
 class CatController(private val catService: CatService) {
 
     // TODO: intro API가 생기면 updateCatWeight 호출을 intro API로 옮기고, 여기서는 getCatWeight를 호출한다.
@@ -26,9 +27,9 @@ class CatController(private val catService: CatService) {
             "평가 주기가 지나지 않았으면 저장된 체형을 그대로 반환한다. " +
             "체형 변화는 구간당 최대 한 단계이며, 양 끝(-2, 2)에서는 더 변하지 않는다.",
     )
-    @GetMapping("/{catId}/weight")
-    fun getWeight(
-        @CurrentUser user: AuthUser,
-        @Parameter(description = "고양이 ID") @PathVariable catId: Long,
-    ): CatResponse = catService.updateCatWeight(user.userId, catId)
+    @GetMapping("/weight")
+    fun getWeight(@CurrentUser user: AuthUser): CatResponse = catService.updateCatWeight(user.userId)
+
+    @GetMapping("/animations")
+    fun getAnimations(@CurrentUser user: AuthUser): CatAnimationResponse = catService.getCatAnimations(user.userId)
 }

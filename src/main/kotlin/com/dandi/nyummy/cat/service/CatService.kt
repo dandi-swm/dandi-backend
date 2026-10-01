@@ -3,8 +3,11 @@ package com.dandi.nyummy.cat.service
 import com.dandi.nyummy.cat.calculator.calculateWeightStep
 import com.dandi.nyummy.cat.calculator.isWeightUpdateDue
 import com.dandi.nyummy.cat.config.CatProperties
+import com.dandi.nyummy.cat.dto.CatAnimationResponse
 import com.dandi.nyummy.cat.dto.CatResponse
+import com.dandi.nyummy.cat.enum.CatWeight
 import com.dandi.nyummy.cat.mapper.toCatResponse
+import com.dandi.nyummy.cat.repository.CatAnimationLoader
 import com.dandi.nyummy.cat.repository.CatRepository
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.AuthErrorCode
@@ -28,6 +31,7 @@ class CatService(
     private val profileRepository: ProfileRepository,
     private val catProperties: CatProperties,
     private val clock: Clock,
+    private val catAnimationLoader: CatAnimationLoader,
 ) {
 
     companion object {
@@ -75,13 +79,9 @@ class CatService(
      * @throws BusinessException [AuthErrorCode.FORBIDDEN] 고양이가 요청자 소유가 아닌 경우
      */
     @Transactional
-    fun updateCatWeight(userId: Long, catId: Long): CatResponse {
-        val cat = catRepository.findByIdOrNull(catId)
+    fun updateCatWeight(userId: Long): CatResponse {
+        val cat = catRepository.findByUserId(userId)
             ?: throw BusinessException(CatErrorCode.CAT_NOT_FOUND)
-
-        if (cat.userId != userId) {
-            throw BusinessException(AuthErrorCode.FORBIDDEN)
-        }
 
         // TODO: 사용자별 timezone에 맞게 계산
         val zone = ZoneId.of("Asia/Seoul")
@@ -110,5 +110,15 @@ class CatService(
         logger.info("고양이 체형 변화: userId = {}, step = {}, weight = {}", userId, step, cat.weight)
 
         return cat.toCatResponse()
+    }
+
+    @Transactional(readOnly = true)
+    fun getCatAnimations(userId: Long): CatAnimationResponse {
+        val cat = catRepository.findByUserId(userId)
+            ?: throw BusinessException(CatErrorCode.CAT_NOT_FOUND)
+
+        val catAnimations = catAnimationLoader.load(CatWeight.fromWeight(cat.weight))
+
+        return catAnimations
     }
 }
