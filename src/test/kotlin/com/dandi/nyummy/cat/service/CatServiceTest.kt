@@ -2,9 +2,9 @@ package com.dandi.nyummy.cat.service
 
 import com.dandi.nyummy.cat.config.CatProperties
 import com.dandi.nyummy.cat.entity.Cat
+import com.dandi.nyummy.cat.repository.CatAnimationLoader
 import com.dandi.nyummy.cat.repository.CatRepository
 import com.dandi.nyummy.exception.BusinessException
-import com.dandi.nyummy.exception.errorcode.AuthErrorCode
 import com.dandi.nyummy.exception.errorcode.CatErrorCode
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.enum.MealStatus
@@ -17,7 +17,6 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
-import org.springframework.data.repository.findByIdOrNull
 import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
@@ -39,6 +38,7 @@ class CatServiceTest {
         weightUpdateIntervalDays = 3,
         weightUpdateTolerance = 0.2,
     )
+    private val catAnimationLoader: CatAnimationLoader = mockk()
 
     private val zone = ZoneId.of("Asia/Seoul")
 
@@ -53,13 +53,13 @@ class CatServiceTest {
         profileRepository = profileRepository,
         catProperties = catProperties,
         clock = clock,
+        catAnimationLoader = catAnimationLoader,
     )
 
     /** 평가 구간의 종료 시각. 갱신 후 weightUpdatedAt이 이 값이어야 한다. */
     private val expectedEnd: Instant = today.atStartOfDay(zone).toInstant()
 
     private val userId = 1L
-    private val catId = 10L
     private val dueTime: Instant = now.minus(4, ChronoUnit.DAYS)
     private val notDueTime: Instant = now.minus(1, ChronoUnit.DAYS)
 
@@ -67,28 +67,12 @@ class CatServiceTest {
     @DisplayName("고양이가 존재하지 않으면 CAT_NOT_FOUND 예외가 발생한다")
     fun updateCatWeight_catNotFound() {
         // given
-        every { catRepository.findByIdOrNull(catId) } returns null
+        every { catRepository.findByUserId(userId) } returns null
 
         // when & then
-        assertThatThrownBy { catService.updateCatWeight(userId, catId) }
+        assertThatThrownBy { catService.updateCatWeight(userId) }
             .isInstanceOf(BusinessException::class.java)
             .hasFieldOrPropertyWithValue("errorCode", CatErrorCode.CAT_NOT_FOUND)
-    }
-
-    @Test
-    @DisplayName("다른 사람의 고양이를 갱신하려 하면 FORBIDDEN 예외가 발생한다")
-    fun updateCatWeight_forbidden() {
-        // given
-        val ownerId = 1L
-        val requesterId = 999L
-        val cat = createCat(userId = ownerId)
-
-        every { catRepository.findByIdOrNull(catId) } returns cat
-
-        // when & then
-        assertThatThrownBy { catService.updateCatWeight(requesterId, catId) }
-            .isInstanceOf(BusinessException::class.java)
-            .hasFieldOrPropertyWithValue("errorCode", AuthErrorCode.FORBIDDEN)
     }
 
     @Test
@@ -97,10 +81,10 @@ class CatServiceTest {
         // given: 1일 전에 평가된 고양이 (주기는 3일)
         val cat = createCat(weightUpdatedAt = notDueTime)
 
-        every { catRepository.findByIdOrNull(catId) } returns cat
+        every { catRepository.findByUserId(userId) } returns cat
 
         // when
-        val response = catService.updateCatWeight(userId, catId)
+        val response = catService.updateCatWeight(userId)
 
         // then
         assertThat(cat.weight).isEqualTo(0)
@@ -119,12 +103,12 @@ class CatServiceTest {
             createMeal(calory = 4000),
         )
 
-        every { catRepository.findByIdOrNull(catId) } returns cat
+        every { catRepository.findByUserId(userId) } returns cat
         every { mealRepository.getMealsByUserIdAndPeriod(userId, any(), any()) } returns meals
         every { profileRepository.getProfileByUserId(userId) } returns null
 
         // when
-        val response = catService.updateCatWeight(userId, catId)
+        val response = catService.updateCatWeight(userId)
 
         // then
         assertThat(cat.weight).isEqualTo(1)
@@ -139,12 +123,12 @@ class CatServiceTest {
         // given: 목표 6000, 섭취 0 (감소 임계 4800 미만)
         val cat = createCat(weightUpdatedAt = dueTime)
 
-        every { catRepository.findByIdOrNull(catId) } returns cat
+        every { catRepository.findByUserId(userId) } returns cat
         every { mealRepository.getMealsByUserIdAndPeriod(userId, any(), any()) } returns emptyList()
         every { profileRepository.getProfileByUserId(userId) } returns null
 
         // when
-        val response = catService.updateCatWeight(userId, catId)
+        val response = catService.updateCatWeight(userId)
 
         // then
         assertThat(cat.weight).isEqualTo(-1)
@@ -163,12 +147,12 @@ class CatServiceTest {
             createMeal(calory = 3000, status = MealStatus.FAILED),
         )
 
-        every { catRepository.findByIdOrNull(catId) } returns cat
+        every { catRepository.findByUserId(userId) } returns cat
         every { mealRepository.getMealsByUserIdAndPeriod(userId, any(), any()) } returns meals
         every { profileRepository.getProfileByUserId(userId) } returns null
 
         // when
-        catService.updateCatWeight(userId, catId)
+        catService.updateCatWeight(userId)
 
         // then
         assertThat(cat.weight).isEqualTo(0)
@@ -180,13 +164,13 @@ class CatServiceTest {
         // given: 뚱냥이(2) 상태에서 목표의 120%를 초과해 섭취
         val cat = createCat(weight = 2, weightUpdatedAt = dueTime)
 
-        every { catRepository.findByIdOrNull(catId) } returns cat
+        every { catRepository.findByUserId(userId) } returns cat
         every { mealRepository.getMealsByUserIdAndPeriod(userId, any(), any()) } returns
             listOf(createMeal(calory = 20000))
         every { profileRepository.getProfileByUserId(userId) } returns null
 
         // when
-        val response = catService.updateCatWeight(userId, catId)
+        val response = catService.updateCatWeight(userId)
 
         // then
         assertThat(cat.weight).isEqualTo(2)
@@ -199,12 +183,12 @@ class CatServiceTest {
         // given: 홀쭉냥(-2) 상태에서 기록 없음
         val cat = createCat(weight = -2, weightUpdatedAt = dueTime)
 
-        every { catRepository.findByIdOrNull(catId) } returns cat
+        every { catRepository.findByUserId(userId) } returns cat
         every { mealRepository.getMealsByUserIdAndPeriod(userId, any(), any()) } returns emptyList()
         every { profileRepository.getProfileByUserId(userId) } returns null
 
         // when
-        val response = catService.updateCatWeight(userId, catId)
+        val response = catService.updateCatWeight(userId)
 
         // then
         assertThat(cat.weight).isEqualTo(-2)
