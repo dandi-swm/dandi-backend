@@ -16,9 +16,12 @@ import com.dandi.nyummy.meal.dto.MealStatusResponse
 import com.dandi.nyummy.meal.dto.MonthlyMealDayResponse
 import com.dandi.nyummy.meal.dto.MonthlyMealsResponse
 import com.dandi.nyummy.meal.dto.Nutrition
+import com.dandi.nyummy.meal.dto.Streak
+import com.dandi.nyummy.meal.dto.TodayMealSummary
 import com.dandi.nyummy.meal.dto.UploadImageRequest
 import com.dandi.nyummy.meal.dto.UploadImageResponse
 import com.dandi.nyummy.meal.entity.Meal
+import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.mapper.toDailyMealResponse
 import com.dandi.nyummy.meal.mapper.toEntity
 import com.dandi.nyummy.meal.mapper.toMealResponse
@@ -28,11 +31,12 @@ import com.dandi.nyummy.meal.repository.MealRepository
 import com.dandi.nyummy.user.repository.ProfileRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
-import kotlin.time.Clock
+import java.time.temporal.ChronoUnit
 import kotlin.time.Duration.Companion.minutes
 
 @Service
@@ -40,7 +44,7 @@ class MealService(
     private val analysisService: AnalysisService,
     private val mealRepository: MealRepository,
     private val s3Service: S3Service,
-    private val clock: Clock = Clock.System,
+    private val clock: Clock,
     private val profileRepository: ProfileRepository,
     private val mealProperties: MealProperties,
 ) {
@@ -61,7 +65,8 @@ class MealService(
      * @throws BusinessException [S3ErrorCode.FILE_SIZE_EXCEEDED] fileSizeBytes가 [MealProperties.maxFileSizeBytes]를 초과하거나 음수인 경우
      */
     fun createUploadUrl(userId: Long, request: UploadImageRequest): UploadImageResponse {
-        val expirationInstant = clock.now() + mealProperties.presignedUrlExpirationMinutes.minutes
+        val expirationInstant = Instant.now(clock)
+            .plus(mealProperties.presignedUrlExpirationMinutes.toLong(), ChronoUnit.MINUTES)
 
         val uploadUrl = s3Service.createMealUploadUrl(
             userId = userId,
@@ -300,5 +305,51 @@ class MealService(
         }
 
         meal.updateDeletedAt(Instant.now())
+    }
+
+    @Transactional(readOnly = true)
+    fun getStreak(userId: Long): Streak {
+        // TODO: 스트릭 구현하기
+        return Streak(0, 0)
+    }
+
+    /**
+     * 오늘의 식사 현황을 조회한다.
+     *
+     * 끼니 수는 분석 상태와 무관하게 세고, 섭취 칼로리는 분석이 끝난 식사만 더한다.
+     * 분석 중인 식사도 사용자가 이미 기록한 끼니이므로 개수에서 빠지면 어색하지만,
+     * 칼로리는 아직 값이 없어 더할 것이 없기 때문이다.
+     *
+     * 목표 칼로리는 프로필에서 계산하며, 프로필이 비어 있으면 기본 권장량이 쓰인다.
+     *
+     * @param userId 조회하는 사용자 ID
+     * @return 오늘 기록한 끼니 수와 섭취·목표 칼로리를 담은 [TodayMealSummary]
+     */
+    @Transactional(readOnly = true)
+    fun getTodayMealSummary(userId: Long): TodayMealSummary {
+        // TODO: 사용자별 timezone에 맞게 계산
+        val zone = ZoneId.of("Asia/Seoul")
+        val today = Instant.now(clock).atZone(zone).toLocalDate()
+
+        // 하루 경계는 [오늘 0시, 내일 0시)로 잡는다. 지금 시각까지만 조회하면
+        // 기기 시계가 앞서 미래 시각으로 기록된 식사가 집계에서 빠진다.
+        val start = today.atStartOfDay(zone).toInstant()
+        val end = today.plusDays(1).atStartOfDay(zone).toInstant()
+
+        val meals = mealRepository.getMealsByUserIdAndPeriod(userId, start, end)
+
+        // 분석 전·실패한 식사는 calory가 null이므로 집계에서 제외한다.
+        val currentCalory = meals
+            .filter { it.status == MealStatus.COMPLETED }
+            .sumOf { it.calory ?: 0 }
+
+        val profile = profileRepository.getProfileByUserId(userId)
+        val targetCalory = calculateRecommendedDailyIntake(profile, today).calory
+
+        return TodayMealSummary(
+            todayRecordedCount = meals.size,
+            todayCurrentCalory = currentCalory,
+            todayTargetCalory = targetCalory,
+        )
     }
 }

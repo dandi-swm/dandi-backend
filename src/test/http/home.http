@@ -1,0 +1,3 @@
+### 홈 API
+GET {{url}}/api/v1/home
+Authorization: Bearer {{accessToken}}

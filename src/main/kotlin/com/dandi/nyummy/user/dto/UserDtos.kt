@@ -19,4 +19,6 @@ data class UserResponse(
     val dinnerHour: Int?,
 )
 
+data class HomeUser(val coin: Int)
+
 data class PasswordUpdateRequest(val password: String, val newPassword: String)

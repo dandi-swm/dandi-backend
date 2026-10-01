@@ -81,3 +81,7 @@ data class MonthlyMealDayResponse(
     val dailyNutritionEvaluation: DailyNutritionEvaluation,
     val foodIconIds: List<Long>,
 )
+
+data class Streak(val streakDays: Int, val recordsUntilNextReward: Int)
+
+data class TodayMealSummary(val todayRecordedCount: Int, val todayCurrentCalory: Int, val todayTargetCalory: Int)
