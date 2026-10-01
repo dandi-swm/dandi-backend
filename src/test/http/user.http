@@ -7,3 +7,7 @@ Authorization: Bearer {{accessToken}}
   "password": "Password123!",
   "newPassword": "NewPassword123!"
 }
+
+### 프로필 API
+GET {{url}}/api/v1/users/me
+Authorization: Bearer {{accessToken}}

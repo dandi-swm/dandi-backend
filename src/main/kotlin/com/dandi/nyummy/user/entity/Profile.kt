@@ -45,6 +45,15 @@ class Profile(
     @Column(name = "id", nullable = false)
     val id: Long = 0L
 
+    @Column(name = "breakfast_hour")
+    val breakfastHour: Int? = null
+
+    @Column(name = "lunch_hour")
+    val lunchHour: Int? = null
+
+    @Column(name = "dinner_hour")
+    val dinnerHour: Int? = null
+
     @Column(name = "coin", nullable = false)
     val coin: Int = 0
 
