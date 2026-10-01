@@ -1,5 +1,5 @@
 ### 고양이 체형 API
-GET {{url}}/api/v1/cats/weight
+GET {{url}}/api/v1/cats
 Authorization: Bearer {{accessToken}}
 
 ### 고양이 애니메이션 API

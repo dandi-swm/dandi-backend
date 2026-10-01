@@ -6,6 +6,8 @@ import com.dandi.nyummy.cat.enum.CatWeight
 
 fun Cat.toCatResponse(): CatResponse = CatResponse(
     id = this.id,
-    weight = this.weight,
-    weightDescription = CatWeight.fromWeight(this.weight).description,
+    name = this.name,
+    weight = CatWeight.fromWeight(this.weight).name,
+    love = this.love,
+    exp = this.exp,
 )

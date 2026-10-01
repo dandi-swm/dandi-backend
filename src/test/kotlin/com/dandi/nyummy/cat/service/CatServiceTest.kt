@@ -89,7 +89,7 @@ class CatServiceTest {
         // then
         assertThat(cat.weight).isEqualTo(0)
         assertThat(cat.weightUpdatedAt).isEqualTo(notDueTime)
-        assertThat(response.weight).isEqualTo(0)
+        assertThat(response.weight).isEqualTo(CatWeight.NORMAL.name)
         verify(exactly = 0) { mealRepository.getMealsByUserIdAndPeriod(any(), any(), any()) }
     }
 
@@ -113,8 +113,7 @@ class CatServiceTest {
         // then
         assertThat(cat.weight).isEqualTo(1)
         assertThat(cat.weightUpdatedAt).isEqualTo(expectedEnd)
-        assertThat(response.weight).isEqualTo(1)
-        assertThat(response.weightDescription).isEqualTo("통통냥")
+        assertThat(response.weight).isEqualTo(CatWeight.CHUBBY.name)
     }
 
     @Test
@@ -128,12 +127,11 @@ class CatServiceTest {
         every { profileRepository.getProfileByUserId(userId) } returns null
 
         // when
-        val response = catService.updateCatWeight(userId)
+        catService.updateCatWeight(userId)
 
         // then
         assertThat(cat.weight).isEqualTo(-1)
         assertThat(cat.weightUpdatedAt).isEqualTo(expectedEnd)
-        assertThat(response.weightDescription).isEqualTo("날씬냥")
     }
 
     @Test
@@ -170,11 +168,10 @@ class CatServiceTest {
         every { profileRepository.getProfileByUserId(userId) } returns null
 
         // when
-        val response = catService.updateCatWeight(userId)
+        catService.updateCatWeight(userId)
 
         // then
         assertThat(cat.weight).isEqualTo(2)
-        assertThat(response.weightDescription).isEqualTo("뚱냥이")
     }
 
     @Test
@@ -188,11 +185,10 @@ class CatServiceTest {
         every { profileRepository.getProfileByUserId(userId) } returns null
 
         // when
-        val response = catService.updateCatWeight(userId)
+        catService.updateCatWeight(userId)
 
         // then
         assertThat(cat.weight).isEqualTo(-2)
-        assertThat(response.weightDescription).isEqualTo("홀쭉냥")
     }
 
     /**

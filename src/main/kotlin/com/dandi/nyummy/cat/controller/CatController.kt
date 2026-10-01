@@ -27,8 +27,8 @@ class CatController(private val catService: CatService) {
             "평가 주기가 지나지 않았으면 저장된 체형을 그대로 반환한다. " +
             "체형 변화는 구간당 최대 한 단계이며, 양 끝(-2, 2)에서는 더 변하지 않는다.",
     )
-    @GetMapping("/weight")
-    fun getWeight(@CurrentUser user: AuthUser): CatResponse = catService.updateCatWeight(user.userId)
+    @GetMapping
+    fun getCat(@CurrentUser user: AuthUser): CatResponse = catService.getCat(user.userId)
 
     @GetMapping("/animations")
     fun getAnimations(@CurrentUser user: AuthUser): CatAnimationResponse = catService.getCatAnimations(user.userId)

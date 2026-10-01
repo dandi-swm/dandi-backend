@@ -42,19 +42,14 @@ class CatService(
      * 고양이의 현재 체형을 조회한다. 체형 평가는 하지 않으므로, 평가까지 필요하면 [updateCatWeight]를 사용한다.
      *
      * @param userId 조회하는 사용자 ID
-     * @param catId 조회할 고양이 ID
      * @return 체형 단계와 표시 이름을 담은 [CatResponse]
      * @throws BusinessException [CatErrorCode.CAT_NOT_FOUND] catId에 해당하는 고양이가 없는 경우
      * @throws BusinessException [AuthErrorCode.FORBIDDEN] 고양이가 요청자 소유가 아닌 경우
      */
     @Transactional(readOnly = true)
-    fun getCatWeight(userId: Long, catId: Long): CatResponse {
-        val cat = catRepository.findByIdOrNull(catId)
+    fun getCat(userId: Long): CatResponse {
+        val cat = catRepository.findByUserId(userId)
             ?: throw BusinessException(CatErrorCode.CAT_NOT_FOUND)
-
-        if (cat.userId != userId) {
-            throw BusinessException(AuthErrorCode.FORBIDDEN)
-        }
 
         return cat.toCatResponse()
     }
