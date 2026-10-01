@@ -1,6 +1,6 @@
-package com.dandi.nyummy.profile.repository
+package com.dandi.nyummy.user.repository
 
-import com.dandi.nyummy.profile.entity.Profile
+import com.dandi.nyummy.user.entity.Profile
 import org.springframework.data.jpa.repository.JpaRepository
 
 interface ProfileRepository : JpaRepository<Profile, Long> {

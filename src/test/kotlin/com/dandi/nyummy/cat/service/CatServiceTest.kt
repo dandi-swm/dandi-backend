@@ -9,7 +9,7 @@ import com.dandi.nyummy.exception.errorcode.CatErrorCode
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.repository.MealRepository
-import com.dandi.nyummy.profile.repository.ProfileRepository
+import com.dandi.nyummy.user.repository.ProfileRepository
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify

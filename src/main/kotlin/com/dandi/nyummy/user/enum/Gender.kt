@@ -1,4 +1,4 @@
-package com.dandi.nyummy.profile.enum
+package com.dandi.nyummy.user.enum
 
 enum class Gender {
     MALE,

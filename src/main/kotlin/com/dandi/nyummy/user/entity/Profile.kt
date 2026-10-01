@@ -1,6 +1,6 @@
-package com.dandi.nyummy.profile.entity
+package com.dandi.nyummy.user.entity
 
-import com.dandi.nyummy.profile.enum.Gender
+import com.dandi.nyummy.user.enum.Gender
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.EntityListeners

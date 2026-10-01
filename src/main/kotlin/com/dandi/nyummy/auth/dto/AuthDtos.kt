@@ -2,7 +2,7 @@ package com.dandi.nyummy.auth.dto
 
 import com.dandi.nyummy.auth.enum.AuthProvider
 import com.dandi.nyummy.auth.enum.AuthPurpose
-import com.dandi.nyummy.profile.enum.Gender
+import com.dandi.nyummy.user.enum.Gender
 import jakarta.validation.constraints.AssertTrue
 import jakarta.validation.constraints.Email
 import jakarta.validation.constraints.NotBlank

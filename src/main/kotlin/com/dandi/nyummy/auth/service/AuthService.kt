@@ -21,6 +21,7 @@ import com.dandi.nyummy.exception.errorcode.AuthErrorCode
 import com.dandi.nyummy.infra.aws.ses.SesService
 import com.dandi.nyummy.profile.entity.Profile
 import com.dandi.nyummy.profile.repository.ProfileRepository
+import com.dandi.nyummy.security.jwt.JwtProperties
 import com.dandi.nyummy.security.jwt.TokenService
 import com.dandi.nyummy.security.jwt.TokenType
 import com.dandi.nyummy.security.jwt.VerifiedClaims
@@ -46,6 +47,7 @@ class AuthService(
     private val sesService: SesService,
     private val passwordService: PasswordService,
     private val authProperties: AuthProperties,
+    private val jwtProperties: JwtProperties,
     private val clock: Clock,
     private val tokenInvalidationRepository: TokenInvalidationRepository,
 ) {

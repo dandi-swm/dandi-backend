@@ -4,8 +4,8 @@ import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.enum.DailyNutritionEvaluation
 import com.dandi.nyummy.meal.mapper.toNutrition
-import com.dandi.nyummy.profile.entity.Profile
-import com.dandi.nyummy.profile.enum.Gender
+import com.dandi.nyummy.user.entity.Profile
+import com.dandi.nyummy.user.enum.Gender
 import java.time.LocalDate
 import java.time.Period
 

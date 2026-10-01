@@ -14,7 +14,7 @@ import com.dandi.nyummy.exception.errorcode.CatErrorCode
 import com.dandi.nyummy.meal.calculator.calculateRecommendedDailyIntake
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.repository.MealRepository
-import com.dandi.nyummy.profile.repository.ProfileRepository
+import com.dandi.nyummy.user.repository.ProfileRepository
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
