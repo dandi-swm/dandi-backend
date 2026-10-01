@@ -1,7 +1,5 @@
 package com.dandi.nyummy.cat.dto
 
-import com.dandi.nyummy.cat.enum.CatWeight
-
 data class CatResponse(val id: Long, val name: String, val weight: String, val love: Int, val exp: Int)
 
 data class CatAnimationResponse(val weight: String, val baseUrl: String, val animations: List<CatAnimation>)

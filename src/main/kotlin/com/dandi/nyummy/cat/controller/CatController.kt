@@ -6,30 +6,37 @@ import com.dandi.nyummy.cat.service.CatService
 import com.dandi.nyummy.security.AuthUser
 import com.dandi.nyummy.security.CurrentUser
 import io.swagger.v3.oas.annotations.Operation
-import io.swagger.v3.oas.annotations.Parameter
+import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.tags.Tag
 import org.springframework.web.bind.annotation.GetMapping
-import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
-@Tag(name = "Cat", description = "고양이 캐릭터 체형 조회 API")
+@Tag(name = "Cat", description = "고양이 캐릭터 정보 및 체형별 애니메이션 조회 API")
 @RestController
 @RequestMapping("/api/v1/cats")
 class CatController(private val catService: CatService) {
 
-    // TODO: intro API가 생기면 updateCatWeight 호출을 intro API로 옮기고, 여기서는 getCatWeight를 호출한다.
     @Operation(
-        summary = "고양이 체형 조회",
-        description = "고양이의 현재 체형 단계(-2 홀쭉냥 ~ 2 뚱냥이)와 표시 이름을 조회한다. " +
-            "마지막 평가 이후 평가 주기(3일)가 지났으면 직전 구간의 섭취 칼로리를 목표 섭취량과 비교해 " +
-            "체형을 한 단계 올리거나 내린 뒤 그 결과를 반환한다. " +
-            "평가 주기가 지나지 않았으면 저장된 체형을 그대로 반환한다. " +
-            "체형 변화는 구간당 최대 한 단계이며, 양 끝(-2, 2)에서는 더 변하지 않는다.",
+        summary = "고양이 조회",
+        description = "로그인한 사용자의 고양이 정보(이름, 체형, 애정도, 경험치)를 조회한다. " +
+            "체형은 CatWeight 이름(LEAN · SLIM · NORMAL · CHUBBY · PLUMP)으로 반환된다. " +
+            "저장된 값을 그대로 읽기만 하며 체형 평가는 하지 않는다.",
     )
+    @ApiResponse(responseCode = "404", description = "사용자의 고양이가 존재하지 않음")
     @GetMapping
     fun getCat(@CurrentUser user: AuthUser): CatResponse = catService.getCat(user.userId)
 
+    @Operation(
+        summary = "고양이 애니메이션 조회",
+        description = "고양이의 현재 체형에 해당하는 애니메이션 메타데이터를 조회한다. " +
+            "감정 상태별로 스프라이트 시트 경로, 프레임 정보, 대사가 들어 있다. " +
+            "각 이미지의 전체 URL은 baseUrl 뒤에 animation의 src를 그대로 이어붙여 만든다. " +
+            "animation은 [동작 그룹][그룹 내 순차 재생 clip] 2단 배열이며, " +
+            "loop가 true인 clip은 다음 clip으로 넘어가기 전 반복하는 지속 구간이다.",
+    )
+    @ApiResponse(responseCode = "404", description = "사용자의 고양이가 존재하지 않음")
+    @ApiResponse(responseCode = "500", description = "체형에 해당하는 애니메이션 메타데이터를 읽을 수 없음")
     @GetMapping("/animations")
     fun getAnimations(@CurrentUser user: AuthUser): CatAnimationResponse = catService.getCatAnimations(user.userId)
 }
