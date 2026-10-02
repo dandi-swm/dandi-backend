@@ -37,6 +37,8 @@ logging:
     com.dandi.nyummy: INFO
 
 app:
+  internal:
+    batch-key: ${NYUMMY_BATCH_SECRET}
   ai:
     api-key: test-gemini-key
   email:

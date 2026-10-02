@@ -74,6 +74,8 @@ management:
             Authorization: ${GRAFANA_OTLP_AUTH_HEADER:}
 
 app:
+  internal:
+    batch-key: ${NYUMMY_BATCH_SECRET}
   meal:
     upload-method: "PUT"
     max-file-size-bytes: 10485760

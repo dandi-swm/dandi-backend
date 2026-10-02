@@ -21,12 +21,6 @@ class InternalBatchController(
         mealReminderBatchService.sendMealReminders(12)
     }
 
-    // 매일 00:05 호출
-    @PostMapping("/cats/weights")
-    fun triggerCatWeightUpdates() {
-        catStatusBatchService.updateCatWeights()
-    }
-
     // 매일 20:00 호출
     @PostMapping("/retentions/daily-check")
     fun triggerDailyRetentionCheck() {
