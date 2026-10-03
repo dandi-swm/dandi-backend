@@ -25,10 +25,10 @@ import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.mapper.toDailyMealResponse
 import com.dandi.nyummy.meal.mapper.toEntity
 import com.dandi.nyummy.meal.mapper.toMealResponse
-import com.dandi.nyummy.meal.mapper.toMealStatusResponse
 import com.dandi.nyummy.meal.mapper.toNutrition
 import com.dandi.nyummy.meal.repository.MealRepository
 import com.dandi.nyummy.user.repository.ProfileRepository
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -41,7 +41,7 @@ import kotlin.time.Duration.Companion.minutes
 
 @Service
 class MealService(
-    private val analysisService: AnalysisService,
+    private val mealCommandService: MealCommandService,
     private val mealRepository: MealRepository,
     private val s3Service: S3Service,
     private val clock: Clock,
@@ -86,7 +86,7 @@ class MealService(
     }
 
     /**
-     * 업로드된 이미지를 확정하고 식사 기록을 생성한 뒤, 영양 분석을 수행한다.
+     * 업로드된 이미지를 확정하고 식사 기록과 비동기 영양 분석 요청을 함께 저장한다.
      *
      * 이미지는 [createUploadUrl]로 발급받은 키에 이미 업로드되어 있어야 한다.
      * 별도 경로로 복사하지 않고 상태 태그만 `status=committed`로 바꾸므로,
@@ -95,8 +95,8 @@ class MealService(
      * 하나의 imageKey로 식사를 중복 생성할 수 없다. 소프트 삭제된 식사도 검사 대상에 포함되므로,
      * 한 번 사용된 imageKey는 다시 사용할 수 없다.
      *
-     * 분석은 [AnalysisService.analyzeNutrition]에서 동기로 실행되므로,
-     * 반환되는 상태는 이미 COMPLETED 또는 FAILED로 확정된 값이다.
+     * 이미지 검증은 DB 트랜잭션 밖에서 실행한다. 식사와 Outbox 저장이 커밋되면
+     * WAITING 상태를 반환하며, 실제 분석은 별도 Worker에서 수행한다.
      *
      * [Meal.mealAt]에는 서버 시각이 아니라 이미지 EXIF에서 추출한 촬영 시각이 저장된다.
      * [S3Service.confirmUploadedMealImage]가 촬영 시각과 현재 시각의 차이를
@@ -128,11 +128,16 @@ class MealService(
 
         val meal = request.toEntity(userId, capturedAt, imageKey)
 
-        mealRepository.save(meal)
-
-        analysisService.analyzeNutrition(meal)
-
-        return meal.toMealStatusResponse()
+        return try {
+            mealCommandService.createMeal(meal)
+        } catch (e: DataIntegrityViolationException) {
+            // 동시 생성으로 사전 검사를 통과한 경우에도 UNIQUE 제약으로 중복을 막는다.
+            // Command 트랜잭션이 롤백된 뒤 조회하므로 실패한 트랜잭션을 재사용하지 않는다.
+            if (mealRepository.existsByImageKey(request.imageKey)) {
+                throw BusinessException(MealErrorCode.DUPLICATE_IMAGE_KEY)
+            }
+            throw e
+        }
     }
 
     /**
@@ -273,7 +278,8 @@ class MealService(
      */
     @Transactional
     fun updateMeal(userId: Long, mealId: Long, name: String): MealResponse {
-        val meal = mealRepository.getMealByIdAndDeletedAtIsNull(mealId)
+        val meal = mealRepository.findByIdForUpdate(mealId)
+            ?.takeIf { it.deletedAt == null }
             ?: throw BusinessException(MealErrorCode.MEAL_NOT_FOUND)
 
         if (meal.userId != userId) {
@@ -297,14 +303,15 @@ class MealService(
      */
     @Transactional
     fun deleteMeal(userId: Long, mealId: Long) {
-        val meal = mealRepository.getMealByIdAndDeletedAtIsNull(mealId)
+        val meal = mealRepository.findByIdForUpdate(mealId)
+            ?.takeIf { it.deletedAt == null }
             ?: throw BusinessException(MealErrorCode.MEAL_NOT_FOUND)
 
         if (meal.userId != userId) {
             throw BusinessException(AuthErrorCode.FORBIDDEN)
         }
 
-        meal.updateDeletedAt(Instant.now())
+        meal.updateDeletedAt(Instant.now(clock))
     }
 
     @Transactional(readOnly = true)

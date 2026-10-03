@@ -1,13 +1,19 @@
 package com.dandi.nyummy.meal.repository
 
 import com.dandi.nyummy.meal.entity.Meal
+import jakarta.persistence.LockModeType
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Lock
 import org.springframework.data.jpa.repository.Query
 import org.springframework.stereotype.Repository
 import java.time.Instant
 
 @Repository
 interface MealRepository : JpaRepository<Meal, Long> {
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT m FROM Meal m WHERE m.id = :id")
+    fun findByIdForUpdate(id: Long): Meal?
 
     @Query(
         """

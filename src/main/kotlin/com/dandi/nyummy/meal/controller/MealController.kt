@@ -27,6 +27,7 @@ import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
+import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 
 @Tag(name = "Meal", description = "식사 기록 조회 · 생성 · 수정 · 삭제 및 영양 분석 API")
@@ -86,9 +87,11 @@ class MealController(private val mealService: MealService, private val analysisS
 
     @Operation(
         summary = "식사 생성",
-        description = "업로드된 이미지 키로 식사를 생성하고 영양 분석을 수행한 뒤, 식사 ID와 분석 상태를 반환한다. " +
-            "영양 정보가 필요하면 식사 단건 조회 API를 사용한다.",
+        description = "업로드된 이미지 키로 식사와 분석 요청을 저장하고 식사 ID와 WAITING 상태를 반환한다. " +
+            "분석 상태 조회 API로 완료 여부를 확인하고, 완료 후 식사 단건 조회 API로 영양 정보를 가져온다.",
     )
+    @ApiResponse(responseCode = "201", description = "식사 생성 및 분석 요청 저장 완료")
+    @ResponseStatus(HttpStatus.CREATED)
     @PostMapping
     fun createMeal(@CurrentUser user: AuthUser, @Valid @RequestBody request: CreateMealRequest): MealStatusResponse =
         mealService.createMeal(user.userId, request)
@@ -104,7 +107,9 @@ class MealController(private val mealService: MealService, private val analysisS
         @Parameter(description = "식사 ID") @PathVariable @NotNull @Valid mealId: Long,
     ): MealStatusResponse = analysisService.getStatus(user.userId, mealId)
 
-    @Operation(summary = "영양 분석 재시도", description = "실패한 식사의 영양 분석을 다시 시도하고 변경된 분석 상태를 반환한다.")
+    @Operation(summary = "영양 분석 재시도", description = "FAILED 식사의 새 분석 요청을 저장하고 WAITING 상태를 반환한다.")
+    @ApiResponse(responseCode = "202", description = "분석 재시도 접수 완료")
+    @ResponseStatus(HttpStatus.ACCEPTED)
     @PostMapping("/{mealId}/analysis")
     fun retryAnalysis(
         @CurrentUser user: AuthUser,
