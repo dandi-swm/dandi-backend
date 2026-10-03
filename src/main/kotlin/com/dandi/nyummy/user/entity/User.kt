@@ -49,4 +49,9 @@ class User(
         this.password = password
         this.isTempPassword = true
     }
+
+    fun updatePassword(password: String) {
+        this.password = password
+        this.isTempPassword = false
+    }
 }
