@@ -6,63 +6,51 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.CsvSource
 import java.time.LocalDate
-import java.time.ZoneId
 
 class CatWeightCalculatorTest {
 
-    private val zone = ZoneId.of("Asia/Seoul")
     private val today = LocalDate.of(2026, 9, 27)
 
-    @Test
-    @DisplayName("마지막 변화일로부터 주기만큼 지났으면 변화 대상이다")
-    fun isWeightUpdateDue_exactlyInterval() {
-        // given: 3일 전에 변화, 주기 3일
-        val lastUpdated = LocalDate.of(2026, 9, 24).atStartOfDay(zone).toInstant()
+    /**
+     * 주기 3일 기준. 완전히 지난 구간만 센다.
+     * 남은 일수(나머지)는 세지 않으므로 다음 평가로 넘어간다.
+     */
+    @ParameterizedTest(name = "{0}일 전에 평가 → 지난 구간 {1}개")
+    @CsvSource(
+        "0, 0", // 오늘 이미 평가함
+        "1, 0",
+        "2, 0", // 주기 직전
+        "3, 1", // 주기 정확히
+        "5, 1", // 1구간 + 남은 2일
+        "6, 2",
+        "8, 2", // 2구간 + 남은 2일
+        "9, 3",
+        "12, 4",
+        "30, 10", // 창 상한은 호출자(CatService)의 책임이라 여기서는 그대로 센다
+    )
+    @DisplayName("마지막 평가일로부터 지난 평가 구간의 수를 센다")
+    fun calculateElapsedIntervals_elapsed(daysAgo: Long, expected: Int) {
+        // given
+        val lastEvaluatedDate = today.minusDays(daysAgo)
 
         // when
-        val result = isWeightUpdateDue(lastUpdated, today, zone, intervalDays = 3)
+        val result = calculateElapsedIntervals(lastEvaluatedDate, today, intervalDays = 3)
 
         // then
-        assertThat(result).isTrue()
+        assertThat(result).isEqualTo(expected)
     }
 
     @Test
-    @DisplayName("마지막 변화일로부터 주기를 넘겼으면 변화 대상이다")
-    fun isWeightUpdateDue_overInterval() {
-        // given: 10일 전에 평가, 주기 3일
-        val lastUpdated = LocalDate.of(2026, 9, 17).atStartOfDay(zone).toInstant()
+    @DisplayName("마지막 평가일이 미래면 음수를 반환해, 호출자가 평가를 건너뛸 수 있게 한다")
+    fun calculateElapsedIntervals_future() {
+        // given: 시계 역전이나 timezone 변경으로 생길 수 있다. 0으로 보정하지 않는다.
+        val lastEvaluatedDate = today.plusDays(3)
 
         // when
-        val result = isWeightUpdateDue(lastUpdated, today, zone, intervalDays = 3)
+        val result = calculateElapsedIntervals(lastEvaluatedDate, today, intervalDays = 3)
 
         // then
-        assertThat(result).isTrue()
-    }
-
-    @Test
-    @DisplayName("마지막 변화일로부터 주기가 지나지 않았으면 변화 대상이 아니다")
-    fun isWeightUpdateDue_beforeInterval() {
-        // given: 2일 전에 평가, 주기 3일
-        val lastUpdated = LocalDate.of(2026, 9, 25).atStartOfDay(zone).toInstant()
-
-        // when
-        val result = isWeightUpdateDue(lastUpdated, today, zone, intervalDays = 3)
-
-        // then
-        assertThat(result).isFalse()
-    }
-
-    @Test
-    @DisplayName("같은 날 다시 변화하려 하면 변화 대상이 아니다")
-    fun isWeightUpdateDue_sameDay() {
-        // given: 오늘 이미 평가함
-        val lastUpdated = today.atStartOfDay(zone).toInstant()
-
-        // when
-        val result = isWeightUpdateDue(lastUpdated, today, zone, intervalDays = 3)
-
-        // then
-        assertThat(result).isFalse()
+        assertThat(result).isEqualTo(-1)
     }
 
     /**

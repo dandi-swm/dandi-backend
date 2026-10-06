@@ -1,7 +1,6 @@
 package com.dandi.nyummy.internal.batch.service
 
 import com.dandi.nyummy.cat.repository.CatRepository
-import com.dandi.nyummy.cat.service.CatService
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.time.LocalDate
@@ -9,23 +8,9 @@ import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 
 @Service
-class CatStatusBatchService(private val catService: CatService, private val catRepository: CatRepository) {
+class CatStatusBatchService(private val catRepository: CatRepository) {
 
     private val logger = LoggerFactory.getLogger(CatStatusBatchService::class.java)
-
-    /**
-     * 모든 고양이의 체형을 평가한다.
-     *
-     * 트랜잭션을 걸지 않는다. [CatService.updateCatWeight]가 건별로 커밋하므로,
-     * 한 고양이의 갱신이 실패해도 나머지는 반영된다.
-     */
-    fun updateCatWeights() {
-        val cats = catRepository.findAll()
-
-        for (cat in cats) {
-            catService.updateCatWeight(cat)
-        }
-    }
 
     fun sendDailyRetentionPushes() {
         val cats = catRepository.findAll()

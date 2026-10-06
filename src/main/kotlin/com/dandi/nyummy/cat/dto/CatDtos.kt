@@ -1,6 +1,13 @@
 package com.dandi.nyummy.cat.dto
 
-data class CatResponse(val id: Long, val name: String, val weight: String, val love: Int, val exp: Int)
+data class CatResponse(
+    val id: Long,
+    val name: String,
+    val weight: String,
+    val weightName: String,
+    val love: Int,
+    val exp: Int,
+)
 
 data class CatAnimationResponse(val weight: String, val baseUrl: String, val animations: List<CatAnimation>)
 

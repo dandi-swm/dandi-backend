@@ -35,7 +35,6 @@ class MealReminderBatchService(
             }
 
             list.add(userProfile.userId)
-
             // TODO: FCM 발송
         }
 

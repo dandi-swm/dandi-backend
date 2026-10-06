@@ -9,6 +9,7 @@ interface ProfileRepository : JpaRepository<Profile, Long> {
 
     fun getProfileByUserId(userId: Long): Profile?
 
+    // 일단 동작하게만 구현하고 추후 부하 테스트 때 쿼리 개선 예정!
     @Query(
         """
             select p
