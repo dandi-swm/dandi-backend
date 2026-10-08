@@ -53,6 +53,7 @@ app:
     base-url: "https://link.test.com"
     home-url: "/home"
     signup-url: "/signup"
+    meal-detail-url: "/meals"
   oauth:
     kakao:
       app-key: test-kakao-app-key

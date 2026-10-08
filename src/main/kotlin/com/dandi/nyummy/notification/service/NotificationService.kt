@@ -40,6 +40,15 @@ class NotificationService(
     }
 
     /**
+     * 서비스 알림 한 건을 보낸다. 수신 거부거나 기기 토큰이 없으면 발송하지 않고 빈 결과를 돌려준다.
+     */
+    fun sendServicePush(userId: Long, message: PushMessage): PushResult {
+        val token = deviceTokenRepository.getServicePushToken(userId) ?: return PushResult.EMPTY
+
+        return sendPushes(mapOf(token to message))
+    }
+
+    /**
      * 발송만 하고 결과를 돌려준다. 무효 토큰 정리는 호출자가 [deleteInvalidDeviceTokens]로 한다.
      *
      * 트랜잭션을 걸지 않는다. FCM 호출은 수 초 걸리는 외부 I/O라, 트랜잭션 안에서 하면

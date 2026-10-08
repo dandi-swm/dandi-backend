@@ -100,6 +100,8 @@ app:
     base-url: "https://link.nyummy.co.kr"
     home-url: "/home"
     signup-url: "/signup"
+    meal-detail-url: "/meals"
+
   email:
     client: ${EMAIL_CLIENT:smtp} # smtp | ses (ses는 샌드박스 해제 후 전환)
     from-address: ${EMAIL_FROM_ADDRESS}

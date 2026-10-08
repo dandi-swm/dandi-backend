@@ -3,10 +3,10 @@ package com.dandi.nyummy.internal.batch.service
 import com.dandi.nyummy.config.AppLinkProperties
 import com.dandi.nyummy.infra.push.dto.PushMessage
 import com.dandi.nyummy.infra.push.dto.PushType
-import com.dandi.nyummy.internal.batch.NotificationId
 import com.dandi.nyummy.internal.batch.repository.PushDeduplicationRepository
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.repository.MealRepository
+import com.dandi.nyummy.notification.NotificationId
 import com.dandi.nyummy.notification.service.NotificationService
 import com.dandi.nyummy.user.repository.ProfileRepository
 import org.slf4j.LoggerFactory

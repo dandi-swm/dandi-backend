@@ -4,6 +4,7 @@ enum class PushType {
     MEAL_REMINDER,
     RETENTION,
     ANALYSIS_COMPLETED,
+    ANALYSIS_FAILED,
 }
 
 data class PushMessage(
