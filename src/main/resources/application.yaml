@@ -76,6 +76,12 @@ management:
 app:
   internal:
     batch-key: ${NYUMMY_BATCH_SECRET}
+  fcm:
+    # Firebase를 띄울지. false면 FirebaseMessaging 빈 없이 StubPushClient가 주입된다.
+    enabled: true
+    credentials-base64: ${FCM_CREDENTIALS_BASE64}
+    # true면 FCM까지 왕복해 검증만 받고 기기에 배달하지 않는다.
+    dry-run: false
   meal:
     upload-method: "PUT"
     max-file-size-bytes: 10485760
@@ -90,13 +96,14 @@ app:
     base-url: "https://generativelanguage.googleapis.com"
     connect-timeout: 5s
     read-timeout: 30s
+  app-link:
+    base-url: "https://link.nyummy.co.kr"
+    home-url: "/home"
+    signup-url: "/signup"
   email:
     client: ${EMAIL_CLIENT:smtp} # smtp | ses (ses는 샌드박스 해제 후 전환)
     from-address: ${EMAIL_FROM_ADDRESS}
     from-name: "Nyummy"
-  auth:
-    login-redirect-url: "dandi://home"
-    signup-redirect-url: "dandi://signup"
   oauth:
     kakao:
       issuer: "https://kauth.kakao.com"

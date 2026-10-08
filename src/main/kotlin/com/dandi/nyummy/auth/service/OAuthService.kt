@@ -1,10 +1,10 @@
 package com.dandi.nyummy.auth.service
 
-import com.dandi.nyummy.auth.config.AuthProperties
 import com.dandi.nyummy.auth.dto.OAuthLoginRequest
 import com.dandi.nyummy.auth.dto.OAuthLoginResponse
 import com.dandi.nyummy.auth.enum.AuthProvider
 import com.dandi.nyummy.auth.enum.AuthPurpose
+import com.dandi.nyummy.config.AppLinkProperties
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.AuthErrorCode
 import com.dandi.nyummy.infra.oauth.OAuthClient
@@ -23,7 +23,7 @@ class OAuthService(
     private val userRepository: UserRepository,
     private val tokenService: TokenService,
     private val refreshTokenService: RefreshTokenService,
-    private val authProperties: AuthProperties,
+    private val appLinkProperties: AppLinkProperties,
     oauthClients: List<OAuthClient>,
 ) {
 
@@ -64,7 +64,7 @@ class OAuthService(
             )
 
             return OAuthLoginResponse(
-                redirectUrl = authProperties.signupRedirectUrl,
+                redirectUrl = appLinkProperties.signup,
                 verifiedToken = verifiedToken,
             )
         }
@@ -76,7 +76,7 @@ class OAuthService(
         refreshTokenService.createOrRestart(userId, refreshToken)
 
         return OAuthLoginResponse(
-            redirectUrl = authProperties.loginRedirectUrl,
+            redirectUrl = appLinkProperties.home,
             accessToken = accessToken,
             refreshToken = refreshToken,
         )

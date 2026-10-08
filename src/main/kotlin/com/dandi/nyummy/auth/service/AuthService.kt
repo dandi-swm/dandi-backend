@@ -1,6 +1,5 @@
 package com.dandi.nyummy.auth.service
 
-import com.dandi.nyummy.auth.config.AuthProperties
 import com.dandi.nyummy.auth.dto.ConfirmAuthCodeRequest
 import com.dandi.nyummy.auth.dto.ConfirmAuthCodeResponse
 import com.dandi.nyummy.auth.dto.LoginRequest
@@ -16,6 +15,7 @@ import com.dandi.nyummy.auth.enum.AuthProvider
 import com.dandi.nyummy.auth.enum.AuthPurpose
 import com.dandi.nyummy.auth.repository.RefreshTokenRepository
 import com.dandi.nyummy.auth.repository.TokenInvalidationRepository
+import com.dandi.nyummy.config.AppLinkProperties
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.AuthErrorCode
 import com.dandi.nyummy.infra.email.EmailService
@@ -45,9 +45,10 @@ class AuthService(
     private val codeService: CodeService,
     private val emailService: EmailService,
     private val passwordService: PasswordService,
-    private val authProperties: AuthProperties,
+    private val appLinkProperties: AppLinkProperties,
     private val clock: Clock,
     private val tokenInvalidationRepository: TokenInvalidationRepository,
+    private val deviceTokenRepository: DeviceTokenRepository,
 ) {
     companion object {
         private val logger = LoggerFactory.getLogger(AuthService::class.java)
@@ -82,7 +83,7 @@ class AuthService(
 
         refreshTokenService.createOrRestart(userId, newRefreshToken)
 
-        val redirectUrl = authProperties.loginRedirectUrl
+        val redirectUrl = appLinkProperties.home
 
         return LoginResponse(redirectUrl, newAccessToken, newRefreshToken)
     }
@@ -248,6 +249,7 @@ class AuthService(
             ?: return
 
         refreshTokenRepository.delete(refreshToken)
+        deviceTokenRepository.deleteByUserId(userId)
 
         try {
             tokenInvalidationRepository.createInvalidatedAt(userId, Instant.now(clock))
