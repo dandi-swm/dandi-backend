@@ -4,10 +4,14 @@ import com.dandi.nyummy.auth.repository.TokenInvalidationRepository
 import com.dandi.nyummy.auth.service.RefreshTokenService
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.UserErrorCode
+import com.dandi.nyummy.user.dto.PushSettingResponse
+import com.dandi.nyummy.user.dto.UpdatePushSettingRequest
 import com.dandi.nyummy.security.jwt.TokenService
 import com.dandi.nyummy.user.dto.PasswordUpdateRequest
 import com.dandi.nyummy.user.dto.PasswordUpdateResponse
 import com.dandi.nyummy.user.dto.UserResponse
+import com.dandi.nyummy.user.entity.Profile
+import com.dandi.nyummy.user.mapper.toPushSettingResponse
 import com.dandi.nyummy.user.mapper.toUserResponse
 import com.dandi.nyummy.user.repository.ProfileRepository
 import com.dandi.nyummy.user.repository.UserRepository
@@ -43,6 +47,32 @@ class UserService(
 
         return user.toUserResponse(profile)
     }
+
+    @Transactional(readOnly = true)
+    fun getPushSetting(userId: Long): PushSettingResponse {
+        val profile = getProfile(userId)
+
+        return profile.toPushSettingResponse()
+    }
+
+    @Transactional
+    fun updatePushSetting(userId: Long, request: UpdatePushSettingRequest) {
+        val profile = getProfile(userId)
+
+        request.isServicePushEnabled?.let { profile.updateServicePushEnabled(it) }
+        request.isMarketingPushEnabled?.let { profile.updateMarketingPushEnabled(it, Instant.now(clock)) }
+    }
+
+    /**
+     * 프로필은 가입 시 함께 생성되므로 없으면 데이터 정합성 문제다. 로그를 남기고 끊는다.
+     *
+     * @throws BusinessException [UserErrorCode.PROFILE_NOT_FOUND] 프로필이 없는 경우
+     */
+    private fun getProfile(userId: Long): Profile = profileRepository.getProfileByUserId(userId)
+        ?: run {
+            logger.error("가입 시 생성되어야 할 프로필이 없습니다: userId={}", userId)
+            throw BusinessException(UserErrorCode.PROFILE_NOT_FOUND)
+        }
 
     /**
      * 현재 비밀번호를 확인해 새 비밀번호로 교체하고, 토큰 무효화 기준을 기록한 뒤 새 토큰 쌍을 발급한다.

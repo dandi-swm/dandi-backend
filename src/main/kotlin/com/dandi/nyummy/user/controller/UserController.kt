@@ -4,6 +4,8 @@ import com.dandi.nyummy.security.AuthUser
 import com.dandi.nyummy.security.CurrentUser
 import com.dandi.nyummy.user.dto.PasswordUpdateRequest
 import com.dandi.nyummy.user.dto.PasswordUpdateResponse
+import com.dandi.nyummy.user.dto.PushSettingResponse
+import com.dandi.nyummy.user.dto.UpdatePushSettingRequest
 import com.dandi.nyummy.user.dto.UserResponse
 import com.dandi.nyummy.user.service.UserService
 import io.swagger.v3.oas.annotations.Operation
@@ -40,4 +42,12 @@ class UserController(private val userService: UserService) {
         @CurrentUser user: AuthUser,
         @Valid @RequestBody request: PasswordUpdateRequest,
     ): PasswordUpdateResponse = userService.updatePassword(user.userId, request)
+
+    @GetMapping("/me/push")
+    fun pushSetting(@CurrentUser user: AuthUser): PushSettingResponse = userService.getPushSetting(user.userId)
+
+    @PatchMapping("/me/push")
+    fun updatePushSetting(@CurrentUser user: AuthUser, @RequestBody request: UpdatePushSettingRequest) {
+        userService.updatePushSetting(user.userId, request)
+    }
 }

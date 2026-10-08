@@ -5,7 +5,6 @@ package com.dandi.nyummy.user.dto
 import com.dandi.nyummy.user.enum.Gender
 import jakarta.validation.constraints.AssertTrue
 import jakarta.validation.constraints.NotBlank
-import jakarta.validation.constraints.NotNull
 import jakarta.validation.constraints.Pattern
 import jakarta.validation.constraints.Size
 import java.time.LocalDate
@@ -47,3 +46,14 @@ data class PasswordUpdateRequest(
 }
 
 data class PasswordUpdateResponse(val accessToken: String, val refreshToken: String)
+
+/**
+ * 알림 수신 설정 변경 요청. 바꾸려는 항목만 담고 나머지는 생략한다(생략 = null = 유지).
+ * 두 플래그를 한 요청으로 받는 이유는 설정 화면이 토글 두 개를 같이 저장하기 때문이다.
+ */
+data class UpdatePushSettingRequest(
+    val isServicePushEnabled: Boolean? = null,
+    val isMarketingPushEnabled: Boolean? = null,
+)
+
+data class PushSettingResponse(val isServicePushEnabled: Boolean, val isMarketingPushEnabled: Boolean)

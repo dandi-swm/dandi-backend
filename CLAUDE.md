@@ -100,6 +100,10 @@
 | 갱신 토큰 | RefreshToken | 15일 수명, 재발급용. type 클레임 값은 "refresh". 필드명 refreshToken |
 | 토큰 수명 | TimeToLive | accessTimeToLive / refreshTimeToLive. Expiration, Ttl, ExpiresIn, Validity 금지 |
 | 시크릿 키 | SecretKey | 설정의 Base64 문자열(JwtProperties.secretKey, .env의 JWT_SECRET_KEY)과 디코딩된 키 객체 모두 secretKey |
+| 서비스 알림 | ServicePush | 사용자가 요청한 기능을 수행하는 알림(분석 완료·식사 리마인더). 기본 수신 |
+| 마케팅 알림 | MarketingPush | 광고성 정보로 볼 여지가 있는 알림(리텐션 복귀 유도 등). 사전 동의 필요, 기본 거부 |
+| 알림 수신 설정 | PushSetting | profile의 수신 여부 묶음. PushConfig, PushPreference, PushOption 금지 |
+| 동의 | Agreed | 광고성 정보 수신 동의. 시점은 marketingAgreedAt. Consent, Approval, Accept 금지 |
 
 ## 케이스 규칙
 

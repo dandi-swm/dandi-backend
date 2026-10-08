@@ -57,10 +57,35 @@ class Profile(
     @Column(name = "coin", nullable = false)
     val coin: Int = 0
 
+    @Column(name = "is_service_push_enabled", nullable = false)
+    var isServicePushEnabled: Boolean = true
+
+    @Column(name = "is_marketing_push_enabled", nullable = false)
+    var isMarketingPushEnabled: Boolean = false
+
+    @Column(name = "marketing_agreed_at")
+    var marketingAgreedAt: Instant? = null
+
     @LastModifiedDate
     @Column(name = "updated_at")
     var updatedAt: Instant? = null
 
     @Column(name = "last_login_at")
     val lastLoginAt: Instant? = null
+
+    fun updateServicePushEnabled(isServicePushEnabled: Boolean) {
+        this.isServicePushEnabled = isServicePushEnabled
+    }
+
+    /**
+     * 마케팅 알림 수신 여부를 바꾼다. 거부에서 동의로 넘어갈 때만 동의 시각을 새로 찍는다.
+     * 이미 동의한 상태에서 같은 값이 또 들어오면 시각을 건드리지 않는다
+     */
+    fun updateMarketingPushEnabled(isMarketingPushEnabled: Boolean, now: Instant) {
+        if (isMarketingPushEnabled && !this.isMarketingPushEnabled) {
+            this.marketingAgreedAt = now
+        }
+
+        this.isMarketingPushEnabled = isMarketingPushEnabled
+    }
 }
