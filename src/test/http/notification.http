@@ -1,0 +1,9 @@
+### 디바이스 토큰 등록
+POST {{url}}/api/v1/notifications/device-tokens
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "token": "{{fcmToken}}",
+  "platform": "ANDROID"
+}

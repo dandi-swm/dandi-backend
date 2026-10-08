@@ -12,6 +12,21 @@ Authorization: Bearer {{accessToken}}
 GET {{url}}/api/v1/users/me
 Authorization: Bearer {{accessToken}}
 
+### 알림 수신 설정 조회 API
+GET {{url}}/api/v1/users/me/push
+Authorization: Bearer {{accessToken}}
+
+### 알림 수신 설정 변경 API
+PATCH {{url}}/api/v1/users/me/push
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "isServicePushEnabled": true,
+  "isMarketingPushEnabled": true
+}
+
+
 ### 비밀번호 변경 API - 현재 비밀번호 틀림 (400 api.user.passwordMismatch, 세션은 유지됨)
 PATCH {{url}}/api/v1/users/me/password
 Content-Type: application/json

@@ -1,6 +1,5 @@
 package com.dandi.nyummy.auth.service
 
-import com.dandi.nyummy.auth.config.AuthProperties
 import com.dandi.nyummy.auth.dto.ConfirmAuthCodeRequest
 import com.dandi.nyummy.auth.dto.PasswordResetRequest
 import com.dandi.nyummy.auth.dto.SendAuthCodeRequest
@@ -9,6 +8,7 @@ import com.dandi.nyummy.auth.enum.AuthProvider
 import com.dandi.nyummy.auth.enum.AuthPurpose
 import com.dandi.nyummy.auth.repository.RefreshTokenRepository
 import com.dandi.nyummy.auth.repository.TokenInvalidationRepository
+import com.dandi.nyummy.config.AppLinkProperties
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.AuthErrorCode
 import com.dandi.nyummy.exception.errorcode.EmailErrorCode
@@ -46,9 +46,11 @@ class AuthServiceTest {
     private val clock = Clock.fixed(now, ZoneOffset.UTC)
     private val email = "user@nyummy.com"
 
-    private val authProperties = AuthProperties(
-        loginRedirectUrl = "dandi://home",
-        signupRedirectUrl = "dandi://signup",
+    private val appLinkProperties = AppLinkProperties(
+        baseUrl = "https://link.test.com",
+        homeUrl = "/home",
+        signupUrl = "/signup",
+        mealCreateUrl = "/meal/create",
     )
 
     private val userRepository = mockk<UserRepository>()
@@ -60,6 +62,7 @@ class AuthServiceTest {
     private val emailService = mockk<EmailService>(relaxUnitFun = true)
     private val passwordService = mockk<PasswordService>()
     private val tokenInvalidationRepository = mockk<TokenInvalidationRepository>(relaxUnitFun = true)
+    private val deviceTokenRepository = mockk<DeviceTokenRepository>()
 
     private val authService = AuthService(
         userRepository = userRepository,
@@ -70,9 +73,10 @@ class AuthServiceTest {
         codeService = codeService,
         emailService = emailService,
         passwordService = passwordService,
-        authProperties = authProperties,
+        appLinkProperties = appLinkProperties,
         clock = clock,
         tokenInvalidationRepository = tokenInvalidationRepository,
+        deviceTokenRepository = deviceTokenRepository,
     )
 
     private fun createSignUpRequest() = SignUpRequest(

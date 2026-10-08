@@ -38,7 +38,9 @@ logging:
 
 app:
   internal:
-    batch-key: ${NYUMMY_BATCH_SECRET}
+    batch-key: test-batch-key
+  fcm:
+    enabled: false
   ai:
     api-key: test-gemini-key
   email:
@@ -47,6 +49,10 @@ app:
     # Base64 32바이트. HS256 서명과 A256GCM 암호화에 그대로 쓰이므로 길이가 맞아야 한다.
     secret-key: c83mV3J9dm3u1nGB93mdHgHbZTE3mciNNc93nMvfi3m=
     encryption-key: 50Vnh94kKrp9/+/v1woFnggXrPXNP3bvnsgbGK/quD0=
+  app-link:
+    base-url: "https://link.test.com"
+    home-url: "/home"
+    signup-url: "/signup"
   oauth:
     kakao:
       app-key: test-kakao-app-key

@@ -1,5 +1,5 @@
 ### 식사 리마인더 푸시 알림
-POST {{url}}/api/v1/internal/batch/meals/reminders
+POST {{url}}/api/v1/internal/batch/meals/reminders?hour=19
 X-Internal-Batch-Key: {{secret-batch-key}}
 
 ### 리텐션 푸시 알림
