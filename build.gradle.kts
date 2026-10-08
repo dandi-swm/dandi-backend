@@ -99,6 +99,9 @@ dependencies {
 
     implementation("org.springframework.boot:spring-boot-starter-actuator")
 
+    // FCM (firebase-admin)
+    implementation("com.google.firebase:firebase-admin:9.10.0")
+
     // 관측(OpenTelemetry): 메트릭·트레이스 OTLP 전송
     // OTel 기본 전송기(okhttp sender)는 OkHttp를 5.3.x로 끌어올려 AWS Kotlin SDK(5.0.0-alpha 기준 빌드)를
     // 깨뜨린다(ClassNotFoundException: okhttp3.ConnectionListener). JDK HttpClient 전송기로 바꾼다.
