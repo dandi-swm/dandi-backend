@@ -48,6 +48,11 @@ class UserService(
         return user.toUserResponse(profile)
     }
 
+    /**
+     * 알림 수신 설정을 조회한다. 설정 화면의 토글 상태를 그리는 데 필요한 값만 돌려준다.
+     *
+     * @throws BusinessException [UserErrorCode.PROFILE_NOT_FOUND] 프로필이 없는 경우
+     */
     @Transactional(readOnly = true)
     fun getPushSetting(userId: Long): PushSettingResponse {
         val profile = getProfile(userId)
@@ -55,6 +60,11 @@ class UserService(
         return profile.toPushSettingResponse()
     }
 
+    /**
+     * 알림 수신 설정을 바꾼다. 요청에 담기지 않은 항목(null)은 건드리지 않는다.
+     *
+     * @throws BusinessException [UserErrorCode.PROFILE_NOT_FOUND] 프로필이 없는 경우
+     */
     @Transactional
     fun updatePushSetting(userId: Long, request: UpdatePushSettingRequest) {
         val profile = getProfile(userId)

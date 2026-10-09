@@ -59,7 +59,6 @@ data class DailyMealsResponse(
 )
 
 data class DailyMealResponse(
-
     val mealId: Long,
     val name: String,
     val mealAt: Instant,

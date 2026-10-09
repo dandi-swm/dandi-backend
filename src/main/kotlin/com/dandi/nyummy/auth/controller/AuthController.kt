@@ -130,8 +130,9 @@ class AuthController(private val authService: AuthService, private val oauthServ
 
     @Operation(
         summary = "로그아웃",
-        description = "저장된 RefreshToken을 삭제해 로그아웃 처리한다. " +
-            "저장된 토큰이 없어도 이미 로그아웃된 상태로 보고 정상 처리한다. ",
+        description = "저장된 RefreshToken과 디바이스 토큰을 삭제해 로그아웃 처리한다. " +
+            "디바이스 토큰을 함께 지우는 이유는 로그아웃한 기기로 푸시가 계속 가지 않게 하기 위해서다. " +
+            "저장된 토큰이 없어도 이미 로그아웃된 상태로 보고 정상 처리한다.",
     )
     @SecurityRequirement(name = "bearerAuth")
     @ApiResponse(responseCode = "204", description = "로그아웃 성공")

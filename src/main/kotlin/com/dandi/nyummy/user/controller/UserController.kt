@@ -18,10 +18,17 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
-@Tag(name = "User", description = "사용자 계정 API")
+@Tag(name = "User", description = "내 프로필 조회 · 비밀번호 변경 · 알림 수신 설정 API")
 @RestController
 @RequestMapping("/api/v1/users")
 class UserController(private val userService: UserService) {
+
+    @Operation(
+        summary = "내 프로필 조회",
+        description = "닉네임 · 신체 정보 · 코인 · 설정한 끼니 시각을 조회한다. " +
+            "알림 수신 설정은 설정 화면에서만 필요하므로 이 응답에 넣지 않고 `GET /me/push`로 분리했다.",
+    )
+    @ApiResponse(responseCode = "404", description = "사용자를 찾을 수 없습니다.")
     @GetMapping("/me")
     fun me(@CurrentUser user: AuthUser): UserResponse = userService.getMe(user.userId)
 
@@ -46,6 +53,14 @@ class UserController(private val userService: UserService) {
     @GetMapping("/me/push")
     fun pushSetting(@CurrentUser user: AuthUser): PushSettingResponse = userService.getPushSetting(user.userId)
 
+    @Operation(
+        summary = "알림 수신 설정 변경",
+        description = "바꾸려는 항목만 담아 보낸다 — 생략한 항목은 유지된다. " +
+            "서비스 알림은 기본 수신이고, 마케팅 알림은 광고성 정보로 볼 여지가 있어 기본 거부이며 " +
+            "거부에서 동의로 바뀔 때 동의 시각을 기록한다.",
+    )
+    @ApiResponse(responseCode = "200", description = "변경 완료")
+    @ApiResponse(responseCode = "404", description = "프로필을 찾을 수 없습니다.")
     @PatchMapping("/me/push")
     fun updatePushSetting(@CurrentUser user: AuthUser, @RequestBody request: UpdatePushSettingRequest) {
         userService.updatePushSetting(user.userId, request)
