@@ -4,11 +4,11 @@ import com.dandi.nyummy.auth.repository.TokenInvalidationRepository
 import com.dandi.nyummy.auth.service.RefreshTokenService
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.UserErrorCode
-import com.dandi.nyummy.user.dto.PushSettingResponse
-import com.dandi.nyummy.user.dto.UpdatePushSettingRequest
 import com.dandi.nyummy.security.jwt.TokenService
 import com.dandi.nyummy.user.dto.PasswordUpdateRequest
 import com.dandi.nyummy.user.dto.PasswordUpdateResponse
+import com.dandi.nyummy.user.dto.PushSettingResponse
+import com.dandi.nyummy.user.dto.UpdatePushSettingRequest
 import com.dandi.nyummy.user.dto.UserResponse
 import com.dandi.nyummy.user.entity.Profile
 import com.dandi.nyummy.user.mapper.toPushSettingResponse
@@ -113,7 +113,7 @@ class UserService(
      */
     @Transactional
     fun updatePassword(userId: Long, request: PasswordUpdateRequest): PasswordUpdateResponse {
-        passwordService.updatePassword(userId, request.password, request.newPassword)
+        passwordService.updatePassword(userId, request.currentPassword, request.newPassword)
 
         try {
             tokenInvalidationRepository.createInvalidatedAt(userId, Instant.now(clock))
