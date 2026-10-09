@@ -15,6 +15,7 @@ import com.dandi.nyummy.auth.enum.AuthProvider
 import com.dandi.nyummy.auth.enum.AuthPurpose
 import com.dandi.nyummy.auth.repository.RefreshTokenRepository
 import com.dandi.nyummy.auth.repository.TokenInvalidationRepository
+import com.dandi.nyummy.cat.repository.CatRepository
 import com.dandi.nyummy.config.AppLinkProperties
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.AuthErrorCode
@@ -50,6 +51,7 @@ class AuthService(
     private val clock: Clock,
     private val tokenInvalidationRepository: TokenInvalidationRepository,
     private val deviceTokenRepository: DeviceTokenRepository,
+    private val catRepository: CatRepository,
 ) {
     companion object {
         private val logger = LoggerFactory.getLogger(AuthService::class.java)
@@ -84,7 +86,11 @@ class AuthService(
 
         refreshTokenService.createOrRestart(userId, newRefreshToken)
 
-        val redirectUrl = appLinkProperties.home
+        val redirectUrl = if (catRepository.existsByUserId(userId)) {
+            appLinkProperties.home
+        } else {
+            appLinkProperties.onboarding
+        }
 
         return LoginResponse(redirectUrl, newAccessToken, newRefreshToken)
     }
