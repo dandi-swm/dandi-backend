@@ -8,6 +8,7 @@ import com.dandi.nyummy.auth.enum.AuthProvider
 import com.dandi.nyummy.auth.enum.AuthPurpose
 import com.dandi.nyummy.auth.repository.RefreshTokenRepository
 import com.dandi.nyummy.auth.repository.TokenInvalidationRepository
+import com.dandi.nyummy.cat.repository.CatRepository
 import com.dandi.nyummy.config.AppLinkProperties
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.AuthErrorCode
@@ -52,6 +53,7 @@ class AuthServiceTest {
         homeUrl = "/home",
         signupUrl = "/signup",
         mealDetailUrl = "/meals",
+        onboardingUrl = "/onboarding",
     )
 
     private val userRepository = mockk<UserRepository>()
@@ -64,6 +66,7 @@ class AuthServiceTest {
     private val passwordService = mockk<PasswordService>()
     private val tokenInvalidationRepository = mockk<TokenInvalidationRepository>(relaxUnitFun = true)
     private val deviceTokenRepository = mockk<DeviceTokenRepository>()
+    private val catRepository = mockk<CatRepository>()
 
     private val authService = AuthService(
         userRepository = userRepository,
@@ -78,6 +81,7 @@ class AuthServiceTest {
         clock = clock,
         tokenInvalidationRepository = tokenInvalidationRepository,
         deviceTokenRepository = deviceTokenRepository,
+        catRepository = catRepository,
     )
 
     private fun createSignUpRequest() = SignUpRequest(

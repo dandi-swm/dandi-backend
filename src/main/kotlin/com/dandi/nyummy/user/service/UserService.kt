@@ -74,6 +74,11 @@ class UserService(
         request.isMarketingPushEnabled?.let { profile.updateMarketingPushEnabled(it, Instant.now(clock)) }
     }
 
+    /**
+     * 끼니 시각을 교체한다. 세 값을 한 번에 덮어쓰므로 null은 "그 끼니는 알림 없음"을 뜻한다.
+     *
+     * @throws BusinessException [UserErrorCode.PROFILE_NOT_FOUND] 프로필이 없는 경우
+     */
     @Transactional
     fun updateMealTime(userId: Long, request: UpdateMealTimeRequest) {
         val profile = getProfile(userId)

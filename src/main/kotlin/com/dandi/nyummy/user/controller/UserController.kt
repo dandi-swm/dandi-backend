@@ -13,6 +13,7 @@ import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
+import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PutMapping
@@ -20,7 +21,7 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
-@Tag(name = "User", description = "내 프로필 조회 · 비밀번호 변경 · 알림 수신 설정 API")
+@Tag(name = "User", description = "내 프로필 조회 · 비밀번호 변경 · 알림 수신 설정 · 끼니 시각 설정 API")
 @RestController
 @RequestMapping("/api/v1/users")
 class UserController(private val userService: UserService) {
@@ -52,6 +53,7 @@ class UserController(private val userService: UserService) {
         @Valid @RequestBody request: PasswordUpdateRequest,
     ): PasswordUpdateResponse = userService.updatePassword(user.userId, request)
 
+    @Operation(summary = "알림 수신 설정 조회", description = "서비스 알림과 마케팅 알림의 수신 여부를 조회한다.")
     @GetMapping("/me/push")
     fun pushSetting(@CurrentUser user: AuthUser): PushSettingResponse = userService.getPushSetting(user.userId)
 
@@ -68,6 +70,12 @@ class UserController(private val userService: UserService) {
         userService.updatePushSetting(user.userId, request)
     }
 
+    @Operation(
+        summary = "끼니 시각 설정",
+        description = "세 끼니 시각을 한 번에 교체한다. 생략하거나 null로 보낸 끼니는 알림을 받지 않는다. " +
+            "각 값은 0~23이어야 하고 서로 겹칠 수 없다.",
+    )
+    @ApiResponse(responseCode = "400", description = "끼니 시각이 0~23이 아니거나 서로 겹칩니다.")
     @PutMapping("/me/meal-time")
     fun updateMealTime(
         @CurrentUser user: AuthUser,
