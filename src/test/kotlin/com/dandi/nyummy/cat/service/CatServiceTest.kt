@@ -208,6 +208,70 @@ class CatServiceTest {
         assertThat(cat.weight).isEqualTo(-2)
     }
 
+    // ---------------------------------------------------------------- 적정 섭취 수렴
+
+    @Test
+    @DisplayName("뚱냥이가 적정 섭취하면 보통냥 쪽으로 한 칸만 내려간다")
+    fun convergesOneStepDownward() {
+        // given: 뚱냥이(2)가 한 구간 동안 목표(6000)만큼 먹었다. 유지가 아니라 한 칸 내려가야 한다.
+        val cat = givenCat(evaluatedDaysAgo = 3, weight = 2)
+        givenMeals(meal(daysAgo = 2, calory = 6000))
+
+        // when
+        catService.getCat(userId)
+
+        // then
+        assertThat(cat.weight).isEqualTo(1)
+    }
+
+    @Test
+    @DisplayName("홀쭉냥이 적정 섭취하면 보통냥 쪽으로 한 칸 올라간다")
+    fun convergesOneStepUpward() {
+        // given: 홀쭉냥(-2)이 목표만큼 먹었다. 소식이 아니므로 올라간다.
+        val cat = givenCat(evaluatedDaysAgo = 3, weight = -2)
+        givenMeals(meal(daysAgo = 2, calory = 6000))
+
+        // when
+        catService.getCat(userId)
+
+        // then
+        assertThat(cat.weight).isEqualTo(-1)
+    }
+
+    @Test
+    @DisplayName("보통냥이 적정 섭취하면 체형이 유지된다")
+    fun staysAtNormalWeight() {
+        // given: 수렴의 종착점이므로 더 움직이지 않는다.
+        val cat = givenCat(evaluatedDaysAgo = 3, weight = 0)
+        givenMeals(meal(daysAgo = 2, calory = 6000))
+
+        // when
+        catService.getCat(userId)
+
+        // then
+        assertThat(cat.weight).isEqualTo(0)
+    }
+
+    @Test
+    @DisplayName("뚱냥이가 세 구간 내내 적정 섭취하면 한 칸씩 내려와 보통냥에서 멈춘다")
+    fun convergesOneStepPerIntervalAndStopsAtNormal() {
+        // given: 뚱냥이(2)가 9일(3구간) 동안 매 구간 목표(6000)만큼 먹었다.
+        //        steps = [-1, -1, 0] → 1, 0, 0 이므로 최종 0.
+        //        현재 체형을 루프 밖에서 한 번만 읽으면 [-1, -1, -1]이 되어 -1까지 지나간다.
+        val cat = givenCat(evaluatedDaysAgo = 9, weight = 2)
+        givenMeals(
+            meal(daysAgo = 8, calory = 6000), // 첫 구간 [9일 전, 6일 전)
+            meal(daysAgo = 5, calory = 6000), // 둘째 구간 [6일 전, 3일 전)
+            meal(daysAgo = 2, calory = 6000), // 셋째 구간 [3일 전, 오늘)
+        )
+
+        // when
+        catService.getCat(userId)
+
+        // then
+        assertThat(cat.weight).isEqualTo(0)
+    }
+
     // ---------------------------------------------------------------- 구간 누적
 
     @Test
@@ -399,12 +463,12 @@ class CatServiceTest {
     /**
      * 마지막 평가가 [evaluatedDaysAgo]일 전 자정이었던 고양이를 등록한다.
      *
-     * weight와 weightUpdatedAt은 [Cat.setWeight]로만 바꿀 수 있으므로,
+     * weight와 weightUpdatedAt은 [Cat.updateWeightByStep]로만 바꿀 수 있으므로,
      * 초기 체형은 0에서의 변화량으로 지정한다.
      */
     private fun givenCat(evaluatedDaysAgo: Long, weight: Int = 0): Cat {
         val cat = Cat(name = "나비", userId = userId)
-            .apply { setWeight(weight, midnight(evaluatedDaysAgo)) }
+            .apply { updateWeightByStep(weight, midnight(evaluatedDaysAgo)) }
 
         every { catRepository.findByUserId(userId) } returns cat
 

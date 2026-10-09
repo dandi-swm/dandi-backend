@@ -104,6 +104,8 @@
 | 마케팅 알림 | MarketingPush | 광고성 정보로 볼 여지가 있는 알림(리텐션 복귀 유도 등). 사전 동의 필요, 기본 거부 |
 | 알림 수신 설정 | PushSetting | profile의 수신 여부 묶음. PushConfig, PushPreference, PushOption 금지 |
 | 동의 | Agreed | 광고성 정보 수신 동의. 시점은 marketingAgreedAt. Consent, Approval, Accept 금지 |
+| 고양이 체형 | Weight | CatWeight(-2~2, LEAN~PLUMP). 사용자 몸무게(Profile.weight, kg)와 단어가 겹치니 Cat/Profile 맥락으로 구분 |
+| 체형 변화 단계 | Step | 한 평가 구간에서 체형이 움직이는 칸 수(-1/0/1). calculateWeightStep, updateWeightByStep. Delta, Diff 금지 |
 
 ## 케이스 규칙
 

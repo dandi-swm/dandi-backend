@@ -197,14 +197,16 @@ class CatService(
         val targetCalory = calculateRecommendedDailyIntake(profile, today).calory * intervalDays
 
         for (index in 0 until intervalCount) {
+            // cat.weight를 루프 안에서 읽는다. 앞 구간의 결과가 반영된 값이어야 한 칸씩 수렴한다.
             val step = calculateWeightStep(
                 caloryByInterval[index],
                 targetCalory,
                 catProperties.weightUpdateTolerance,
+                cat.weight,
             )
             val intervalEndDate = windowStartDate.plusDays((index + 1).toLong() * intervalDays)
 
-            cat.setWeight(step, intervalEndDate.atStartOfDay(zone).toInstant())
+            cat.updateWeightByStep(step, intervalEndDate.atStartOfDay(zone).toInstant())
 
             logger.info(
                 "고양이 체형 변화: userId = {}, interval = {}/{}, step = {}, weight = {}",

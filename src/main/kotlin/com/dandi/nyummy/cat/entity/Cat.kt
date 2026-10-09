@@ -54,7 +54,12 @@ class Cat(
         this.lastMealAt = lastMealAt
     }
 
-    fun setWeight(step: Int, evaluatedAt: Instant) {
+    /**
+     * 체형을 [step]칸 움직이고 평가 시각을 전진시킨다. 절대값을 대입하지 않고 현재 값에 더한다.
+     *
+     * 허용 범위를 벗어나면 잘라낸다. 구간마다 호출되므로 초과분이 다음 구간으로 이월되지 않는다.
+     */
+    fun updateWeightByStep(step: Int, evaluatedAt: Instant) {
         this.weight = (this.weight + step).coerceIn(CatWeight.MIN_WEIGHT, CatWeight.MAX_WEIGHT)
         this.weightUpdatedAt = evaluatedAt
     }
