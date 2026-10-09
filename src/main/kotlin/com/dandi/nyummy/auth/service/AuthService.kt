@@ -19,6 +19,7 @@ import com.dandi.nyummy.config.AppLinkProperties
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.AuthErrorCode
 import com.dandi.nyummy.infra.email.EmailService
+import com.dandi.nyummy.notification.repository.DeviceTokenRepository
 import com.dandi.nyummy.security.jwt.TokenService
 import com.dandi.nyummy.security.jwt.TokenType
 import com.dandi.nyummy.security.jwt.VerifiedClaims

@@ -14,6 +14,7 @@ import com.dandi.nyummy.exception.errorcode.AuthErrorCode
 import com.dandi.nyummy.exception.errorcode.EmailErrorCode
 import com.dandi.nyummy.exception.errorcode.ErrorCode
 import com.dandi.nyummy.infra.email.EmailService
+import com.dandi.nyummy.notification.repository.DeviceTokenRepository
 import com.dandi.nyummy.security.jwt.EmailChallengeClaims
 import com.dandi.nyummy.security.jwt.TokenService
 import com.dandi.nyummy.security.jwt.VerifiedClaims
