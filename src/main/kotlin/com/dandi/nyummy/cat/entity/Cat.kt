@@ -50,6 +50,10 @@ class Cat(
     @Column(name = "updated_at")
     var updatedAt: Instant = Instant.now()
 
+    fun updateLastMealAt(lastMealAt: Instant) {
+        this.lastMealAt = lastMealAt
+    }
+
     fun setWeight(step: Int, evaluatedAt: Instant) {
         this.weight = (this.weight + step).coerceIn(CatWeight.MIN_WEIGHT, CatWeight.MAX_WEIGHT)
         this.weightUpdatedAt = evaluatedAt

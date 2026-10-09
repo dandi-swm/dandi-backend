@@ -57,6 +57,23 @@ class CatService(
     }
 
     /**
+     * 마지막으로 밥을 먹은 시각을 갱신한다. 분석이 COMPLETED로 확정된 뒤 호출된다.
+     *
+     * 별도 빈의 트랜잭션으로 즉시 커밋한다.
+     *
+     * @param userId 밥을 먹은 사용자 ID
+     * @param lastMealAt 밥을 먹은 시각
+     * @throws BusinessException [CatErrorCode.CAT_NOT_FOUND] 사용자의 고양이가 없는 경우
+     */
+    @Transactional
+    fun updateLastMealAt(userId: Long, lastMealAt: Instant) {
+        val cat = catRepository.findByUserId(userId)
+            ?: throw BusinessException(CatErrorCode.CAT_NOT_FOUND)
+
+        cat.updateLastMealAt(lastMealAt)
+    }
+
+    /**
      * 고양이의 현재 체형에 해당하는 애니메이션 메타데이터를 조회한다.
      *
      * 메타데이터 자체는 S3에 있고 체형 5종뿐이므로 [CatAnimationLoader]가 캐시한다.

@@ -1,6 +1,7 @@
 package com.dandi.nyummy.meal.service
 
 import com.dandi.nyummy.cat.repository.CatRepository
+import com.dandi.nyummy.cat.service.CatService
 import com.dandi.nyummy.config.AppLinkProperties
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.MealErrorCode
@@ -27,6 +28,7 @@ class AnalysisService(
     private val mealRepository: MealRepository,
     private val nutritionAnalysisClient: NutritionAnalysisClient,
     private val catRepository: CatRepository,
+    private val catService: CatService,
     private val notificationService: NotificationService,
     private val appLinkProperties: AppLinkProperties,
     private val clock: Clock,
@@ -62,6 +64,8 @@ class AnalysisService(
      * 분석 실패는 예외로 전파하지 않고 FAILED 상태로 기록한다.
      * 소유권 검증은 호출자가 보장한다.
      *
+     * COMPLETED로 확정되면 고양이의 마지막 식사 시각을 갱신한다. 리텐션 배치가 이 값으로 대상을 고른다.
+     *
      * 상태가 확정된 뒤 결과를 푸시로 알린다([sendAnalysisPush]).
      *
      * @param meal 분석할 [Meal]
@@ -86,6 +90,10 @@ class AnalysisService(
         }
 
         updateMealService.updateStatus(meal, status)
+
+        if (status == MealStatus.COMPLETED) {
+            catService.updateLastMealAt(meal.userId, meal.mealAt)
+        }
 
         sendAnalysisPush(meal, status, analyzedAt)
     }

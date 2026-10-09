@@ -14,6 +14,7 @@ import java.time.Duration
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
+import kotlin.time.TimeSource
 
 @Service
 class RetentionBatchService(
@@ -43,6 +44,9 @@ class RetentionBatchService(
      * 발송을 트랜잭션 밖에서 하는 이유는 [MealReminderService.sendMealReminders]와 같다.
      */
     fun sendDailyRetentionPushes() {
+        // 소요시간은 주입된 Clock이 아니라 단조 시계로 잰다
+        val startedAt = TimeSource.Monotonic.markNow()
+
         val today = LocalDate.now(clock.withZone(ZONE))
         val targets = catRepository.getRetentionPushTargets()
 
@@ -53,18 +57,21 @@ class RetentionBatchService(
             convertPushMessage(notificationId, target.catName, daysDiff)
                 ?.takeIf { pushDeduplicationRepository.markSent(notificationId, DEDUPLICATION_TIME_TO_LIVE) }
                 ?.let { target.token to it }
-        }
+        }.toMap()
 
-        val result = notificationService.sendPushes(messagesByToken.toMap())
+        val result = notificationService.sendPushes(messagesByToken)
 
         notificationService.deleteInvalidDeviceTokens(result.invalidTokens)
+        pushDeduplicationRepository.deleteSent(result.getRetryableNotificationIds(messagesByToken))
 
         logger.info(
-            "리텐션 푸시 발송: target={}, sent={}, success={}, invalid={}",
+            "리텐션 푸시 발송: target={}, sent={}, success={}, invalid={}, retryable={}, elapsed={}ms",
             targets.size,
             messagesByToken.size,
             result.successCount,
             result.invalidTokens.size,
+            result.retryableTokens.size,
+            startedAt.elapsedNow().inWholeMilliseconds,
         )
     }
 

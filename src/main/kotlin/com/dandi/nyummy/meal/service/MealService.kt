@@ -1,9 +1,7 @@
 package com.dandi.nyummy.meal.service
 
-import com.dandi.nyummy.cat.repository.CatRepository
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.AuthErrorCode
-import com.dandi.nyummy.exception.errorcode.CatErrorCode
 import com.dandi.nyummy.exception.errorcode.MealErrorCode
 import com.dandi.nyummy.infra.image.s3.S3Service
 import com.dandi.nyummy.meal.calculator.calculateDailyNutritionEvaluation
@@ -49,7 +47,6 @@ class MealService(
     private val clock: Clock,
     private val profileRepository: ProfileRepository,
     private val mealProperties: MealProperties,
-    private val catRepository: CatRepository,
 ) {
 
     /**
@@ -134,13 +131,6 @@ class MealService(
         mealRepository.save(meal)
 
         analysisService.analyzeNutrition(meal)
-
-        if (meal.status == MealStatus.COMPLETED) {
-            val cat = catRepository.findByUserId(userId)
-                ?: throw BusinessException(CatErrorCode.CAT_NOT_FOUND)
-
-            cat.lastMealAt = Instant.now()
-        }
 
         return meal.toMealStatusResponse()
     }

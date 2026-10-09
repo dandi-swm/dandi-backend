@@ -28,4 +28,29 @@ class PushDeduplicationRepository(private val redisTemplate: StringRedisTemplate
         logger.error("푸시 중복 발송 방지 실패, 발송은 그대로 진행: key={}", key, e)
         true
     }
+
+    /**
+     * 발송 표시를 지워 다음 재시도가 다시 보낼 수 있게 한다.
+     *
+     * 일시 장애로 못 받은 사용자에게 쓴다. 표시가 남아 있으면 젠킨스가 재시도해도 [markSent]에
+     * 막혀 그 사용자를 건너뛰므로, 표시를 지우지 않는 한 재시도는 복구 수단이 되지 못한다.
+     *
+     * 지운 뒤 재시도하면 드물게 중복이 생길 수 있다. 일시 장애로 분류됐지만 실제로는 FCM이
+     * 접수한 경우다. 그래도 지우는 쪽을 고른 이유는, 조용히 영구 누락되는 것보다 드문 중복이
+     * 낫다는 [markSent]의 fail-open과 같은 판단이다.
+     *
+     * 실패하면 로그만 남긴다. 발송은 이미 끝났으므로 예외를 올려 배치를 실패시킬 이유가 없고,
+     * 표시가 남은 결과는 이 메서드가 없던 때와 같다.
+     */
+    fun deleteSent(keys: Collection<String>) {
+        if (keys.isEmpty()) {
+            return
+        }
+
+        try {
+            redisTemplate.delete(keys.map { "$KEY_PREFIX$it" })
+        } catch (e: DataAccessException) {
+            logger.error("푸시 발송 표시 삭제 실패: count={}", keys.size, e)
+        }
+    }
 }

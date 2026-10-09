@@ -13,7 +13,7 @@ PUT {{uploadUrl}}
 Content-Type: image/jpeg
 x-amz-tagging: status=temp
 
-< image/not_food.jpeg
+< image/crazy_spicy.jpg
 
 
 ### 식사기록 생성 API

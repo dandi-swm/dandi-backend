@@ -18,6 +18,7 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
+import kotlin.time.TimeSource
 
 @Service
 class MealReminderService(
@@ -45,6 +46,9 @@ class MealReminderService(
      * @param hour 대상 시각(0~23). 생략하면 현재 시각
      */
     fun sendMealReminders(hour: Int? = null) {
+        // 소요시간은 주입된 Clock이 아니라 단조 시계로 잰다
+        val startedAt = TimeSource.Monotonic.markNow()
+
         val zonedClock = clock.withZone(ZONE)
         val targetHour = hour ?: LocalTime.now(zonedClock).hour
         val today = LocalDate.now(zonedClock)
@@ -57,7 +61,7 @@ class MealReminderService(
             }
 
         if (targets.isEmpty()) {
-            logger.info("식사 리마인더 대상 없음: hour={}", targetHour)
+            logger.info("식사 리마인더 대상 없음: hour={}, elapsed={}ms", targetHour, startedAt.elapsedNow().inWholeMilliseconds)
             return
         }
 
@@ -77,19 +81,22 @@ class MealReminderService(
                 body = "${target.catName} 너무 배고프다냥. 사진 한 장만 찍어줘!",
                 appLink = appLinkProperties.home,
             )
-        }
+        }.toMap()
 
-        val result = notificationService.sendPushes(messagesByToken.toMap())
+        val result = notificationService.sendPushes(messagesByToken)
 
         notificationService.deleteInvalidDeviceTokens(result.invalidTokens)
+        pushDeduplicationRepository.deleteSent(result.getRetryableNotificationIds(messagesByToken))
 
         logger.info(
-            "식사 리마인더 발송: hour={}, target={}, sent={}, success={}, invalid={}",
+            "식사 리마인더 발송: hour={}, target={}, sent={}, success={}, invalid={}, retryable={}, elapsed={}ms",
             targetHour,
             targets.size,
             messagesByToken.size,
             result.successCount,
             result.invalidTokens.size,
+            result.retryableTokens.size,
+            startedAt.elapsedNow().inWholeMilliseconds,
         )
     }
 }
