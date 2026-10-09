@@ -46,13 +46,13 @@ class Profile(
     val id: Long = 0L
 
     @Column(name = "breakfast_hour")
-    val breakfastHour: Int? = null
+    var breakfastHour: Int? = null
 
     @Column(name = "lunch_hour")
-    val lunchHour: Int? = null
+    var lunchHour: Int? = null
 
     @Column(name = "dinner_hour")
-    val dinnerHour: Int? = null
+    var dinnerHour: Int? = null
 
     @Column(name = "coin", nullable = false)
     val coin: Int = 0
@@ -87,5 +87,11 @@ class Profile(
         }
 
         this.isMarketingPushEnabled = isMarketingPushEnabled
+    }
+
+    fun updateMealTime(breakfastHour: Int?, lunchHour: Int?, dinnerHour: Int?) {
+        this.breakfastHour = breakfastHour
+        this.lunchHour = lunchHour
+        this.dinnerHour = dinnerHour
     }
 }

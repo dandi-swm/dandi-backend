@@ -1,3 +1,15 @@
+### 고양이 생성 API
+POST {{url}}/api/v1/cats
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "name": "초코",
+  "breakfastHour": 7,
+  "lunchHour": 12,
+  "dinnerHour": null
+}
+
 ### 고양이 체형 API
 GET {{url}}/api/v1/cats
 Authorization: Bearer {{accessToken}}

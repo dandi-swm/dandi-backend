@@ -5,18 +5,23 @@ import com.dandi.nyummy.cat.calculator.calculateWeightStep
 import com.dandi.nyummy.cat.config.CatProperties
 import com.dandi.nyummy.cat.dto.CatAnimationResponse
 import com.dandi.nyummy.cat.dto.CatResponse
+import com.dandi.nyummy.cat.dto.CreateCatRequest
 import com.dandi.nyummy.cat.entity.Cat
 import com.dandi.nyummy.cat.enum.CatWeight
+import com.dandi.nyummy.cat.mapper.toCat
 import com.dandi.nyummy.cat.mapper.toCatResponse
 import com.dandi.nyummy.cat.repository.CatAnimationLoader
 import com.dandi.nyummy.cat.repository.CatRepository
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.CatErrorCode
+import com.dandi.nyummy.exception.errorcode.UserErrorCode
 import com.dandi.nyummy.meal.calculator.calculateRecommendedDailyIntake
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.repository.MealRepository
 import com.dandi.nyummy.user.repository.ProfileRepository
+import com.dandi.nyummy.user.service.UserService
 import org.slf4j.LoggerFactory
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -33,11 +38,48 @@ class CatService(
     private val catProperties: CatProperties,
     private val clock: Clock,
     private val catAnimationLoader: CatAnimationLoader,
+    private val userService: UserService,
 ) {
 
     companion object {
         private val MAX_EVALUATED_INTERVALS = CatWeight.MAX_WEIGHT - CatWeight.MIN_WEIGHT
         private val logger = LoggerFactory.getLogger(CatService::class.java)
+    }
+
+    /**
+     * 사용자의 고양이를 생성하고 온보딩에서 받은 끼니 시각을 프로필에 저장한다.
+     * 사용자당 한 마리만 둔다(`cat.user_id` UNIQUE).
+     *
+     * 미리 검사하고도 insert를 try로 감싸는 이유는 검사와 insert 사이에 다른 요청이 끼어들 수 있기
+     * 때문이다. 더블탭이나 네트워크 재시도로 동시에 들어오면 양쪽 다 검사를 통과하고 두 번째 insert가
+     * 유니크 제약을 때린다. 그 경우도 사용자에게 알릴 결과는 "이미 있다"와 같다.
+     *
+     * @throws BusinessException [CatErrorCode.CAT_ALREADY_EXISTS] 이미 고양이가 있거나 동시 생성에서 밀린 경우
+     * @throws BusinessException [UserErrorCode.PROFILE_NOT_FOUND] 프로필이 없는 경우
+     */
+    @Transactional
+    fun createCat(userId: Long, request: CreateCatRequest) {
+        if (catRepository.existsByUserId(userId)) {
+            logger.warn("이미 존재하는 고양이입니다: $userId")
+            throw BusinessException(CatErrorCode.CAT_ALREADY_EXISTS)
+        }
+
+        val cat = request.toCat(userId)
+
+        val profile = profileRepository.getProfileByUserId(userId)
+            ?: run {
+                logger.error("가입 시 생성되어야 할 프로필이 없습니다: userId={}", userId)
+                throw BusinessException(UserErrorCode.PROFILE_NOT_FOUND)
+            }
+
+        profile.updateMealTime(request.breakfastHour, request.lunchHour, request.dinnerHour)
+
+        try {
+            catRepository.save(cat)
+        } catch (e: DataIntegrityViolationException) {
+            logger.warn("고양이 동시 생성으로 유니크 제약과 충돌했습니다: userId={}", userId, e)
+            throw BusinessException(CatErrorCode.CAT_ALREADY_EXISTS)
+        }
     }
 
     /**

@@ -10,6 +10,8 @@ import org.springframework.stereotype.Repository
 interface CatRepository : JpaRepository<Cat, Long> {
     fun findByUserId(userId: Long): Cat?
 
+    fun existsByUserId(userId: Long): Boolean
+
     @Query(
         """
             select new com.dandi.nyummy.internal.batch.dto.RetentionTarget(c.userId, c.name, c.lastMealAt, d.token)
