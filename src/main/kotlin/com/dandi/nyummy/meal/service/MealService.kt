@@ -7,8 +7,6 @@ import com.dandi.nyummy.infra.image.s3.S3Service
 import com.dandi.nyummy.meal.calculator.calculateDailyNutritionEvaluation
 import com.dandi.nyummy.meal.calculator.calculateMonthlyCalendarRange
 import com.dandi.nyummy.meal.calculator.calculateRecommendedDailyIntake
-import com.dandi.nyummy.meal.config.MealProperties
-import com.dandi.nyummy.meal.dto.CreateMealRequest
 import com.dandi.nyummy.meal.dto.DailyMealsResponse
 import com.dandi.nyummy.meal.dto.DailyNutritionResponse
 import com.dandi.nyummy.meal.dto.MealResponse
@@ -18,121 +16,95 @@ import com.dandi.nyummy.meal.dto.MonthlyMealsResponse
 import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.dto.Streak
 import com.dandi.nyummy.meal.dto.TodayMealSummary
-import com.dandi.nyummy.meal.dto.UploadImageRequest
-import com.dandi.nyummy.meal.dto.UploadImageResponse
 import com.dandi.nyummy.meal.entity.Meal
+import com.dandi.nyummy.meal.entity.MealOutbox
 import com.dandi.nyummy.meal.enum.MealStatus
+import com.dandi.nyummy.meal.event.MealAnalysisRequested
 import com.dandi.nyummy.meal.mapper.toDailyMealResponse
-import com.dandi.nyummy.meal.mapper.toEntity
 import com.dandi.nyummy.meal.mapper.toMealResponse
 import com.dandi.nyummy.meal.mapper.toMealStatusResponse
 import com.dandi.nyummy.meal.mapper.toNutrition
+import com.dandi.nyummy.meal.queue.MealAnalysisMessage
+import com.dandi.nyummy.meal.queue.MealAnalysisPublisher
+import com.dandi.nyummy.meal.repository.MealOutboxRepository
 import com.dandi.nyummy.meal.repository.MealRepository
 import com.dandi.nyummy.user.repository.ProfileRepository
+import org.springframework.context.ApplicationEventPublisher
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
-import java.time.temporal.ChronoUnit
 import kotlin.time.Duration.Companion.minutes
 
 @Service
 class MealService(
-    private val analysisService: AnalysisService,
     private val mealRepository: MealRepository,
+    private val outboxRepository: MealOutboxRepository,
+    private val analysisPublisher: MealAnalysisPublisher,
+    private val events: ApplicationEventPublisher,
     private val s3Service: S3Service,
     private val clock: Clock,
     private val profileRepository: ProfileRepository,
-    private val mealProperties: MealProperties,
 ) {
 
     /**
-     * 식사 이미지를 업로드할 수 있는 presigned URL을 발급한다.
+     * imageKey가 식사 기록에 사용된 적 있는지 확인한다. 소프트 삭제된 식사도 포함한다.
      *
-     * 발급된 객체 키는 `meals/{userId}/...` 형식으로 서버가 생성하며, 업로드 직후에는
-     * `status=temp` 태그가 붙은 미확정 상태다. [createMeal]로 확정되지 않으면 S3
-     * 라이프사이클 룰이 정리하므로 서버가 따로 삭제하지 않는다.
-     *
-     * @param userId 업로드를 요청한 사용자 ID
-     * @param request 업로드할 이미지의 [UploadImageRequest] (MIME 타입, 파일 크기)
-     * @return 업로드 URL/메서드/헤더와 이미지 키를 담은 [UploadImageResponse].
-     *   [UploadImageResponse.uploadHeaders]는 업로드 요청에 그대로 포함해야 하며,
-     *   누락하면 서명이 일치하지 않아 업로드가 거부된다
-     * @throws BusinessException [S3ErrorCode.UNSUPPORTED_CONTENT_TYPE] contentType이 허용되지 않는 경우
-     * @throws BusinessException [S3ErrorCode.FILE_SIZE_EXCEEDED] fileSizeBytes가 [MealProperties.maxFileSizeBytes]를 초과하거나 음수인 경우
+     * @param imageKey 확인할 이미지 키
+     * @return 사용된 적 있으면 true
      */
-    fun createUploadUrl(userId: Long, request: UploadImageRequest): UploadImageResponse {
-        val expirationInstant = Instant.now(clock)
-            .plus(mealProperties.presignedUrlExpirationMinutes.toLong(), ChronoUnit.MINUTES)
+    @Transactional(readOnly = true)
+    fun existsMealByImageKey(imageKey: String): Boolean = mealRepository.existsByImageKey(imageKey)
 
-        val uploadUrl = s3Service.createMealUploadUrl(
-            userId = userId,
-            contentType = request.contentType,
-            fileSizeBytes = request.fileSizeBytes,
-            maxFileSizeBytes = mealProperties.maxFileSizeBytes,
-            expiration = mealProperties.presignedUrlExpirationMinutes.minutes,
-        )
-
-        return UploadImageResponse(
-            uploadUrl = uploadUrl.url,
-            imageKey = uploadUrl.key,
-            uploadMethod = mealProperties.uploadMethod,
-            uploadHeaders = uploadUrl.uploadHeaders,
-            expiresAt = expirationInstant.toString(),
-        )
+    /**
+     * 식사와 비동기 영양 분석 요청(Outbox)을 한 트랜잭션으로 저장한다.
+     *
+     * 커밋 후 Worker가 상태를 바꿔도 반환값은 접수 당시 상태(WAITING)다.
+     *
+     * @param meal 저장할 [Meal]
+     * @return 저장된 [Meal]의 분석 상태를 담은 [MealStatusResponse]
+     * @throws DataIntegrityViolationException imageKey UNIQUE 제약 등 무결성 제약을 위반한 경우
+     */
+    @Transactional
+    fun createMeal(meal: Meal): MealStatusResponse {
+        mealRepository.save(meal)
+        createMealOutbox(meal.id)
+        return meal.toMealStatusResponse()
     }
 
     /**
-     * 업로드된 이미지를 확정하고 식사 기록을 생성한 뒤, 영양 분석을 수행한다.
+     * 식사의 영양 분석 요청을 Outbox에 저장하고, 커밋 후 즉시 전달되도록 이벤트를 발행한다.
      *
-     * 이미지는 [createUploadUrl]로 발급받은 키에 이미 업로드되어 있어야 한다.
-     * 별도 경로로 복사하지 않고 상태 태그만 `status=committed`로 바꾸므로,
-     * 저장되는 [Meal.imageKey]는 요청으로 받은 키와 동일하다.
+     * 식사 상태 변경과 원자적으로 저장되어야 하므로 호출자의 트랜잭션에만 참여한다.
      *
-     * 하나의 imageKey로 식사를 중복 생성할 수 없다. 소프트 삭제된 식사도 검사 대상에 포함되므로,
-     * 한 번 사용된 imageKey는 다시 사용할 수 없다.
-     *
-     * 분석은 [AnalysisService.analyzeNutrition]에서 동기로 실행되므로,
-     * 반환되는 상태는 이미 COMPLETED 또는 FAILED로 확정된 값이다.
-     *
-     * [Meal.mealAt]에는 서버 시각이 아니라 이미지 EXIF에서 추출한 촬영 시각이 저장된다.
-     * [S3Service.confirmUploadedMealImage]가 촬영 시각과 현재 시각의 차이를
-     * [MealProperties.captureTimeTolerance] 이내로 강제하므로, 방금 촬영한 사진만 등록할 수 있다.
-     * 즉 저장되는 값은 촬영 기기의 시계에서 온 값이며, 서버 시각과 최대 허용 오차만큼 어긋날 수 있다.
-     *
-     * @param userId 식사를 등록하는 사용자 ID
-     * @param request 식사 생성 정보를 담은 [CreateMealRequest] (이미지 키)
-     * @return 생성된 [Meal]의 분석 상태를 담은 [MealStatusResponse]
-     * @throws BusinessException [MealErrorCode.DUPLICATE_IMAGE_KEY] 이미 식사 기록에 사용된 imageKey인 경우
-     * @throws BusinessException [S3ErrorCode.INVALID_KEY] request.imageKey가 요청자 소유 경로(`meals/{userId}/`)가 아닌 경우
-     * @throws BusinessException [S3ErrorCode.OBJECT_NOT_FOUND] request.imageKey에 해당하는 객체가 S3에 없는 경우
-     * @throws BusinessException [S3ErrorCode.FILE_SIZE_EXCEEDED] 실제 업로드된 크기가 0이거나 [MealProperties.maxFileSizeBytes]를 초과하는 경우
-     * @throws BusinessException [S3ErrorCode.UNSUPPORTED_CONTENT_TYPE] 실제 콘텐츠에서 감지된 MIME 타입이 허용되지 않거나, imageKey의 확장자와 다른 경우
-     * @throws BusinessException [MealErrorCode.CAPTURE_TIME_NOT_FOUND] 이미지 EXIF에서 촬영 시각을 읽을 수 없는 경우
-     * @throws BusinessException [MealErrorCode.STALE_IMAGE] 촬영 시각과 현재 시각의 차이가
-     *   [MealProperties.captureTimeTolerance] 이상인 경우
+     * @param mealId 분석을 요청할 [Meal]의 ID
      */
-    fun createMeal(userId: Long, request: CreateMealRequest): MealStatusResponse {
-        if (mealRepository.existsByImageKey(request.imageKey)) {
-            throw BusinessException(MealErrorCode.DUPLICATE_IMAGE_KEY)
-        }
+    @Transactional(propagation = Propagation.MANDATORY)
+    fun createMealOutbox(mealId: Long) {
+        val outbox = outboxRepository.save(MealOutbox(mealId, Instant.now(clock)))
+        events.publishEvent(MealAnalysisRequested(outbox.id))
+    }
 
-        val (imageKey, capturedAt) = s3Service.confirmUploadedMealImage(
-            userId = userId,
-            imageKey = request.imageKey,
-            maxFileSizeBytes = mealProperties.maxFileSizeBytes,
-        )
+    /**
+     * 아직 전달되지 않은 Outbox를 분석 큐에 적재하고 전달 완료로 표시한다.
+     *
+     * 큐 적재와 전달 완료 표시는 같은 트랜잭션에서 커밋된다. 이미 전달된 Outbox는 무시하므로
+     * 즉시 전달과 복구 스케줄러가 같은 Outbox를 동시에 처리해도 한 번만 적재된다.
+     *
+     * @param outboxId 전달할 [MealOutbox]의 ID
+     */
+    @Transactional
+    fun dispatchMealOutbox(outboxId: Long) {
+        val outbox = outboxRepository.findByIdForUpdate(outboxId) ?: return
+        if (outbox.publishedAt != null) return
 
-        val meal = request.toEntity(userId, capturedAt, imageKey)
-
-        mealRepository.save(meal)
-
-        analysisService.analyzeNutrition(meal)
-
-        return meal.toMealStatusResponse()
+        analysisPublisher.publish(MealAnalysisMessage(outbox.id, outbox.mealId))
+        outbox.markPublished(Instant.now(clock))
     }
 
     /**
@@ -273,7 +245,8 @@ class MealService(
      */
     @Transactional
     fun updateMeal(userId: Long, mealId: Long, name: String): MealResponse {
-        val meal = mealRepository.getMealByIdAndDeletedAtIsNull(mealId)
+        val meal = mealRepository.findByIdForUpdate(mealId)
+            ?.takeIf { it.deletedAt == null }
             ?: throw BusinessException(MealErrorCode.MEAL_NOT_FOUND)
 
         if (meal.userId != userId) {
@@ -297,14 +270,15 @@ class MealService(
      */
     @Transactional
     fun deleteMeal(userId: Long, mealId: Long) {
-        val meal = mealRepository.getMealByIdAndDeletedAtIsNull(mealId)
+        val meal = mealRepository.findByIdForUpdate(mealId)
+            ?.takeIf { it.deletedAt == null }
             ?: throw BusinessException(MealErrorCode.MEAL_NOT_FOUND)
 
         if (meal.userId != userId) {
             throw BusinessException(AuthErrorCode.FORBIDDEN)
         }
 
-        meal.updateDeletedAt(Instant.now())
+        meal.updateDeletedAt(Instant.now(clock))
     }
 
     @Transactional(readOnly = true)

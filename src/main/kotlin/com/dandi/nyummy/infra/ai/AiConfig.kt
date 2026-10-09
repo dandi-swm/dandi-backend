@@ -19,7 +19,8 @@ class AiConfig {
 
         return RestClient.builder()
             .baseUrl(aiProperties.baseUrl)
-            .requestFactory(ClientHttpRequestFactoryBuilder.detect().build(settings))
+            // JDK 구현은 응답 본문 수신까지 read-timeout으로 제한한다.
+            .requestFactory(ClientHttpRequestFactoryBuilder.jdk().build(settings))
             .build()
     }
 }

@@ -75,6 +75,12 @@ management:
 
 app:
   meal:
+    analysis:
+      poll-delay: 1s
+      concurrency: 2
+    outbox:
+      recovery-delay: 3s
+      batch-size: 100
     upload-method: "PUT"
     max-file-size-bytes: 10485760
     presigned-url-expiration-minutes: 10
