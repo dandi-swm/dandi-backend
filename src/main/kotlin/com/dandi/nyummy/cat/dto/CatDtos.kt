@@ -1,5 +1,6 @@
 package com.dandi.nyummy.cat.dto
 
+import jakarta.validation.constraints.AssertTrue
 import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
 import jakarta.validation.constraints.NotBlank
@@ -21,7 +22,16 @@ data class CreateCatRequest(
     @field:Min(value = 0, message = "식사 시간은 0시 이상이어야 합니다.")
     @field:Max(value = 23, message = "식사 시간은 23시 이하여야 합니다.")
     val dinnerHour: Int? = null,
-)
+) {
+    /**
+     * 끼니 시각이 겹치면 리마인더가 한 끼니만 발송된다.
+     * MealReminderTarget.convertMealTime이 when의 첫 매치를 고르기 때문이다.
+     */
+    @get:AssertTrue(message = "식사 시각은 서로 달라야 합니다.")
+    val isMealHoursDistinct: Boolean
+        get() = listOfNotNull(breakfastHour, lunchHour, dinnerHour)
+            .let { it.size == it.toSet().size }
+}
 
 data class CatResponse(
     val id: Long,

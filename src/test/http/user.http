@@ -26,7 +26,6 @@ Authorization: Bearer {{accessToken}}
   "isMarketingPushEnabled": true
 }
 
-
 ### 비밀번호 변경 API - 현재 비밀번호 틀림 (400 api.user.passwordMismatch, 세션은 유지됨)
 PATCH {{url}}/api/v1/users/me/password
 Content-Type: application/json
@@ -45,4 +44,15 @@ Authorization: Bearer {{accessToken}}
 {
   "password": "Password123!",
   "newPassword": "12345678"
+}
+
+### 식사 시간 변경 API
+PUT {{url}}/api/v1/users/me/meal-time
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "breakfastHour": 7,
+  "lunchHour": 12,
+  "dinnerHour": null
 }

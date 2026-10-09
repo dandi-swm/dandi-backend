@@ -5,6 +5,7 @@ import com.dandi.nyummy.security.CurrentUser
 import com.dandi.nyummy.user.dto.PasswordUpdateRequest
 import com.dandi.nyummy.user.dto.PasswordUpdateResponse
 import com.dandi.nyummy.user.dto.PushSettingResponse
+import com.dandi.nyummy.user.dto.UpdateMealTimeRequest
 import com.dandi.nyummy.user.dto.UpdatePushSettingRequest
 import com.dandi.nyummy.user.dto.UserResponse
 import com.dandi.nyummy.user.service.UserService
@@ -14,6 +15,7 @@ import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
+import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
@@ -64,5 +66,14 @@ class UserController(private val userService: UserService) {
     @PatchMapping("/me/push")
     fun updatePushSetting(@CurrentUser user: AuthUser, @RequestBody request: UpdatePushSettingRequest) {
         userService.updatePushSetting(user.userId, request)
+    }
+
+    @PutMapping("/me/meal-time")
+    fun updateMealTime(
+        @CurrentUser user: AuthUser,
+        @Valid @RequestBody request: UpdateMealTimeRequest,
+    ): ResponseEntity<Void> {
+        userService.updateMealTime(user.userId, request)
+        return ResponseEntity.ok().build()
     }
 }

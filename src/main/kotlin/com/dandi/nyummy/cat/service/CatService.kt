@@ -38,7 +38,6 @@ class CatService(
     private val catProperties: CatProperties,
     private val clock: Clock,
     private val catAnimationLoader: CatAnimationLoader,
-    private val userService: UserService,
 ) {
 
     companion object {

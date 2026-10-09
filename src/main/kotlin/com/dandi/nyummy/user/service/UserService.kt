@@ -8,6 +8,7 @@ import com.dandi.nyummy.security.jwt.TokenService
 import com.dandi.nyummy.user.dto.PasswordUpdateRequest
 import com.dandi.nyummy.user.dto.PasswordUpdateResponse
 import com.dandi.nyummy.user.dto.PushSettingResponse
+import com.dandi.nyummy.user.dto.UpdateMealTimeRequest
 import com.dandi.nyummy.user.dto.UpdatePushSettingRequest
 import com.dandi.nyummy.user.dto.UserResponse
 import com.dandi.nyummy.user.entity.Profile
@@ -71,6 +72,12 @@ class UserService(
 
         request.isServicePushEnabled?.let { profile.updateServicePushEnabled(it) }
         request.isMarketingPushEnabled?.let { profile.updateMarketingPushEnabled(it, Instant.now(clock)) }
+    }
+
+    @Transactional
+    fun updateMealTime(userId: Long, request: UpdateMealTimeRequest) {
+        val profile = getProfile(userId)
+        profile.updateMealTime(request.breakfastHour, request.lunchHour, request.dinnerHour)
     }
 
     /**

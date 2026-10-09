@@ -5,9 +5,9 @@ Content-Type: application/json
 
 {
   "name": "초코",
-  "breakfastHour": 7,
+  "breakfastHour": null,
   "lunchHour": 12,
-  "dinnerHour": null
+  "dinnerHour": 19
 }
 
 ### 고양이 체형 API
