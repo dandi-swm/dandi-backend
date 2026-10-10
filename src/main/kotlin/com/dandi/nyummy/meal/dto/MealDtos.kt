@@ -67,6 +67,7 @@ data class DailyMealResponse(
     val protein: Int,
     val fat: Int,
     val status: MealStatus,
+    val iconId: Long,
 )
 
 data class DailyNutritionResponse(val current: Nutrition, val target: Nutrition)
