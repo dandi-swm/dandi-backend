@@ -28,6 +28,7 @@ import org.springframework.stereotype.Service
 import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 import java.util.*
 import kotlin.time.Duration
 
@@ -51,6 +52,8 @@ class S3Service(
             "image/jpeg" to "jpg",
             "image/png" to "png",
         )
+
+        private val CAPTURE_ZONE: ZoneId = ZoneId.of("Asia/Seoul")
 
         const val TAG_STATUS = "status"
         const val TAG_STATUS_TEMP = "temp"
@@ -132,10 +135,13 @@ class S3Service(
      * 키가 요청자 소유 경로(`meals/{userId}/`)인지 확인하므로, 다른 사용자가 업로드한 객체를
      * 확정할 수 없다.
      *
-     * 크기·MIME 검증에 더해, 방금 촬영한 사진만 등록할 수 있도록 EXIF 촬영 시각을 검사한다.
-     * 촬영 시각을 읽을 수 없거나([ExifCaptureTimeReader.extractCapturedAt]가 null),
-     * 현재 시각과의 차이가 [MealProperties.captureTimeTolerance] 이상이면 확정하지 않는다.
-     * 이때 태그는 `status=temp`로 남으므로 업로드된 객체는 라이프사이클 룰이 정리한다.
+     * 크기·MIME 검증에 더해, 오늘 촬영한 사진만 등록할 수 있도록 EXIF 촬영 시각을 검사한다.
+     * 촬영 날짜가 오늘이 아니면 확정하지 않고, 이때 태그는 `status=temp`로 남으므로
+     * 업로드된 객체는 라이프사이클 룰이 정리한다.
+     *
+     * EXIF 촬영 시각이 없으면([ExifCaptureTimeReader.extractCapturedAt]가 null) 거부하지 않고
+     * 서버 현재 시각으로 채운다. 기기·앱에 따라 EXIF가 아예 없거나 메신저를 거치며 제거되는데,
+     * 그 사용자의 기록 자체를 막는 건 과하다. 대신 로그를 남겨 빈도를 관측한다.
      *
      * 촬영 시각은 EXIF `OffsetTimeOriginal`이 없으면 [ExifCaptureTimeReader]의 기본 타임존으로
      * 해석한 추정값이다. 따라서 기기 시계나 촬영 지역의 타임존이 어긋나면 정상적인 사진도 거부될 수 있다.
@@ -149,9 +155,7 @@ class S3Service(
      * @throws BusinessException [S3ErrorCode.FILE_SIZE_EXCEEDED] 실제 업로드된 크기가 0이거나 maxFileSizeBytes를 초과할 경우
      * @throws BusinessException [S3ErrorCode.UNSUPPORTED_CONTENT_TYPE] 실제 콘텐츠에서 감지된 MIME 타입이
      *   허용 목록에 없거나, imageKey의 확장자와 일치하지 않을 경우
-     * @throws BusinessException [MealErrorCode.CAPTURE_TIME_NOT_FOUND] EXIF에서 촬영 시각을 읽을 수 없을 경우
-     * @throws BusinessException [MealErrorCode.STALE_IMAGE] 촬영 시각과 현재 시각의 차이가
-     *   [MealProperties.captureTimeTolerance] 이상일 경우
+     * @throws BusinessException [MealErrorCode.STALE_IMAGE] 오늘 촬영한 사진이 아닌 경우
      */
     fun confirmUploadedMealImage(userId: Long, imageKey: String, maxFileSizeBytes: Long): Pair<String, Instant> =
         runBlocking {
@@ -188,14 +192,33 @@ class S3Service(
                 throw BusinessException(S3ErrorCode.UNSUPPORTED_CONTENT_TYPE)
             }
 
-            // 6. EXIF 촬영 시각을 추출해 방금 촬영한 사진인지 확인 (읽을 수 없거나 오래된 사진이면 거부)
+            // 6. EXIF 촬영 시각으로 오늘 찍은 사진인지 확인한다.
+            // EXIF가 없으면 거부하지 않고 서버 시각으로 채운다. 기기·앱에 따라 EXIF가 아예 없거나
+            // 메신저를 거치며 제거되는데, 그 사용자의 기록 자체를 막는 건 과하다.
             val now = Instant.now(clock)
-            val capturedAt = exifCaptureTimeReader.extractCapturedAt(objectBytes)
-                ?: throw BusinessException(MealErrorCode.CAPTURE_TIME_NOT_FOUND)
+            val exifCapturedAt = exifCaptureTimeReader.extractCapturedAt(objectBytes)
 
-            if (java.time.Duration.between(capturedAt, now).abs() >= mealProperties.captureTimeTolerance) {
-                logger.info("촬영 시각 초과로 식사 이미지 등록 거부: imageKey={}, capturedAt={}, now={}", imageKey, capturedAt, now)
-                throw BusinessException(MealErrorCode.STALE_IMAGE)
+            val capturedAt = if (exifCapturedAt == null) {
+                logger.info(
+                    "EXIF 촬영 시각 없음, 서버 시각으로 대체: userId={}, imageKey={}, format={}, size={}bytes",
+                    userId,
+                    imageKey,
+                    detectedExtension,
+                    objectBytes.size,
+                )
+                now
+            } else {
+                if (exifCapturedAt.atZone(CAPTURE_ZONE).toLocalDate() != now.atZone(CAPTURE_ZONE).toLocalDate()) {
+                    logger.info(
+                        "촬영 날짜가 오늘이 아니라 등록 거부: userId={}, imageKey={}, capturedAt={}, now={}",
+                        userId,
+                        imageKey,
+                        exifCapturedAt,
+                        now,
+                    )
+                    throw BusinessException(MealErrorCode.STALE_IMAGE)
+                }
+                exifCapturedAt
             }
 
             // 7. 검증을 통과했으므로 라이프사이클 정리 대상에서 제외되도록 확정 처리

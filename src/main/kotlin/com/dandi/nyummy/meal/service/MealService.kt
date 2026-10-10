@@ -98,10 +98,11 @@ class MealService(
      * 분석은 [AnalysisService.analyzeNutrition]에서 동기로 실행되므로,
      * 반환되는 상태는 이미 COMPLETED 또는 FAILED로 확정된 값이다.
      *
-     * [Meal.mealAt]에는 서버 시각이 아니라 이미지 EXIF에서 추출한 촬영 시각이 저장된다.
-     * [S3Service.confirmUploadedMealImage]가 촬영 시각과 현재 시각의 차이를
-     * [MealProperties.captureTimeTolerance] 이내로 강제하므로, 방금 촬영한 사진만 등록할 수 있다.
-     * 즉 저장되는 값은 촬영 기기의 시계에서 온 값이며, 서버 시각과 최대 허용 오차만큼 어긋날 수 있다.
+     * [Meal.mealAt]에는 이미지 EXIF에서 추출한 촬영 시각이 저장되고, EXIF가 없으면 서버 시각이
+     * 들어간다. [S3Service.confirmUploadedMealImage]가 촬영 날짜를 오늘로 강제하므로 저장되는
+     * 값은 어느 쪽이든 오늘 안의 시각이다.
+     *
+     * EXIF에서 온 값은 촬영 기기의 시계에 의존하므로 서버 시각과 최대 하루만큼 어긋날 수 있다.
      *
      * @param userId 식사를 등록하는 사용자 ID
      * @param request 식사 생성 정보를 담은 [CreateMealRequest] (이미지 키)
@@ -111,9 +112,7 @@ class MealService(
      * @throws BusinessException [S3ErrorCode.OBJECT_NOT_FOUND] request.imageKey에 해당하는 객체가 S3에 없는 경우
      * @throws BusinessException [S3ErrorCode.FILE_SIZE_EXCEEDED] 실제 업로드된 크기가 0이거나 [MealProperties.maxFileSizeBytes]를 초과하는 경우
      * @throws BusinessException [S3ErrorCode.UNSUPPORTED_CONTENT_TYPE] 실제 콘텐츠에서 감지된 MIME 타입이 허용되지 않거나, imageKey의 확장자와 다른 경우
-     * @throws BusinessException [MealErrorCode.CAPTURE_TIME_NOT_FOUND] 이미지 EXIF에서 촬영 시각을 읽을 수 없는 경우
-     * @throws BusinessException [MealErrorCode.STALE_IMAGE] 촬영 시각과 현재 시각의 차이가
-     *   [MealProperties.captureTimeTolerance] 이상인 경우
+     * @throws BusinessException [MealErrorCode.STALE_IMAGE] 오늘 촬영한 사진이 아닌 경우
      */
     fun createMeal(userId: Long, request: CreateMealRequest): MealStatusResponse {
         if (mealRepository.existsByImageKey(request.imageKey)) {
