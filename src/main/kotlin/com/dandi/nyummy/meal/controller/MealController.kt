@@ -5,8 +5,6 @@ import com.dandi.nyummy.meal.dto.DailyMealsResponse
 import com.dandi.nyummy.meal.dto.MealResponse
 import com.dandi.nyummy.meal.dto.MealStatusResponse
 import com.dandi.nyummy.meal.dto.MonthlyMealsResponse
-import com.dandi.nyummy.meal.dto.UploadImageRequest
-import com.dandi.nyummy.meal.dto.UploadImageResponse
 import com.dandi.nyummy.meal.service.AnalysisService
 import com.dandi.nyummy.meal.service.MealService
 import com.dandi.nyummy.security.AuthUser
@@ -110,14 +108,4 @@ class MealController(private val mealService: MealService, private val analysisS
         @CurrentUser user: AuthUser,
         @Parameter(description = "식사 ID") @PathVariable @NotNull @Valid mealId: Long,
     ): MealStatusResponse = analysisService.retryNutritionAnalysis(user.userId, mealId)
-
-    @Operation(
-        summary = "이미지 업로드 URL 발급",
-        description = "식사 이미지를 외부 스토리지에 직접 업로드할 수 있는 presigned URL과 이미지 키를 발급한다.",
-    )
-    @PostMapping("/images/presigned-url")
-    fun getUploadUrl(
-        @CurrentUser user: AuthUser,
-        @Valid @RequestBody request: UploadImageRequest,
-    ): UploadImageResponse = mealService.createUploadUrl(user.userId, request)
 }

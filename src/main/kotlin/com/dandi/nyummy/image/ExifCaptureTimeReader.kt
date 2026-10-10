@@ -1,4 +1,4 @@
-package com.dandi.nyummy.infra.image
+package com.dandi.nyummy.image
 
 import com.drew.imaging.ImageMetadataReader
 import com.drew.metadata.exif.ExifSubIFDDirectory

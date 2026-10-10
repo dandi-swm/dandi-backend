@@ -1,4 +1,4 @@
-package com.dandi.nyummy.infra.image.s3
+package com.dandi.nyummy.infra.storage.s3
 
 import aws.sdk.kotlin.services.s3.S3Client
 import org.springframework.beans.factory.annotation.Value

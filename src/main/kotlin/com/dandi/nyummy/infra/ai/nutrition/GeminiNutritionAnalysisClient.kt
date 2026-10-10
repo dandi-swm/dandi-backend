@@ -1,7 +1,7 @@
 package com.dandi.nyummy.infra.ai.nutrition
 
 import com.dandi.nyummy.infra.ai.AiProperties
-import com.dandi.nyummy.infra.image.s3.S3Service
+import com.dandi.nyummy.infra.storage.s3.S3StorageClient
 import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.repository.IconRepository
 import com.dandi.nyummy.meal.service.IconService
@@ -16,7 +16,7 @@ import kotlin.io.encoding.Base64
 class GeminiNutritionAnalysisClient(
     private val restClient: RestClient,
     private val aiProperties: AiProperties,
-    private val s3Service: S3Service,
+    private val s3StorageClient: S3StorageClient,
     private val objectMapper: ObjectMapper,
     private val iconService: IconService,
 ) : NutritionAnalysisClient {
@@ -80,7 +80,7 @@ class GeminiNutritionAnalysisClient(
     }
 
     override fun analyzeNutrition(imageKey: String): NutritionAnalysisResult {
-        val objectContent = runBlocking { s3Service.downloadObject(imageKey) }
+        val objectContent = runBlocking { s3StorageClient.downloadObject(imageKey) }
         val encodedContent = Base64.encode(objectContent.bytes, 0, objectContent.bytes.size)
         val mimeType = objectContent.contentType
 

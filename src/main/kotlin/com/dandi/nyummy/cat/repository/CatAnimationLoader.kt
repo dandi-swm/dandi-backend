@@ -4,7 +4,7 @@ import com.dandi.nyummy.cat.dto.CatAnimationResponse
 import com.dandi.nyummy.cat.enum.CatWeight
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.CatErrorCode
-import com.dandi.nyummy.infra.image.s3.S3Service
+import com.dandi.nyummy.infra.storage.s3.S3StorageClient
 import org.slf4j.LoggerFactory
 import org.springframework.cache.annotation.Cacheable
 import org.springframework.stereotype.Component
@@ -23,7 +23,7 @@ import tools.jackson.module.kotlin.readValue
  * AOP 프록시를 거치지 않아 [Cacheable]이 예외 없이 무시된다.
  */
 @Component
-class CatAnimationLoader(private val s3Service: S3Service, private val objectMapper: ObjectMapper) {
+class CatAnimationLoader(private val s3StorageClient: S3StorageClient, private val objectMapper: ObjectMapper) {
     companion object {
         private const val CAT_PREFIX = "cats"
         private const val METADATA_FILE = "metadata.json"
@@ -43,7 +43,7 @@ class CatAnimationLoader(private val s3Service: S3Service, private val objectMap
     fun load(weight: CatWeight): CatAnimationResponse {
         // 체형은 경로에만 담기고 파일명은 모든 체형이 같으므로, slug가 어긋나면 엉뚱한 체형을 읽는다.
         val key = "$CAT_PREFIX/${weight.slug}/$METADATA_FILE"
-        val json = s3Service.downloadText(key)
+        val json = s3StorageClient.downloadText(key)
 
         // 캐시가 비어 있을 때만 호출되므로, 이 로그가 매 요청 찍히면 캐시가 동작하지 않는 것이다.
         logger.info("애니메이션 메타데이터 적재: key={}", key)

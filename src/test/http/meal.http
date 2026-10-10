@@ -1,20 +1,5 @@
-### 음식 이미지 업로드 presigned-url 생성 API
-POST {{url}}/api/v1/meals/images/presigned-url
-Content-Type: application/json
-Authorization: Bearer {{accessToken}}
-
-{
-  "contentType": "image/jpeg",
-  "fileSizeBytes": 1000
-}
-
-### 발급받은 presigned url로 이미지 S3에 업로드
-PUT {{uploadUrl}}
-Content-Type: image/jpeg
-x-amz-tagging: status=temp
-
-< image/food-screenshot.jpeg
-
+# 이미지 발급·업로드는 image.http 참고 (purpose: MEAL)
+# 하루 기록 시도 횟수(5회)를 넘기면 발급 단계에서 api.meal.dailyCountExceeded로 거부된다.
 
 ### 식사기록 생성 API
 POST {{url}}/api/v1/meals
@@ -23,6 +8,26 @@ Authorization: Bearer {{accessToken}}
 
 {
   "imageKey": "{{imageKey}}"
+}
+
+### [실패] 문의 용도로 발급받은 키로 식사기록 생성 → api.s3.invalidKey
+POST {{url}}/api/v1/meals
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "imageKey": "{{inquiryImageKey}}"
+}
+
+### [실패] 오늘 촬영하지 않은 사진으로 식사기록 생성 → api.meal.staleImage
+# image.http에서 어제 이전에 촬영한(EXIF 있는) 사진을 업로드한 뒤 그 키를 넣는다.
+# 거부 후 S3 콘솔에서 객체 태그가 status=temp로 남아 있는지 확인한다.
+POST {{url}}/api/v1/meals
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "imageKey": "{{staleImageKey}}"
 }
 
 ### 분석 상태 조회 API

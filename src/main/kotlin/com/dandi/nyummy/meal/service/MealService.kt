@@ -3,7 +3,8 @@ package com.dandi.nyummy.meal.service
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.AuthErrorCode
 import com.dandi.nyummy.exception.errorcode.MealErrorCode
-import com.dandi.nyummy.infra.image.s3.S3Service
+import com.dandi.nyummy.image.enum.ImagePurpose
+import com.dandi.nyummy.image.service.ImageService
 import com.dandi.nyummy.meal.calculator.calculateDailyNutritionEvaluation
 import com.dandi.nyummy.meal.calculator.calculateMonthlyCalendarRange
 import com.dandi.nyummy.meal.calculator.calculateRecommendedDailyIntake
@@ -18,8 +19,6 @@ import com.dandi.nyummy.meal.dto.MonthlyMealsResponse
 import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.dto.Streak
 import com.dandi.nyummy.meal.dto.TodayMealSummary
-import com.dandi.nyummy.meal.dto.UploadImageRequest
-import com.dandi.nyummy.meal.dto.UploadImageResponse
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.mapper.toDailyMealResponse
@@ -29,6 +28,7 @@ import com.dandi.nyummy.meal.mapper.toMealStatusResponse
 import com.dandi.nyummy.meal.mapper.toNutrition
 import com.dandi.nyummy.meal.repository.MealRepository
 import com.dandi.nyummy.user.repository.ProfileRepository
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -36,67 +36,26 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
-import java.time.temporal.ChronoUnit
-import kotlin.time.Duration.Companion.minutes
 
 @Service
 class MealService(
     private val analysisService: AnalysisService,
     private val mealRepository: MealRepository,
-    private val s3Service: S3Service,
+    private val imageService: ImageService,
+    private val mealAttemptService: MealAttemptService,
     private val clock: Clock,
     private val profileRepository: ProfileRepository,
     private val mealProperties: MealProperties,
 ) {
 
     companion object {
-        // TODO: 사용자별 timezone에 맞게 계산
-        private val MEAL_ZONE: ZoneId = ZoneId.of("Asia/Seoul")
-    }
-
-    /**
-     * 식사 이미지를 업로드할 수 있는 presigned URL을 발급한다.
-     *
-     * 발급된 객체 키는 `meals/{userId}/...` 형식으로 서버가 생성하며, 업로드 직후에는
-     * `status=temp` 태그가 붙은 미확정 상태다. [createMeal]로 확정되지 않으면 S3
-     * 라이프사이클 룰이 정리하므로 서버가 따로 삭제하지 않는다.
-     *
-     * @param userId 업로드를 요청한 사용자 ID
-     * @param request 업로드할 이미지의 [UploadImageRequest] (MIME 타입, 파일 크기)
-     * @return 업로드 URL/메서드/헤더와 이미지 키를 담은 [UploadImageResponse].
-     *   [UploadImageResponse.uploadHeaders]는 업로드 요청에 그대로 포함해야 하며,
-     *   누락하면 서명이 일치하지 않아 업로드가 거부된다
-     * @throws BusinessException [S3ErrorCode.UNSUPPORTED_CONTENT_TYPE] contentType이 허용되지 않는 경우
-     * @throws BusinessException [S3ErrorCode.FILE_SIZE_EXCEEDED] fileSizeBytes가 [MealProperties.maxFileSizeBytes]를 초과하거나 음수인 경우
-     */
-    fun createUploadUrl(userId: Long, request: UploadImageRequest): UploadImageResponse {
-        // 업로드 전에 걸러낸다. 확정 단계에서 막으면 사용자가 이미지를 다 올린 뒤에 거부당한다.
-        validateDailyCount(userId, LocalDate.now(clock.withZone(MEAL_ZONE)))
-
-        val expirationInstant = Instant.now(clock)
-            .plus(mealProperties.presignedUrlExpirationMinutes.toLong(), ChronoUnit.MINUTES)
-
-        val uploadUrl = s3Service.createMealUploadUrl(
-            userId = userId,
-            contentType = request.contentType,
-            fileSizeBytes = request.fileSizeBytes,
-            maxFileSizeBytes = mealProperties.maxFileSizeBytes,
-            expiration = mealProperties.presignedUrlExpirationMinutes.minutes,
-        )
-
-        return UploadImageResponse(
-            uploadUrl = uploadUrl.url,
-            imageKey = uploadUrl.key,
-            uploadMethod = mealProperties.uploadMethod,
-            uploadHeaders = uploadUrl.uploadHeaders,
-            expiresAt = expirationInstant.toString(),
-        )
+        private val logger = LoggerFactory.getLogger(MealService::class.java)
     }
 
     /**
      * 업로드된 이미지를 확정하고 식사 기록을 생성한 뒤, 영양 분석을 수행한다.
      *
-     * 이미지는 [createUploadUrl]로 발급받은 키에 이미 업로드되어 있어야 한다.
+     * 이미지는 [ImageService.createUploadUrl]로 발급받은 키에 이미 업로드되어 있어야 한다.
      * 별도 경로로 복사하지 않고 상태 태그만 `status=committed`로 바꾸므로,
      * 저장되는 [Meal.imageKey]는 요청으로 받은 키와 동일하다.
      *
@@ -107,7 +66,7 @@ class MealService(
      * 반환되는 상태는 이미 COMPLETED 또는 FAILED로 확정된 값이다.
      *
      * [Meal.mealAt]에는 이미지 EXIF에서 추출한 촬영 시각이 저장되고, EXIF가 없으면 서버 시각이
-     * 들어간다. [S3Service.confirmUploadedMealImage]가 촬영 날짜를 오늘로 강제하므로 저장되는
+     * 들어간다. [MealAttemptService.validateCapturedToday]가 촬영 날짜를 오늘로 강제하므로 저장되는
      * 값은 어느 쪽이든 오늘 안의 시각이다.
      *
      * EXIF에서 온 값은 촬영 기기의 시계에 의존하므로 서버 시각과 최대 하루만큼 어긋날 수 있다.
@@ -118,7 +77,7 @@ class MealService(
      * @throws BusinessException [MealErrorCode.DUPLICATE_IMAGE_KEY] 이미 식사 기록에 사용된 imageKey인 경우
      * @throws BusinessException [S3ErrorCode.INVALID_KEY] request.imageKey가 요청자 소유 경로(`meals/{userId}/`)가 아닌 경우
      * @throws BusinessException [S3ErrorCode.OBJECT_NOT_FOUND] request.imageKey에 해당하는 객체가 S3에 없는 경우
-     * @throws BusinessException [S3ErrorCode.FILE_SIZE_EXCEEDED] 실제 업로드된 크기가 0이거나 [MealProperties.maxFileSizeBytes]를 초과하는 경우
+     * @throws BusinessException [S3ErrorCode.FILE_SIZE_EXCEEDED] 실제 업로드된 크기가 0이거나 [ImagePurpose.MEAL]의 최대 크기를 초과하는 경우
      * @throws BusinessException [S3ErrorCode.UNSUPPORTED_CONTENT_TYPE] 실제 콘텐츠에서 감지된 MIME 타입이 허용되지 않거나, imageKey의 확장자와 다른 경우
      * @throws BusinessException [MealErrorCode.STALE_IMAGE] 오늘 촬영한 사진이 아닌 경우
      */
@@ -127,20 +86,28 @@ class MealService(
             throw BusinessException(MealErrorCode.DUPLICATE_IMAGE_KEY)
         }
 
-        // createUploadUrl에서 이미 걸렀지만 여기가 유일한 DB 쓰기 지점이라 다시 검사한다.
+        // 업로드 URL 발급 때 이미 걸렀지만 여기가 유일한 DB 쓰기 지점이라 다시 검사한다.
         // 발급받은 URL을 들고 늦게 확정하거나, 업로드 URL 없이 바로 호출하는 경우를 막는다.
         //
-        // S3 확정(confirmUploadedMealImage) 앞에서 검사한다. 뒤에서 하면 거부해도 객체가 이미
+        // 이미지 확정(confirmUpload) 앞에서 검사한다. 뒤에서 하면 거부해도 객체가 이미
         // status=committed라 라이프사이클 정리 대상에서 빠져 고아 객체로 남는다.
-        validateDailyCount(userId, LocalDate.now(clock.withZone(MEAL_ZONE)))
+        mealAttemptService.validateDailyCount(userId)
 
-        val (imageKey, capturedAt) = s3Service.confirmUploadedMealImage(
+        // 오늘 촬영 검증은 콜백으로 넘겨 확정(status=committed) 전에 실행되게 한다.
+        val uploadedImage = imageService.confirmUpload(
             userId = userId,
+            purpose = ImagePurpose.MEAL,
             imageKey = request.imageKey,
-            maxFileSizeBytes = mealProperties.maxFileSizeBytes,
+            validate = { mealAttemptService.validateCapturedToday(userId, it) },
         )
 
-        val meal = request.toEntity(userId, capturedAt, imageKey)
+        // EXIF가 없으면 거부하지 않고 서버 시각으로 채운다. 기기·앱에 따라 EXIF가 아예 없거나
+        // 메신저를 거치며 제거되는데, 그 사용자의 기록 자체를 막는 건 과하다.
+        val mealAt = uploadedImage.capturedAt ?: Instant.now(clock).also {
+            logger.info("EXIF 촬영 시각 없음, 서버 시각으로 대체: userId={}, imageKey={}", userId, uploadedImage.imageKey)
+        }
+
+        val meal = request.toEntity(userId, mealAt, uploadedImage.imageKey)
 
         mealRepository.save(meal)
 
@@ -270,7 +237,7 @@ class MealService(
             throw BusinessException(AuthErrorCode.FORBIDDEN)
         }
 
-        val imageUrl = s3Service.createPresignedGetUrl(meal.imageKey, 10.minutes)
+        val imageUrl = imageService.createImageUrl(meal.imageKey)
 
         return meal.toMealResponse(imageUrl)
     }
@@ -294,7 +261,7 @@ class MealService(
             throw BusinessException(AuthErrorCode.FORBIDDEN)
         }
 
-        val imageUrl = s3Service.createPresignedGetUrl(meal.imageKey, 10.minutes)
+        val imageUrl = imageService.createImageUrl(meal.imageKey)
 
         meal.updateName(name)
 
@@ -362,36 +329,10 @@ class MealService(
 
         return TodayMealSummary(
             todayRecordedCount = meals.size,
-            todayAttemptCount = countDailyAttempts(userId, today).toInt(),
+            todayAttemptCount = mealAttemptService.countDailyAttempts(userId, today).toInt(),
             todayMaxAttemptCount = mealProperties.maxDailyCount,
             todayCurrentCalory = currentCalory,
             todayTargetCalory = targetCalory,
         )
-    }
-
-    /**
-     * 그 날짜에 기록을 시도한 횟수. 삭제한 식사와 분석 실패(FAILED)도 센다.
-     *
-     * "하루에 N개 보유"가 아니라 "하루에 N번 시도"가 정책이므로 지웠다고 자리가 돌아오지 않는다.
-     * 레포의 다른 쿼리와 달리 `deletedAt` 조건이 없는 이유다.
-     *
-     * 제한 검사([validateDailyCount])와 홈 응답이 이 함수를 공유한다. 각자 세면 한쪽만 조건이
-     * 바뀌어도 화면에 보이는 숫자와 실제 제한이 어긋난다.
-     */
-    private fun countDailyAttempts(userId: Long, date: LocalDate): Long = mealRepository.countMealsByUserIdAndPeriod(
-        userId,
-        date.atStartOfDay(MEAL_ZONE).toInstant(),
-        date.plusDays(1).atStartOfDay(MEAL_ZONE).toInstant(),
-    )
-
-    /**
-     * 그 날짜의 기록 시도 횟수가 상한([MealProperties.maxDailyCount])에 닿았는지 검사한다.
-     *
-     * @throws BusinessException [MealErrorCode.DAILY_COUNT_EXCEEDED] 상한에 닿은 경우
-     */
-    private fun validateDailyCount(userId: Long, date: LocalDate) {
-        if (countDailyAttempts(userId, date) >= mealProperties.maxDailyCount) {
-            throw BusinessException(MealErrorCode.DAILY_COUNT_EXCEEDED)
-        }
     }
 }

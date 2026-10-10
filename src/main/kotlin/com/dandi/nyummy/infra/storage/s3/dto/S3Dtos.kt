@@ -1,4 +1,4 @@
-package com.dandi.nyummy.infra.image.s3.dto
+package com.dandi.nyummy.infra.storage.s3.dto
 
 data class S3ObjectContent(val bytes: ByteArray, val contentType: String?)
 

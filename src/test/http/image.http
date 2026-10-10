@@ -1,0 +1,64 @@
+### 이미지 업로드 presigned-url 발급 API (식사)
+# 응답의 uploadUrl, imageKey를 아래 변수에 옮겨 담는다.
+POST {{url}}/api/v1/images/presigned-url
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "purpose": "MEAL",
+  "contentType": "image/jpeg",
+  "fileSizeBytes": 1000
+}
+
+### 발급받은 presigned url로 이미지 S3에 업로드
+# 응답의 uploadHeaders를 그대로 보내야 서명이 일치한다.
+PUT {{uploadUrl}}
+Content-Type: image/jpeg
+x-amz-tagging: status=temp
+
+< image/crazy_spicy.jpeg
+
+### 이미지 업로드 presigned-url 발급 API (문의)
+# imageKey가 inquiries/{userId}/... 로 발급된다. 업로드까지 성공하면 IAM 권한도 확인된다.
+POST {{url}}/api/v1/images/presigned-url
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "purpose": "INQUIRY",
+  "contentType": "image/png",
+  "fileSizeBytes": 1000
+}
+
+### [실패] 지원하지 않는 파일 형식 → api.s3.unsupportedContentType
+POST {{url}}/api/v1/images/presigned-url
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "purpose": "MEAL",
+  "contentType": "image/gif",
+  "fileSizeBytes": 1000
+}
+
+### [실패] 용도별 최대 크기(10MB) 초과 → api.s3.fileSizeExceeded
+POST {{url}}/api/v1/images/presigned-url
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "purpose": "MEAL",
+  "contentType": "image/jpeg",
+  "fileSizeBytes": 10485761
+}
+
+### [실패] 존재하지 않는 용도 → 400
+POST {{url}}/api/v1/images/presigned-url
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "purpose": "PROFILE",
+  "contentType": "image/jpeg",
+  "fileSizeBytes": 1000
+}
