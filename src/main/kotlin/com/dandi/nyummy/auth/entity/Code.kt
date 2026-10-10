@@ -12,7 +12,7 @@ import jakarta.persistence.Table
 import java.time.Instant
 
 @Entity
-@Table(name = "code")
+@Table(name = "codes")
 class Code(
 
     @Column(name = "email", nullable = false, unique = true)

@@ -8,7 +8,7 @@ import jakarta.persistence.Id
 import jakarta.persistence.Table
 
 @Entity
-@Table(name = "icon")
+@Table(name = "icons")
 class Icon {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

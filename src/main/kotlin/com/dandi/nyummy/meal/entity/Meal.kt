@@ -20,7 +20,7 @@ import java.time.Instant
 
 @Entity
 @EntityListeners(AuditingEntityListener::class)
-@Table(name = "meal")
+@Table(name = "meals")
 class Meal(
 
     @Enumerated(EnumType.STRING)

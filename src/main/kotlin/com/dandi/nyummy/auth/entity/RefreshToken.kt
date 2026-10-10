@@ -13,7 +13,7 @@ import java.time.Instant
 
 @Entity
 @EntityListeners(AuditingEntityListener::class)
-@Table(name = "refresh_token")
+@Table(name = "refresh_tokens")
 class RefreshToken(
 
     @Column(name = "refresh_token", nullable = false, length = 512)

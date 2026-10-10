@@ -17,7 +17,7 @@ import java.time.Instant
 
 @Entity
 @EntityListeners(AuditingEntityListener::class)
-@Table(name = "device_token")
+@Table(name = "device_tokens")
 class DeviceToken(
     @Column(name = "token", nullable = false, length = 512, unique = true)
     var token: String,

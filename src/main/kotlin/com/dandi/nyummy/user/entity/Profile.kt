@@ -17,7 +17,7 @@ import java.time.LocalDate
 
 @Entity
 @EntityListeners(AuditingEntityListener::class)
-@Table(name = "profile")
+@Table(name = "profiles")
 class Profile(
 
     @Column(name = "nickname", length = 100)

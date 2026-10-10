@@ -14,7 +14,7 @@ import java.time.Instant
 
 @Entity
 @EntityListeners(AuditingEntityListener::class)
-@Table(name = "cat")
+@Table(name = "cats")
 class Cat(
 
     @Column(name = "name", nullable = false, length = 100)
