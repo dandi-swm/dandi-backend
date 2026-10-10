@@ -8,4 +8,5 @@ enum class MealErrorCode(override val status: HttpStatus, override val code: Str
     ANALYSIS_NOT_RETRYABLE(HttpStatus.CONFLICT, "api.meal.analysisNotRetryable", "FAILED 상태의 식사만 재시도할 수 있습니다."),
     DUPLICATE_IMAGE_KEY(HttpStatus.CONFLICT, "api.meal.duplicateImageKey", "이미 등록된 imageKey입니다."),
     STALE_IMAGE(HttpStatus.BAD_REQUEST, "api.meal.staleImage", "오늘 촬영한 사진만 등록할 수 있습니다."),
+    DAILY_COUNT_EXCEEDED(HttpStatus.CONFLICT, "api.meal.dailyCountExceeded", "하루에 등록할 수 있는 식사 개수를 초과했습니다."),
 }

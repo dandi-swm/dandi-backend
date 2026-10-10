@@ -86,6 +86,7 @@ app:
     upload-method: "PUT"
     max-file-size-bytes: 10485760
     presigned-url-expiration-minutes: 10
+    max-daily-count: 5
   cat:
     weight-update-interval-days: 3
     weight-update-tolerance: 0.2

@@ -83,4 +83,18 @@ data class MonthlyMealDayResponse(
 
 data class Streak(val streakDays: Int, val recordsUntilNextReward: Int)
 
-data class TodayMealSummary(val todayRecordedCount: Int, val todayCurrentCalory: Int, val todayTargetCalory: Int)
+/**
+ * 오늘의 식사 현황.
+ *
+ * [todayRecordedCount]와 [todayAttemptCount]는 세는 대상이 다르다. 전자는 삭제하지 않고 남아
+ * 있는 식사 수(화면 목록 개수)고, 후자는 삭제·분석 실패까지 포함한 기록 시도 횟수다.
+ * 제한([todayMaxAttemptCount])과 비교할 값은 후자이므로, 5번 올리고 2개를 지운 사용자는
+ * `recorded=3`, `attempt=5`가 되어 더 등록할 수 없다.
+ */
+data class TodayMealSummary(
+    val todayRecordedCount: Int,
+    val todayAttemptCount: Int,
+    val todayMaxAttemptCount: Int,
+    val todayCurrentCalory: Int,
+    val todayTargetCalory: Int,
+)

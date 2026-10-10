@@ -41,4 +41,19 @@ interface MealRepository : JpaRepository<Meal, Long> {
         @Param("status") status: MealStatus,
         @Param("mealAt") mealAt: Instant,
     ): Boolean
+
+    @Query(
+        """
+            select count(m)
+            from Meal as m
+            where m.userId = :userId
+                and m.mealAt >= :start
+                and m.mealAt < :end
+        """,
+    )
+    fun countMealsByUserIdAndPeriod(
+        @Param("userId") userId: Long,
+        @Param("start") start: Instant,
+        @Param("end") end: Instant,
+    ): Long
 }
