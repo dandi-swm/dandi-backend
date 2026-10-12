@@ -22,7 +22,7 @@ data class MealResponse(
     val status: MealStatus,
     val nutrition: Nutrition,
     val imageUrl: String,
-    val hasAnalysisFeedback: Boolean,
+    val canCreateAnalysisFeedback: Boolean,
     val catComment: String? = "",
     val iconId: Long? = 1,
 )

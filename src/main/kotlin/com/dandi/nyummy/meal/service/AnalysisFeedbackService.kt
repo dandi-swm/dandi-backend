@@ -3,6 +3,7 @@ package com.dandi.nyummy.meal.service
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.MealErrorCode
 import com.dandi.nyummy.meal.dto.CreateAnalysisFeedbackRequest
+import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.mapper.toAnalysisFeedback
 import com.dandi.nyummy.meal.repository.AnalysisFeedbackRepository
@@ -76,6 +77,19 @@ class AnalysisFeedbackService(
             throw BusinessException(MealErrorCode.ANALYSIS_FEEDBACK_ALREADY_EXISTS)
         }
     }
+
+    /**
+     * 이 식사에 평가를 등록할 수 있는지 판단한다. 앱은 이 값만 보고 별점 UI를 띄운다.
+     *
+     * [createAnalysisFeedback]의 거부 조건과 같은 규칙이어야 한다. 등록 쪽은 에러코드를 구분해야 해서
+     * 조건별로 따로 검사하므로, 평가 조건이 늘면 두 곳을 함께 고친다.
+     *
+     * @param meal 평가 가능 여부를 판단할 식사
+     * @return 영양 분석이 완료됐고 아직 평가하지 않은 식사면 true
+     */
+    @Transactional(readOnly = true)
+    fun canCreateAnalysisFeedback(meal: Meal): Boolean =
+        meal.status == MealStatus.COMPLETED && !analysisFeedbackRepository.existsByMealId(meal.id)
 
     /**
      * 별점이 0.5~5.0 사이의 0.5 단위 값인지 검증한다. 0.0(별점 없음)은 허용하지 않는다.
