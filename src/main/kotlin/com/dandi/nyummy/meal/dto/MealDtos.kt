@@ -2,7 +2,9 @@ package com.dandi.nyummy.meal.dto
 
 import com.dandi.nyummy.meal.enum.DailyNutritionEvaluation
 import com.dandi.nyummy.meal.enum.MealStatus
+import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.validation.constraints.NotBlank
+import jakarta.validation.constraints.Size
 import java.time.Instant
 import java.time.LocalDate
 
@@ -81,4 +83,19 @@ data class TodayMealSummaryResponse(
     val todayMaxAttemptCount: Int,
     val todayCurrentCalory: Int,
     val todayTargetCalory: Int,
+)
+
+data class CreateAnalysisFeedbackRequest(
+    // 실제 범위·단위 검증은 AnalysisFeedbackService.validateRating에서 한다. 아래는 Swagger 문서용.
+    @field:Schema(
+        description = "별점 (0.5 ~ 5.0, 0.5 단위)",
+        example = "4.5",
+        minimum = "0.5",
+        maximum = "5.0",
+        multipleOf = 0.5,
+    )
+    val rating: Float,
+
+    @field:Size(max = 500, message = "평가 이유는 500자 이하여야 합니다.")
+    val reason: String? = null,
 )

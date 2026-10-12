@@ -9,4 +9,7 @@ enum class MealErrorCode(override val status: HttpStatus, override val code: Str
     DUPLICATE_IMAGE_KEY(HttpStatus.CONFLICT, "api.meal.duplicateImageKey", "이미 등록된 imageKey입니다."),
     STALE_IMAGE(HttpStatus.BAD_REQUEST, "api.meal.staleImage", "오늘 촬영한 사진만 등록할 수 있습니다."),
     DAILY_COUNT_EXCEEDED(HttpStatus.CONFLICT, "api.meal.dailyCountExceeded", "하루에 등록할 수 있는 식사 개수를 초과했습니다."),
+    INVALID_RATING(HttpStatus.BAD_REQUEST, "api.meal.invalidRating", "별점은 0.5 ~ 5.0 사이의 0.5 단위 값이어야 합니다."),
+    ANALYSIS_FEEDBACK_ALREADY_EXISTS(HttpStatus.CONFLICT, "api.meal.analysisFeedbackAlreadyExists", "이미 평가한 식사입니다."),
+    ANALYSIS_NOT_COMPLETED(HttpStatus.CONFLICT, "api.meal.analysisNotCompleted", "분석이 완료된 식사만 평가할 수 있습니다."),
 }

@@ -61,3 +61,13 @@ Authorization: Bearer {{accessToken}}
 ### 식사 삭제 API
 DELETE {{url}}/api/v1/meals/{{mealId}}
 Authorization: Bearer {{accessToken}}
+
+### 영양 분석 피드백 생성 API
+POST {{url}}/api/v1/meals/{{mealId}}/analysis/feedback
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "rating": 3.5,
+  "reason": "꽤 괜찮네요!"
+}
