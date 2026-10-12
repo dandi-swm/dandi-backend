@@ -10,6 +10,7 @@ import com.dandi.nyummy.meal.config.MealProperties
 import com.dandi.nyummy.meal.dto.CreateMealRequest
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.enum.MealStatus
+import com.dandi.nyummy.meal.repository.AnalysisFeedbackRepository
 import com.dandi.nyummy.meal.repository.MealRepository
 import com.dandi.nyummy.user.repository.ProfileRepository
 import io.mockk.Runs
@@ -40,6 +41,7 @@ class MealServiceTest {
     private val imageService = mockk<ImageService>()
     private val mealAttemptService = mockk<MealAttemptService>()
     private val profileRepository = mockk<ProfileRepository>()
+    private val analysisFeedbackRepository = mockk<AnalysisFeedbackRepository>()
 
     private val mealService = MealService(
         analysisService = analysisService,
@@ -49,6 +51,7 @@ class MealServiceTest {
         clock = clock,
         profileRepository = profileRepository,
         mealProperties = MealProperties(maxDailyCount = 5),
+        analysisFeedbackRepository = analysisFeedbackRepository,
     )
 
     private val savedMeal = slot<Meal>()

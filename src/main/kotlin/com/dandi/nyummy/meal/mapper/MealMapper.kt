@@ -43,7 +43,7 @@ fun Meal.toDailyMealResponse() = DailyMealResponse(
     iconId = this.iconId,
 )
 
-fun Meal.toMealResponse(imageUrl: String) = MealResponse(
+fun Meal.toMealResponse(imageUrl: String, hasAnalysisFeedback: Boolean) = MealResponse(
     mealId = this.id,
     name = this.name,
     mealAt = this.mealAt,
@@ -52,4 +52,5 @@ fun Meal.toMealResponse(imageUrl: String) = MealResponse(
     imageUrl = imageUrl,
     catComment = this.catComment,
     iconId = this.iconId,
+    hasAnalysisFeedback = hasAnalysisFeedback,
 )

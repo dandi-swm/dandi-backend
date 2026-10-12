@@ -68,7 +68,9 @@ class MealController(
         @Parameter(description = "조회 일 (1~31)") @RequestParam day: Int,
     ): DailyMealsResponse = mealService.getDailyMeals(user.userId, year, month, day)
 
-    @Operation(summary = "식사 단건 조회", description = "식사 하나의 상세 정보(이름, 시각, 상태, 영양, 이미지 URL)를 조회한다.")
+    @Operation(summary = "식사 단건 조회", description = "식사 하나의 상세 정보(이름, 시각, 상태, 영양, 이미지 URL)를 조회한다. " +
+        "영양 분석 평가 유무(hasAnalysisFeedback)가 들어 있어, 분석이 완료됐고(status=COMPLETED) " +
+        "아직 평가하지 않은 식사에 별점 UI를 띄울 수 있다.",)
     @ApiErrorCodes(meal = [MealErrorCode.MEAL_NOT_FOUND], auth = [AuthErrorCode.FORBIDDEN])
     @GetMapping("/{mealId}")
     fun getMeal(

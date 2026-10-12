@@ -16,21 +16,14 @@ data class CreateMealRequest(
 )
 
 data class MealResponse(
-
     val mealId: Long,
-
     val name: String,
-
     val mealAt: Instant,
-
     val status: MealStatus,
-
     val nutrition: Nutrition,
-
     val imageUrl: String,
-
+    val hasAnalysisFeedback: Boolean,
     val catComment: String? = "",
-
     val iconId: Long? = 1,
 )
 

@@ -26,6 +26,7 @@ import com.dandi.nyummy.meal.mapper.toEntity
 import com.dandi.nyummy.meal.mapper.toMealResponse
 import com.dandi.nyummy.meal.mapper.toMealStatusResponse
 import com.dandi.nyummy.meal.mapper.toNutrition
+import com.dandi.nyummy.meal.repository.AnalysisFeedbackRepository
 import com.dandi.nyummy.meal.repository.MealRepository
 import com.dandi.nyummy.user.repository.ProfileRepository
 import org.slf4j.LoggerFactory
@@ -46,6 +47,7 @@ class MealService(
     private val clock: Clock,
     private val profileRepository: ProfileRepository,
     private val mealProperties: MealProperties,
+    private val analysisFeedbackRepository: AnalysisFeedbackRepository,
 ) {
 
     companion object {
@@ -239,7 +241,9 @@ class MealService(
 
         val imageUrl = imageService.createImageUrl(meal.imageKey)
 
-        return meal.toMealResponse(imageUrl)
+        val hasAnalysisFeedback = analysisFeedbackRepository.existsByMealId(meal.id)
+
+        return meal.toMealResponse(imageUrl, hasAnalysisFeedback)
     }
 
     /**
@@ -265,7 +269,9 @@ class MealService(
 
         meal.updateName(name)
 
-        return meal.toMealResponse(imageUrl)
+        val hasAnalysisFeedback = analysisFeedbackRepository.existsByMealId(meal.id)
+
+        return meal.toMealResponse(imageUrl, hasAnalysisFeedback)
     }
 
     /**
