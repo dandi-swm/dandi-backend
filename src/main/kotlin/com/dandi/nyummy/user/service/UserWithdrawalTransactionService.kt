@@ -14,7 +14,7 @@ import java.time.Clock
 import java.time.Instant
 
 @Service
-class UserWithdrawalService(
+class UserWithdrawalTransactionService(
     private val userRepository: UserRepository,
     private val profileRepository: ProfileRepository,
     private val clock: Clock,

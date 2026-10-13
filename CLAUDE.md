@@ -47,6 +47,8 @@
 | 배치 실행 요청(내부 배치 컨트롤러) | trigger | run, execute | `triggerMealReminders()` |
 | 세션 시작 / 재시작 | start / restart | begin, renew | `startSession()`, `restartSession()` |
 | 토큰 교체(세션 유지) | rotate | replace, swap, renew | `rotateToken()` |
+| 탈퇴 | withdraw | leave, quit, deactivate, resign, signout | `withdrawUser()` |
+| 익명화 | anonymize | mask, scrub, pseudonymize(가명처리는 다른 개념) | `anonymize()` |
 
 ※ 예외 (위 표의 동사와 사용 규칙 5항 `동사 + 목적어`를 따르지 않아도 되는 경우)
 
@@ -56,6 +58,7 @@
 - **Spring Data 파생 쿼리**: `findBy~`, `existsBy~`, `deleteBy~`, `countBy~` — 목적어 대신 `By` 뒤 조건이 대상을 나타낸다
 - **Kotlin 관례 함수**: 연산자 함수(`operator fun plus`), companion 팩토리(`of`, `from`), `main`
 - **Boolean 반환 함수**: `is~`/`has~`/`can~` 접두 함수(`isAbsoluteExpired()`)는 Boolean 네이밍을 따른다
+- **엔티티 자신의 상태 전이**: `withdraw()`, `anonymize()` — 목적어가 수신자 자신이라 붙일 것이 없다. 단일 필드 변경은 기존 `update<필드>` 패턴을 쓴다(`updateDeletedAt`)
 
 ## 클래스 접미사
 

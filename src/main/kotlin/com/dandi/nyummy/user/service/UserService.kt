@@ -34,7 +34,7 @@ class UserService(
     private val refreshTokenService: RefreshTokenService,
     private val tokenInvalidationRepository: TokenInvalidationRepository,
     private val clock: Clock,
-    private val userWithdrawalService: UserWithdrawalService,
+    private val userWithdrawalTransactionService: UserWithdrawalTransactionService,
     private val imageService: ImageService,
 ) {
     companion object {
@@ -161,7 +161,7 @@ class UserService(
      * @throws BusinessException [UserErrorCode.PROFILE_NOT_FOUND] 프로필이 없는 경우
      */
     fun withdrawUser(userId: Long) {
-        userWithdrawalService.withdrawUser(userId)
+        userWithdrawalTransactionService.withdrawUser(userId)
 
         try {
             tokenInvalidationRepository.createInvalidatedAt(userId, Instant.now(clock))
