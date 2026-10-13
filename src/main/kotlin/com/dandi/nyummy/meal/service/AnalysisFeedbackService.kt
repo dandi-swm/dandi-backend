@@ -2,6 +2,7 @@ package com.dandi.nyummy.meal.service
 
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.MealErrorCode
+import com.dandi.nyummy.meal.config.MealProperties
 import com.dandi.nyummy.meal.dto.CreateAnalysisFeedbackRequest
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.enum.MealStatus
@@ -23,11 +24,18 @@ import org.springframework.transaction.annotation.Transactional
 class AnalysisFeedbackService(
     private val mealRepository: MealRepository,
     private val analysisFeedbackRepository: AnalysisFeedbackRepository,
+    private val mealProperties: MealProperties,
 ) {
     companion object {
         private const val MIN_RATING = 0.5f
         private const val MAX_RATING = 5.0f
         private const val RATING_UNIT = 0.5f
+
+        private const val BUCKET_SIZE = 100
+
+        // mealId는 연속값이라 그대로 나머지를 쓰면 등록 순서와 노출 여부가 맞물린다. 황금비 상수를 곱해 섞는다.
+        private const val BUCKET_MIXER = 2654435761L
+
         private val logger = LoggerFactory.getLogger(AnalysisFeedbackService::class.java)
     }
 
@@ -81,15 +89,30 @@ class AnalysisFeedbackService(
     /**
      * 이 식사에 평가를 등록할 수 있는지 판단한다. 앱은 이 값만 보고 별점 UI를 띄운다.
      *
-     * [createAnalysisFeedback]의 거부 조건과 같은 규칙이어야 한다. 등록 쪽은 에러코드를 구분해야 해서
-     * 조건별로 따로 검사하므로, 평가 조건이 늘면 두 곳을 함께 고친다.
+     * 매번 평가를 요청하면 사용자가 피로해지므로 [MealProperties.analysisFeedbackRate] 비율의 식사에만
+     * 띄운다. 추첨 결과는 mealId로 결정되어 같은 식사는 몇 번을 조회해도 같다.
+     *
+     * 추첨에서 빠진 식사라도 평가 요청이 오면 받아준다([createAnalysisFeedback]에는 이 검사가 없다).
+     * 추첨은 노출 정책이지 권한이 아니고, 비율을 낮추는 순간 열려 있던 화면의 제출이 거부되면 안 된다.
+     *
+     * 나머지 거부 조건(분석 완료·중복)은 [createAnalysisFeedback]과 같은 규칙이어야 한다. 등록 쪽은
+     * 에러코드를 구분해야 해서 조건별로 따로 검사하므로, 평가 조건이 늘면 두 곳을 함께 고친다.
      *
      * @param meal 평가 가능 여부를 판단할 식사
-     * @return 영양 분석이 완료됐고 아직 평가하지 않은 식사면 true
+     * @return 영양 분석이 완료됐고, 추첨 대상이며, 아직 평가하지 않은 식사면 true
      */
     @Transactional(readOnly = true)
-    fun canCreateAnalysisFeedback(meal: Meal): Boolean =
-        meal.status == MealStatus.COMPLETED && !analysisFeedbackRepository.existsByMealId(meal.id)
+    fun canCreateAnalysisFeedback(meal: Meal): Boolean = meal.status == MealStatus.COMPLETED &&
+        isFeedbackTarget(meal.id) &&
+        !analysisFeedbackRepository.existsByMealId(meal.id)
+
+    /**
+     * mealId를 0~99 버킷에 넣고 설정 비율 미만이면 평가 대상으로 본다.
+     *
+     * 중복 조회보다 앞에서 검사하므로, 추첨에서 빠진 식사는 DB를 읽지 않는다.
+     */
+    private fun isFeedbackTarget(mealId: Long): Boolean =
+        (mealId * BUCKET_MIXER).mod(BUCKET_SIZE) < mealProperties.analysisFeedbackRate
 
     /**
      * 별점이 0.5~5.0 사이의 0.5 단위 값인지 검증한다. 0.0(별점 없음)은 허용하지 않는다.

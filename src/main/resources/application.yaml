@@ -88,6 +88,8 @@ app:
     image-url-time-to-live-minutes: 10
   meal:
     max-daily-count: 5
+    # 영양 분석 평가 요청을 띄울 식사 비율(%). 0이면 아무에게도 안 뜨고, 100이면 모든 식사에 뜬다.
+    analysis-feedback-rate: 100
   cat:
     weight-update-interval-days: 3
     weight-update-tolerance: 0.2

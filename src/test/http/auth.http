@@ -7,6 +7,11 @@ Content-Type: application/json
   "password": "{{password}}"
 }
 
+> {%
+    client.global.set("accessToken", response.body.accessToken);
+    client.global.set("refreshToken", response.body.refreshToken);
+%}
+
 ### 회원가입 API (이메일) - 이메일 인증 확인 응답의 verifiedToken 사용, password·confirmPassword 필수
 POST {{url}}/api/v1/auth/signup
 Content-Type: application/json

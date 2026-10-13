@@ -10,13 +10,18 @@ Authorization: Bearer {{accessToken}}
   "fileSizeBytes": 1000
 }
 
+> {%
+    client.global.set("uploadUrl", response.body.uploadUrl);
+    client.global.set("imageKey", response.body.imageKey);
+%}
+
 ### 발급받은 presigned url로 이미지 S3에 업로드
 # 응답의 uploadHeaders를 그대로 보내야 서명이 일치한다.
 PUT {{uploadUrl}}
 Content-Type: image/jpeg
 x-amz-tagging: status=temp
 
-< image/crazy_spicy.jpeg
+< image/crazy_spicy.jpg
 
 ### 이미지 업로드 presigned-url 발급 API (문의)
 # imageKey가 inquiries/{userId}/... 로 발급된다. 업로드까지 성공하면 IAM 권한도 확인된다.

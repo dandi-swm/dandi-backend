@@ -1,10 +1,10 @@
 package com.dandi.nyummy.meal.controller
 
-import com.dandi.nyummy.meal.dto.CreateAnalysisFeedbackRequest
 import com.dandi.nyummy.config.openapi.ApiErrorCodes
 import com.dandi.nyummy.exception.errorcode.AuthErrorCode
 import com.dandi.nyummy.exception.errorcode.MealErrorCode
 import com.dandi.nyummy.exception.errorcode.S3ErrorCode
+import com.dandi.nyummy.meal.dto.CreateAnalysisFeedbackRequest
 import com.dandi.nyummy.meal.dto.CreateMealRequest
 import com.dandi.nyummy.meal.dto.DailyMealsResponse
 import com.dandi.nyummy.meal.dto.MealResponse

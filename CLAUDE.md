@@ -107,6 +107,7 @@
 | 임시 | Temp | 확정 전 상태(S3 temp 태그)·임시 비밀번호(tempPassword). Temporary, Tmp 금지 |
 | 용도 | Purpose | 같은 기능을 어떤 흐름에 쓰는지 구분하는 enum (AuthPurpose, ImagePurpose). 토큰 종류는 TokenType |
 | 내부 API | Internal | 외부 스케줄러가 호출하는 배치 엔드포인트(/api/v1/internal/**, API 키 인증). 패키지 internal |
+| 노출 비율 | Rate | 0~100 정수 퍼센트로 표현하는 노출·적용 비율 (analysisFeedbackRate). Ratio, Percentage, Chance, Probability, Sampling 금지 |
 
 ### 사용자
 
@@ -140,6 +141,10 @@
 | 끼니 | MealTime | BREAKFAST / LUNCH / DINNER |
 | 기록 시도 | Attempt | 식사 기록 요청 횟수(하루 제한 대상). todayAttemptCount, countDailyAttempts |
 | 연속 기록 | Streak | 연속으로 식사를 기록한 일수. streakDays |
+| 분석 피드백 | AnalysisFeedback | AI 영양 분석 결과에 대한 사용자 평가(별점+이유). 테이블 analysis_feedbacks. 식사당 1건·수정 불가. Review, Survey, Evaluation 금지 (Evaluation은 DailyNutritionEvaluation 전용) |
+| 별점 | Rating | 0.5~5.0, 0.5 단위 (0.0 불허). Star, Score 금지 — Score는 Meal의 영양 점수 |
+| 평가 이유 | Reason | 별점 사유 자유 입력(500자). Comment 금지 — catComment와 충돌 |
+| 평가 가능 여부 | CanCreateAnalysisFeedback | 응답 필드 canCreateAnalysisFeedback(분석 완료 + 추첨 대상 + 미평가). 조회는 existsByMealId. hasAnalysisFeedback, isRated 금지 |
 
 ### 영양
 
