@@ -190,6 +190,8 @@ class MealService(
                     dailyNutritionEvaluation = calculateDailyNutritionEvaluation(
                         meals = mealsByDate[date] ?: emptyList(),
                         recommended = recommended,
+                        intakeTolerance = mealProperties.intakeTolerance,
+                        minPositiveMacroCount = mealProperties.minPositiveMacroCount,
                     ),
                     foodIconIds = pickFoodIconIds(mealsByDate[date] ?: emptyList()),
                 ),

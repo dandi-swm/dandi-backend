@@ -49,7 +49,12 @@ class MealServiceTest {
         mealAttemptService = mealAttemptService,
         clock = clock,
         profileRepository = profileRepository,
-        mealProperties = MealProperties(maxDailyCount = 5, analysisFeedbackRate = 100),
+        mealProperties = MealProperties(
+            maxDailyCount = 5,
+            analysisFeedbackRate = 100,
+            intakeTolerance = 0.2,
+            minPositiveMacroCount = 2,
+        ),
         analysisFeedbackService = analysisFeedbackService,
     )
 

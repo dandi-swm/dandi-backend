@@ -16,6 +16,13 @@ class NutritionCalculatorTest {
     private val today = LocalDate.of(2026, 7, 16)
     private val defaultIntake = Nutrition(calory = 2000, carbs = 250, protein = 100, fat = 70)
 
+    // application.yaml의 app.meal 기본값과 같다 (80~120%, 탄단지 3종 중 2개)
+    private val intakeTolerance = 0.2
+    private val minPositiveMacroCount = 2
+
+    private fun evaluate(meals: List<Meal>) =
+        calculateDailyNutritionEvaluation(meals, defaultIntake, intakeTolerance, minPositiveMacroCount)
+
     private fun createProfile(
         birth: LocalDate? = LocalDate.of(2001, 3, 15),
         gender: Gender? = Gender.MALE,
@@ -109,7 +116,7 @@ class NutritionCalculatorTest {
 
     @Test
     fun `식사가 없으면 UNRECORDED다`() {
-        val result = calculateDailyNutritionEvaluation(emptyList(), defaultIntake)
+        val result = evaluate(emptyList())
 
         assertEquals(DailyNutritionEvaluation.UNRECORDED, result)
     }
@@ -118,7 +125,7 @@ class NutritionCalculatorTest {
     fun `한 끼가 정확히 권장량이면 POSITIVE다`() {
         val meals = listOf(createMeal(calory = 2000, carbs = 250, protein = 100, fat = 70))
 
-        val result = calculateDailyNutritionEvaluation(meals, defaultIntake)
+        val result = evaluate(meals)
 
         assertEquals(DailyNutritionEvaluation.POSITIVE, result)
     }
@@ -131,54 +138,58 @@ class NutritionCalculatorTest {
             createMeal(calory = 1000, carbs = 125, protein = 50, fat = 35),
         )
 
-        val result = calculateDailyNutritionEvaluation(meals, defaultIntake)
+        val result = evaluate(meals)
 
         assertEquals(DailyNutritionEvaluation.POSITIVE, result)
     }
 
     @Test
-    fun `정확히 90퍼센트는 하한에 포함되어 POSITIVE다`() {
-        val meals = listOf(createMeal(calory = 1800, carbs = 225, protein = 90, fat = 63))
+    fun `정확히 80퍼센트는 하한에 포함되어 POSITIVE다`() {
+        val meals = listOf(createMeal(calory = 1600, carbs = 200, protein = 80, fat = 56))
 
-        val result = calculateDailyNutritionEvaluation(meals, defaultIntake)
-
-        assertEquals(DailyNutritionEvaluation.POSITIVE, result)
+        assertEquals(DailyNutritionEvaluation.POSITIVE, evaluate(meals))
     }
 
     @Test
-    fun `90퍼센트 미만이면 NEGATIVE다`() {
-        val meals = listOf(createMeal(calory = 1799, carbs = 224, protein = 89, fat = 62))
+    fun `80퍼센트 미만이면 NEGATIVE다`() {
+        val meals = listOf(createMeal(calory = 1599, carbs = 199, protein = 79, fat = 55))
 
-        val result = calculateDailyNutritionEvaluation(meals, defaultIntake)
-
-        assertEquals(DailyNutritionEvaluation.NEGATIVE, result)
+        assertEquals(DailyNutritionEvaluation.NEGATIVE, evaluate(meals))
     }
 
     @Test
-    fun `정확히 150퍼센트는 상한에서 제외되어 NEGATIVE다`() {
-        val meals = listOf(createMeal(calory = 3000, carbs = 375, protein = 150, fat = 105))
+    fun `정확히 120퍼센트는 상한에 포함되어 POSITIVE다`() {
+        val meals = listOf(createMeal(calory = 2400, carbs = 300, protein = 120, fat = 84))
 
-        val result = calculateDailyNutritionEvaluation(meals, defaultIntake)
-
-        assertEquals(DailyNutritionEvaluation.NEGATIVE, result)
+        assertEquals(DailyNutritionEvaluation.POSITIVE, evaluate(meals))
     }
 
     @Test
-    fun `150퍼센트 직전까지는 POSITIVE다`() {
-        val meals = listOf(createMeal(calory = 2999, carbs = 374, protein = 149, fat = 104))
+    fun `120퍼센트를 넘으면 NEGATIVE다`() {
+        val meals = listOf(createMeal(calory = 2401, carbs = 301, protein = 121, fat = 85))
 
-        val result = calculateDailyNutritionEvaluation(meals, defaultIntake)
-
-        assertEquals(DailyNutritionEvaluation.POSITIVE, result)
+        assertEquals(DailyNutritionEvaluation.NEGATIVE, evaluate(meals))
     }
 
     @Test
-    fun `영양소 하나만 범위를 벗어나도 NEGATIVE다`() {
+    fun `탄단지 중 하나가 범위를 벗어나도 둘이 통과하면 POSITIVE다`() {
         val meals = listOf(createMeal(calory = 2000, carbs = 250, protein = 100, fat = 0))
 
-        val result = calculateDailyNutritionEvaluation(meals, defaultIntake)
+        assertEquals(DailyNutritionEvaluation.POSITIVE, evaluate(meals))
+    }
 
-        assertEquals(DailyNutritionEvaluation.NEGATIVE, result)
+    @Test
+    fun `탄단지 중 둘이 범위를 벗어나면 NEGATIVE다`() {
+        val meals = listOf(createMeal(calory = 2000, carbs = 250, protein = 0, fat = 0))
+
+        assertEquals(DailyNutritionEvaluation.NEGATIVE, evaluate(meals))
+    }
+
+    @Test
+    fun `칼로리가 범위를 벗어나면 탄단지가 모두 통과해도 NEGATIVE다`() {
+        val meals = listOf(createMeal(calory = 1500, carbs = 250, protein = 100, fat = 70))
+
+        assertEquals(DailyNutritionEvaluation.NEGATIVE, evaluate(meals))
     }
 
     @Test
@@ -188,7 +199,7 @@ class NutritionCalculatorTest {
             createMeal(),
         )
 
-        val result = calculateDailyNutritionEvaluation(meals, defaultIntake)
+        val result = evaluate(meals)
 
         assertEquals(DailyNutritionEvaluation.POSITIVE, result)
     }

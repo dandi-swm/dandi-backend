@@ -11,32 +11,60 @@ import java.time.Period
 
 private val DEFAULT_INTAKE = Nutrition(calory = 2000, carbs = 250, protein = 100, fat = 70)
 
-private val NUTRIENTS = listOf(
-    Nutrition::calory,
+private val MACRO_NUTRIENTS = listOf(
     Nutrition::carbs,
     Nutrition::protein,
     Nutrition::fat,
 )
 
-fun calculateDailyNutritionEvaluation(meals: List<Meal>, recommended: Nutrition): DailyNutritionEvaluation {
+/**
+ * 하루치 식사를 합산해 평가한다. 기록이 없으면 UNRECORDED다.
+ *
+ * @param intakeTolerance 권장량 대비 허용 오차 (0.2 = 80~120%)
+ * @param minPositiveMacroCount 탄단지 3종 중 허용 범위에 들어야 하는 최소 개수
+ */
+fun calculateDailyNutritionEvaluation(
+    meals: List<Meal>,
+    recommended: Nutrition,
+    intakeTolerance: Double,
+    minPositiveMacroCount: Int,
+): DailyNutritionEvaluation {
     if (meals.isEmpty()) {
         return DailyNutritionEvaluation.UNRECORDED
     }
 
     val totalNutrition = meals.fold(Nutrition.ZERO) { acc, meal -> acc + meal.toNutrition() }
 
-    if (isPositiveNutrition(totalNutrition, recommended)) {
+    if (isPositiveNutrition(totalNutrition, recommended, intakeTolerance, minPositiveMacroCount)) {
         return DailyNutritionEvaluation.POSITIVE
     }
 
     return DailyNutritionEvaluation.NEGATIVE
 }
 
-private fun isPositiveNutrition(totalNutrition: Nutrition, recommended: Nutrition): Boolean =
-    NUTRIENTS.all { nutrient -> isPositiveNutrient(nutrient(totalNutrition), nutrient(recommended)) }
+/**
+ * 칼로리가 허용 범위에 들고, 탄단지 중 [minPositiveMacroCount]개 이상이 같은 범위에 들면 POSITIVE로 본다.
+ *
+ * 칼로리를 필수로 두는 이유는 목표값 자체가 칼로리에서 나오기 때문이다 —
+ * [calculateRecommendedDailyIntake]가 칼로리를 탄 50 / 단 20 / 지 30으로 쪼개 탄단지 목표를 만든다.
+ * 그래서 탄단지 3종을 모두 요구하면 "총량이 적정한가"가 아니라 "매크로 비율이 50/20/30에 가까운가"를
+ * 묻게 된다. 일반 식단에서 단백질 20%(2000kcal 기준 100g)를 맞추기 어려워 대부분의 날이 NEGATIVE가
+ * 되므로, 기본값은 과반(2개)만 요구한다.
+ */
+private fun isPositiveNutrition(
+    totalNutrition: Nutrition,
+    recommended: Nutrition,
+    intakeTolerance: Double,
+    minPositiveMacroCount: Int,
+): Boolean = isPositiveNutrient(totalNutrition.calory, recommended.calory, intakeTolerance) &&
+    MACRO_NUTRIENTS.count { nutrient ->
+        isPositiveNutrient(nutrient(totalNutrition), nutrient(recommended), intakeTolerance)
+    } >= minPositiveMacroCount
 
-private fun isPositiveNutrient(totalValue: Int, recommendedValue: Int): Boolean =
-    recommendedValue * 0.9 <= totalValue && totalValue < recommendedValue * 1.5
+/** 권장량의 `1 ± intakeTolerance` 범위에 드는지. 양 끝을 모두 포함한다. */
+private fun isPositiveNutrient(totalValue: Int, recommendedValue: Int, intakeTolerance: Double): Boolean =
+    totalValue >= recommendedValue * (1 - intakeTolerance) &&
+        totalValue <= recommendedValue * (1 + intakeTolerance)
 
 fun calculateRecommendedDailyIntake(profile: Profile?, today: LocalDate): Nutrition {
     val birth = profile?.birth ?: return DEFAULT_INTAKE

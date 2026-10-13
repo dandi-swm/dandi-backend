@@ -3,4 +3,9 @@ package com.dandi.nyummy.meal.config
 import org.springframework.boot.context.properties.ConfigurationProperties
 
 @ConfigurationProperties("app.meal")
-data class MealProperties(val maxDailyCount: Int, val analysisFeedbackRate: Int)
+data class MealProperties(
+    val maxDailyCount: Int,
+    val analysisFeedbackRate: Int,
+    val intakeTolerance: Double,
+    val minPositiveMacroCount: Int,
+)

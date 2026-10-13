@@ -28,7 +28,8 @@ class MealAttemptServiceTest {
     private val tomorrowStart = Instant.parse("2026-10-10T15:00:00Z") // 10/11 00:00 KST
 
     private val mealRepository = mockk<MealRepository>()
-    private val mealProperties = MealProperties(maxDailyCount = 5, analysisFeedbackRate = 100)
+    private val mealProperties =
+        MealProperties(maxDailyCount = 5, analysisFeedbackRate = 100, intakeTolerance = 0.2, minPositiveMacroCount = 2)
     private val mealAttemptService = MealAttemptService(mealRepository, mealProperties, clock)
 
     private fun givenTodayAttempts(count: Long) {
