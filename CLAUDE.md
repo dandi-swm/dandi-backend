@@ -110,6 +110,7 @@
 | 임시 | Temp | 확정 전 상태(S3 temp 태그)·임시 비밀번호(tempPassword). Temporary, Tmp 금지 |
 | 용도 | Purpose | 같은 기능을 어떤 흐름에 쓰는지 구분하는 enum (AuthPurpose, ImagePurpose). 토큰 종류는 TokenType |
 | 내부 API | Internal | 외부 스케줄러가 호출하는 배치 엔드포인트(/api/v1/internal/**, API 키 인증). 패키지 internal |
+| 허용 오차 | Tolerance | 목표값 대비 허용 범위를 비율로 표현(0.2 = ±20%). 영양 판정(app.meal.intake-tolerance)과 고양이 체형(app.cat.weight-update-tolerance)이 값은 같아도 각각 선언한다. Margin, Threshold 금지 — Range는 캘린더 범위에 쓴다 |
 | 노출 비율 | Rate | 0~100 정수 퍼센트로 표현하는 노출·적용 비율 (analysisFeedbackRate). Ratio, Percentage, Chance, Probability, Sampling 금지 |
 
 ### 사용자
@@ -155,6 +156,7 @@
 |---|---|---|
 | 영양 | Nutrition | 영양 4종(calory/carbs/protein/fat) 값 객체로도 사용 (응답 current/target 공용) |
 | 영양소 | Nutrient | Nutrition의 개별 항목(calory/carbs/protein/fat)을 가리킬 때. 목록은 복수형 Nutrients |
+| 다량영양소 | MacroNutrient | 탄수화물·단백질·지방 묶음(칼로리 제외). 하루 평가에서 칼로리는 필수 조건, 다량영양소는 과반만 본다(MACRO_NUTRIENTS, minPositiveMacroCount). Macro 단독 사용 금지 |
 | 칼로리 | Calory | 코드·응답·엔티티/DB 모두 calory로 통일 (calories 금지) |
 | 탄수화물 | Carbs | carbohydrate 아님 |
 | 단백질 | Protein | 단수형 고정 (proteins 아님) |
