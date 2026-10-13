@@ -4,6 +4,7 @@ import com.dandi.nyummy.auth.repository.TokenInvalidationRepository
 import com.dandi.nyummy.auth.service.RefreshTokenService
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.UserErrorCode
+import com.dandi.nyummy.image.service.ImageService
 import com.dandi.nyummy.security.jwt.JwtService
 import com.dandi.nyummy.user.dto.PushSettingResponse
 import com.dandi.nyummy.user.dto.UpdateMealTimeRequest
@@ -33,6 +34,8 @@ class UserService(
     private val refreshTokenService: RefreshTokenService,
     private val tokenInvalidationRepository: TokenInvalidationRepository,
     private val clock: Clock,
+    private val userWithdrawalService: UserWithdrawalService,
+    private val imageService: ImageService,
 ) {
     companion object {
         private val logger = LoggerFactory.getLogger(UserService::class.java)
@@ -138,5 +141,39 @@ class UserService(
         refreshTokenService.startSession(userId, refreshToken)
 
         return UpdatePasswordResponse(accessToken, refreshToken)
+    }
+
+    /**
+     * 계정을 탈퇴 처리한다. 복구할 수 없다.
+     *
+     * 1. DB 구간([UserWithdrawalTransactionService]) — 식별정보 파기, 세션·기기 토큰·문의 삭제.
+     *    실패하면 여기서 끝나므로 외부 자원은 건드리지 않는다.
+     * 2. 토큰 무효화 — RefreshToken을 지워도 이미 발급된 AccessToken은 최대 30분 남으므로,
+     *    무효화 기준 시각을 기록해 그 토큰으로 더 호출하지 못하게 한다.
+     * 3. S3 이미지 삭제.
+     *
+     * 2·3번 실패에 예외를 올리지 않는 이유는, 올리면 1번까지 롤백되어 **지운 식별정보가 되살아나기**
+     * 때문이다. 사용자는 이미 탈퇴 의사를 밝혔으므로 파기를 되돌리는 쪽이 더 나쁘다.
+     * 이미지는 `meals.image_key`가 남아 있어 접두사로 언제든 다시 지울 수 있다.
+     *
+     * @param userId 탈퇴할 사용자 ID
+     * @throws BusinessException [UserErrorCode.USER_NOT_FOUND] 사용자가 없거나 이미 탈퇴한 경우
+     * @throws BusinessException [UserErrorCode.PROFILE_NOT_FOUND] 프로필이 없는 경우
+     */
+    fun withdrawUser(userId: Long) {
+        userWithdrawalService.withdrawUser(userId)
+
+        try {
+            tokenInvalidationRepository.createInvalidatedAt(userId, Instant.now(clock))
+        } catch (e: DataAccessException) {
+            logger.error("탈퇴한 사용자의 토큰 무효화 기록에 실패했습니다: userId={}", userId, e)
+        }
+
+        try {
+            val deletedCount = imageService.deleteUserImages(userId)
+            logger.info("탈퇴한 사용자의 이미지를 삭제했습니다: userId={}, deletedCount={}", userId, deletedCount)
+        } catch (e: Exception) {
+            logger.error("탈퇴한 사용자의 이미지 삭제에 실패했습니다. 수동 정리가 필요합니다: userId={}", userId, e)
+        }
     }
 }

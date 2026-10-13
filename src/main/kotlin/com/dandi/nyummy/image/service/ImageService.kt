@@ -189,4 +189,23 @@ class ImageService(
      */
     fun createImageUrl(imageKey: String): String =
         s3StorageClient.createPresignedGetUrl(imageKey, imageProperties.imageUrlTimeToLiveMinutes.minutes)
+
+    /**
+     * 사용자가 업로드한 이미지를 용도별 경로에서 모두 삭제한다. 탈퇴 익명화에서 호출한다.
+     *
+     * 객체 키가 `{purpose.prefix}/{userId}/...` 형식이라 용도별 접두사만 지우면 된다.
+     * 확정(`status=committed`) 여부와 무관하게 지운다 — 미확정 객체는 라이프사이클이 정리하지만,
+     * 탈퇴한 사용자의 개인정보는 지체 없이 파기해야 한다.
+     *
+     * 식사 사진은 그 자체로 개인을 알아볼 수 있는 정보이므로, 이 삭제가 빠지면 나머지를 다 비워도
+     * 남은 데이터가 익명정보로 성립하지 않는다.
+     *
+     * @param userId 이미지를 삭제할 사용자 ID
+     * @return 삭제한 객체 수
+     */
+    fun deleteUserImages(userId: Long): Int = runBlocking {
+        ImagePurpose.entries.sumOf { purpose ->
+            s3StorageClient.deleteObjectsByPrefix("${purpose.prefix}/$userId/")
+        }
+    }
 }

@@ -16,6 +16,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
 import org.springframework.http.ResponseEntity
+import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PutMapping
@@ -23,7 +24,10 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
-@Tag(name = "User", description = "내 프로필 조회 · 비밀번호 변경 · 알림 수신 설정 · 끼니 시각 설정 API")
+@Tag(
+    name = "User",
+    description = "내 프로필 조회 · 비밀번호 변경 · 알림 수신 설정 · 끼니 시각 설정 · 회원 탈퇴 API",
+)
 @RestController
 @RequestMapping("/api/v1/users")
 class UserController(private val userService: UserService) {
@@ -83,5 +87,21 @@ class UserController(private val userService: UserService) {
     ): ResponseEntity<Void> {
         userService.updateMealTime(user.userId, request)
         return ResponseEntity.ok().build()
+    }
+
+    @Operation(
+        summary = "회원 탈퇴",
+        description = "계정을 탈퇴 처리한다. 복구할 수 없다. " +
+            "식별정보(이메일 · 비밀번호 · 소셜 ID)와 프로필의 신체 정보, 업로드한 이미지, 문의 내역을 파기하고 " +
+            "세션과 기기 토큰을 지운다. 식사 기록은 통계용 익명정보로 남는다. " +
+            "탈퇴 시점 이전에 발급된 AccessToken은 모두 무효화되므로 클라이언트는 저장한 토큰을 폐기해야 한다. " +
+            "같은 이메일 · 소셜 계정으로 다시 가입할 수 있으며, 재가입 계정은 과거 데이터와 연결되지 않는다.",
+    )
+    @ApiResponse(responseCode = "204", description = "탈퇴 완료. 응답 바디가 없다.")
+    @ApiErrorCodes(user = [UserErrorCode.USER_NOT_FOUND, UserErrorCode.PROFILE_NOT_FOUND])
+    @DeleteMapping("/me")
+    fun withdrawUser(@CurrentUser user: AuthUser): ResponseEntity<Void> {
+        userService.withdrawUser(user.userId)
+        return ResponseEntity.noContent().build()
     }
 }

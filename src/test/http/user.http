@@ -56,3 +56,16 @@ Authorization: Bearer {{accessToken}}
   "lunchHour": 12,
   "dinnerHour": null
 }
+
+### 회원 탈퇴 API
+DELETE {{url}}/api/v1/users/me
+Authorization: Bearer {{accessToken}}
+
+### [확인] 탈퇴 직후 기존 AccessToken이 막히는지 → 401 api.auth.unauthorized
+GET {{url}}/api/v1/users/me
+Authorization: Bearer {{accessToken}}
+
+### [확인] 같은 이메일로 재가입 — auth.http의 "이메일 인증 코드 발송 → 확인 → 회원가입"을 그대로 다시 실행
+### 재가입 후 식사 목록이 비어 있는지 확인 (과거 데이터와 연결되지 않음)
+GET {{url}}/api/v1/meals/daily?year=2026&month=10&day=13
+Authorization: Bearer {{accessToken}}

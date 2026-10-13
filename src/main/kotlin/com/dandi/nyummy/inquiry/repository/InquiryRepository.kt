@@ -4,6 +4,7 @@ import com.dandi.nyummy.inquiry.entity.Inquiry
 import org.springframework.data.domain.Pageable
 import org.springframework.data.domain.Slice
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
@@ -47,4 +48,14 @@ interface InquiryRepository : JpaRepository<Inquiry, Long> {
     """,
     )
     fun existsUnreadAnswerByUserId(@Param("userId") userId: Long): Boolean
+
+    /**
+     * 사용자의 문의를 전부 물리 삭제한다. 탈퇴 익명화에서 호출한다.
+     *
+     * 질문·답변 본문에 개인정보가 섞이고 questionTitle·questionContent가 NOT NULL이라 익명화할 수
+     * 없어 행을 지운다. 소프트 삭제된 문의도 함께 지운다.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("delete from Inquiry i where i.userId = :userId")
+    fun deleteByUserId(@Param("userId") userId: Long): Int
 }

@@ -1,10 +1,13 @@
 package com.dandi.nyummy.infra.storage.s3
 
 import aws.sdk.kotlin.services.s3.S3Client
+import aws.sdk.kotlin.services.s3.deleteObjects
 import aws.sdk.kotlin.services.s3.headObject
+import aws.sdk.kotlin.services.s3.listObjectsV2
 import aws.sdk.kotlin.services.s3.model.GetObjectRequest
 import aws.sdk.kotlin.services.s3.model.NoSuchKey
 import aws.sdk.kotlin.services.s3.model.NotFound
+import aws.sdk.kotlin.services.s3.model.ObjectIdentifier
 import aws.sdk.kotlin.services.s3.model.PutObjectRequest
 import aws.sdk.kotlin.services.s3.model.PutObjectTaggingRequest
 import aws.sdk.kotlin.services.s3.model.Tag
@@ -155,6 +158,45 @@ class S3StorageClient(private val s3Client: S3Client, @Value("\${AWS_S3_BUCKET_N
                     ?: throw IllegalStateException("S3 객체 바디가 비어 있습니다: $key"),
                 contentType = response.contentType,
             )
+        }
+    }
+
+    /**
+     * 접두사로 시작하는 객체를 모두 삭제하고 삭제한 개수를 돌려준다.
+     *
+     * `ListObjectsV2`가 한 번에 최대 1000개를 돌려주고 `DeleteObjects`도 요청당 1000개가 상한이라
+     * 페이지 하나를 그대로 한 번의 삭제 요청으로 넘긴다. 접두사에 해당하는 객체가 없으면 0을 돌려준다.
+     *
+     * @param keyPrefix 삭제할 객체 키의 접두사 (예: `meals/42/`)
+     * @return 삭제한 객체 수
+     */
+    suspend fun deleteObjectsByPrefix(keyPrefix: String): Int {
+        var continuationToken: String? = null
+        var deletedCount = 0
+
+        while (true) {
+            val listed = s3Client.listObjectsV2 {
+                bucket = bucketName
+                prefix = keyPrefix
+                this.continuationToken = continuationToken
+            }
+
+            val objectKeys = listed.contents.orEmpty().mapNotNull { it.key }
+
+            if (objectKeys.isNotEmpty()) {
+                s3Client.deleteObjects {
+                    bucket = bucketName
+                    delete {
+                        objects = objectKeys.map { objectKey -> ObjectIdentifier { key = objectKey } }
+                    }
+                }
+                deletedCount += objectKeys.size
+            }
+
+            if (listed.isTruncated != true) {
+                return deletedCount
+            }
+            continuationToken = listed.nextContinuationToken // 다음 커서
         }
     }
 }
