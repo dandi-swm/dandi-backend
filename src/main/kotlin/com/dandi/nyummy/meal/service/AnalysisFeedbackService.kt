@@ -60,7 +60,7 @@ class AnalysisFeedbackService(
     fun createAnalysisFeedback(userId: Long, mealId: Long, request: CreateAnalysisFeedbackRequest) {
         validateRating(request.rating)
 
-        val meal = mealRepository.getMealByIdAndDeletedAtIsNull(mealId)
+        val meal = mealRepository.findMealByIdAndDeletedAtIsNull(mealId)
             ?: throw BusinessException(MealErrorCode.MEAL_NOT_FOUND)
 
         meal.validateOwnership(userId)
