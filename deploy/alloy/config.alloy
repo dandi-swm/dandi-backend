@@ -1,0 +1,66 @@
+// ──────────────────────────────────────────────────────────────
+// MySQL: Alloy가 RDS로 직접 나가서 붙는다.
+// require_secure_transport는 꺼져 있어 TLS가 필수는 아니지만,
+// skip-verify로 전송 구간은 암호화한다.
+// ──────────────────────────────────────────────────────────────
+prometheus.exporter.mysql "prod" {
+  data_source_name = sys.env("MYSQL_EXPORTER_USER") + ":" +
+                     sys.env("MYSQL_EXPORTER_PASSWORD") + "@(" +
+                     sys.env("MYSQL_ADDRESS") + ")/?tls=skip-verify"
+
+  // 기본 수집기(global_status, global_variables 등)에 더해서 켠다.
+  // performance_schema=0 이므로 perf_schema.* 계열은 넣지 않는다.
+  enable_collectors = [
+    "info_schema.innodb_metrics",
+    "info_schema.processlist",
+    "engine_innodb_status",
+  ]
+}
+
+// Alloy 자신의 상태. remote_write 파이프라인이 살아있는지
+// MySQL 접속과 무관하게 확인할 수 있어 초기 검증에 쓴다.
+prometheus.exporter.self "alloy" {}
+
+prometheus.scrape "mysql" {
+  targets    = discovery.relabel.mysql.output
+  forward_to = [prometheus.remote_write.grafana.receiver]
+
+  // t4g.micro(1GB)라 간격을 넉넉히 둔다.
+  job_name        = "integrations/mysql"
+  scrape_interval = "60s"
+}
+
+prometheus.scrape "alloy" {
+  targets         = prometheus.exporter.self.alloy.targets
+  forward_to      = [prometheus.remote_write.grafana.receiver]
+  job_name        = "integrations/alloy"
+  scrape_interval = "60s"
+}
+
+prometheus.remote_write "grafana" {
+  external_labels = {
+    env = "prod",
+  }
+
+  endpoint {
+    url = sys.env("GRAFANA_PROM_URL")
+
+    basic_auth {
+      username = sys.env("GRAFANA_PROM_USER")
+      password = sys.env("GRAFANA_PROM_PASSWORD")
+    }
+  }
+}
+
+// instance 라벨을 명시적으로 고정한다.
+// 14031의 host 변수가 label_values(mysql_up, instance)라서
+// 이 값이 대시보드 드롭다운에 그대로 뜬다.
+// Alloy 기본값은 문서화돼 있지 않아(컴포넌트 ID로 폴백) 의존하지 않는다.
+discovery.relabel "mysql" {
+  targets = prometheus.exporter.mysql.prod.targets
+
+  rule {
+    target_label = "instance"
+    replacement  = "nyummy-prod-mysql"
+  }
+}
