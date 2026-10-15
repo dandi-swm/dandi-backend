@@ -37,6 +37,71 @@ prometheus.scrape "alloy" {
   scrape_interval = "60s"
 }
 
+// ──────────────────────────────────────────────────────────────
+// Valkey (ElastiCache) — 노드별로 exporter를 하나씩 둔다.
+//
+// 왜 노드별인가: primary/replica 역할은 페일오버로 뒤바뀌지만
+//   노드 엔드포인트는 항상 같은 물리 노드를 가리킨다. 역할은
+//   라벨에 박지 않고 redis_instance_info{role=} 지표로 읽는다.
+//
+// 왜 rediss:// 인가: TransitEncryptionMode가 required다.
+//   ElastiCache 인증서는 공인 CA 체인이라 정식 검증이 된다.
+//   (RDS는 사설 CA라 tls=skip-verify를 썼던 것과 다른 점)
+//
+// 왜 config_command를 끄나: ElastiCache가 CONFIG 명령을 막는다.
+//   maxmemory는 INFO에서 나오므로 메모리 게이지는 영향 없다.
+// ──────────────────────────────────────────────────────────────
+prometheus.exporter.redis "valkey_001" {
+  redis_addr     = "rediss://nyummy-prod-valkey-001.nyummy-prod-valkey.szizey.apn2.cache.amazonaws.com:6379"
+  redis_password = sys.env("REDIS_PASSWORD")
+  config_command = "-"
+}
+
+prometheus.exporter.redis "valkey_002" {
+  redis_addr     = "rediss://nyummy-prod-valkey-002.nyummy-prod-valkey.szizey.apn2.cache.amazonaws.com:6379"
+  redis_password = sys.env("REDIS_PASSWORD")
+  config_command = "-"
+}
+
+// 대시보드 763은 instance와 namespace 두 라벨로 필터한다.
+// Alloy 기본 instance 값은 문서화돼 있지 않으므로 직접 박는다.
+discovery.relabel "valkey_001" {
+  targets = prometheus.exporter.redis.valkey_001.targets
+
+  rule {
+    target_label = "instance"
+    replacement  = "nyummy-prod-valkey-001"
+  }
+  rule {
+    target_label = "namespace"
+    replacement  = "nyummy-prod-valkey"
+  }
+}
+
+discovery.relabel "valkey_002" {
+  targets = prometheus.exporter.redis.valkey_002.targets
+
+  rule {
+    target_label = "instance"
+    replacement  = "nyummy-prod-valkey-002"
+  }
+  rule {
+    target_label = "namespace"
+    replacement  = "nyummy-prod-valkey"
+  }
+}
+
+prometheus.scrape "valkey" {
+  targets = array.concat(
+    discovery.relabel.valkey_001.output,
+    discovery.relabel.valkey_002.output,
+  )
+  forward_to = [prometheus.remote_write.grafana.receiver]
+
+  job_name        = "integrations/redis"
+  scrape_interval = "60s"
+}
+
 prometheus.remote_write "grafana" {
   external_labels = {
     env = "prod",
