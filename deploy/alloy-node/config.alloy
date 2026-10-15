@@ -1,0 +1,50 @@
+// ──────────────────────────────────────────────────────────────
+// 호스트(EC2) 지표. DAEMON으로 인스턴스마다 1개씩 뜬다.
+//
+// 컨테이너 안에서 /proc·/sys를 읽으면 "자기 네임스페이스"가 보이므로,
+// 호스트의 것을 /host 아래로 마운트하고 경로를 바꿔 읽는다.
+// 읽기 전용 마운트면 충분하고 privileged는 필요 없다.
+// ──────────────────────────────────────────────────────────────
+prometheus.exporter.unix "node" {
+  procfs_path = "/host/proc"
+  sysfs_path  = "/host/sys"
+  rootfs_path = "/host/root"
+
+  // 컨테이너 overlay 파일시스템이 전부 잡히면 시계열이 불필요하게 늘어난다.
+  filesystem {
+    mount_points_exclude = "^/(dev|proc|sys|run|var/lib/docker/.+|host/(proc|sys))($|/)"
+  }
+}
+
+// 인스턴스마다 다른 값이어야 두 호스트가 구분된다.
+// Alloy 기본 instance 값은 컴포넌트 ID로 폴백해서 양쪽이 충돌한다.
+discovery.relabel "node" {
+  targets = prometheus.exporter.unix.node.targets
+
+  rule {
+    target_label = "instance"
+    replacement  = constants.hostname
+  }
+}
+
+prometheus.scrape "node" {
+  targets    = discovery.relabel.node.output
+  forward_to = [prometheus.remote_write.grafana.receiver]
+
+  job_name        = "integrations/node_exporter"
+  scrape_interval = "60s"
+}
+
+prometheus.remote_write "grafana" {
+  external_labels = {
+    env = "prod",
+  }
+
+  endpoint {
+    url = sys.env("GRAFANA_PROM_URL")
+    basic_auth {
+      username = sys.env("GRAFANA_PROM_USER")
+      password = sys.env("GRAFANA_PROM_PASSWORD")
+    }
+  }
+}
