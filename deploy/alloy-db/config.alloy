@@ -52,13 +52,13 @@ prometheus.scrape "alloy" {
 //   maxmemory는 INFO에서 나오므로 메모리 게이지는 영향 없다.
 // ──────────────────────────────────────────────────────────────
 prometheus.exporter.redis "valkey_001" {
-  redis_addr     = "rediss://nyummy-prod-valkey-001.nyummy-prod-valkey.szizey.apn2.cache.amazonaws.com:6379"
+  redis_addr     = "rediss://" + sys.env("VALKEY_001_ADDRESS")
   redis_password = sys.env("REDIS_PASSWORD")
   config_command = "-"
 }
 
 prometheus.exporter.redis "valkey_002" {
-  redis_addr     = "rediss://nyummy-prod-valkey-002.nyummy-prod-valkey.szizey.apn2.cache.amazonaws.com:6379"
+  redis_addr     = "rediss://" + sys.env("VALKEY_002_ADDRESS")
   redis_password = sys.env("REDIS_PASSWORD")
   config_command = "-"
 }
