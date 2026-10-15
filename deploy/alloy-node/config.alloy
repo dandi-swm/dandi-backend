@@ -48,3 +48,57 @@ prometheus.remote_write "grafana" {
     }
   }
 }
+
+// ──────────────────────────────────────────────────────────────
+// 컨테이너별 지표. cAdvisor는 Docker 소켓과 cgroup을 직접 읽어야 해서
+// privileged + 호스트 경로 마운트가 필요하다.
+//
+// node_exporter와 달리 경로 prefix 인자가 없다 → 호스트 경로를
+// 컨테이너 안에서도 "같은 경로"에 마운트해야 한다.
+// ──────────────────────────────────────────────────────────────
+prometheus.exporter.cadvisor "docker" {
+  docker_only = true
+
+  // CFS 쿼터는 컨테이너가 아니라 태스크 cgroup에 걸린다.
+  // docker_only가 raw cgroup을 건너뛰므로 여기서 예외로 허용한다.
+  raw_cgroup_prefix_allowlist = ["/ecstasks.slice"]
+
+  store_container_labels = false
+  allowlisted_container_labels = [
+    "com.amazonaws.ecs.container-name",
+    "com.amazonaws.ecs.task-definition-family",
+  ]
+}
+
+discovery.relabel "cadvisor" {
+  targets = prometheus.exporter.cadvisor.docker.targets
+
+  rule {
+    target_label = "instance"
+    replacement  = constants.hostname
+  }
+}
+
+prometheus.scrape "cadvisor" {
+  targets    = discovery.relabel.cadvisor.output
+  forward_to = [prometheus.relabel.cadvisor.receiver]
+
+  job_name        = "integrations/cadvisor"
+  scrape_interval = "60s"
+}
+
+// 15798은 by (container)로 묶는데 cAdvisor는 name만 낸다.
+prometheus.relabel "cadvisor" {
+  forward_to = [prometheus.remote_write.grafana.receiver]
+
+  rule {
+    source_labels = ["name"]
+    target_label  = "container"
+  }
+
+  rule {
+    source_labels = ["container_label_com_amazonaws_ecs_container_name"]
+    regex         = "(.+)"
+    target_label  = "container"
+  }
+}
