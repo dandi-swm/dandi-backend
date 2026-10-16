@@ -105,7 +105,7 @@
 | 개념 | 사용 단어 | 비고 |
 |---|---|---|
 | 임시 구현 | Stub | 프로덕션 코드의 임시 대역 접두 (예: StubPushClient). Fake, Mock 금지 — Mock은 테스트 전용 |
-| 커서 | Cursor | 무한 스크롤에서 다음 묶음의 기준점(직전 묶음의 마지막 id). 응답은 nextCursor + hasNext, 조회는 id < cursor. 페이지 번호 방식은 Offset으로 구분 |
+| 커서 | Cursor | 무한 스크롤에서 다음 묶음의 기준점(직전 묶음의 마지막 id). 응답은 nextCursor + hasNext, 조회는 id < cursor. 페이지 번호 방식은 Offset으로 구분. 단, 마이룸 보유 아이템은 장착 먼저 → 최신순으로 정렬하므로 커서 아이템의 장착 여부를 함께 비교해 그보다 뒤 순서만 조회한다(커서 값은 여전히 roomItemId 하나) |
 | 유효 기간 | TimeToLive | 토큰·인증 코드·presigned URL 등의 수명(Duration). accessTimeToLive / refreshTimeToLive / uploadUrlTimeToLiveMinutes. Expiration, Ttl, ExpiresIn, Validity 금지 |
 | 만료 시각 | ExpiresAt | 유효 기간이 끝나는 시점(Instant). expiresAt, absoluteExpiresAt. 기간은 TimeToLive |
 | 임시 | Temp | 확정 전 상태(S3 temp 태그)·임시 비밀번호(tempPassword). Temporary, Tmp 금지 |
@@ -241,7 +241,7 @@
 | 마이룸 아이템 | RoomItem | 마이룸에 놓는 아이템. Furniture, Decoration 금지 |
 | 보유 아이템 | OwnedRoomItem | 사용자가 구매한 아이템 한 개. 같은 아이템을 여러 개 사면 각각 따로 존재하며 좌표·장착 여부를 따로 가진다. 식별자는 roomItemId(상품이 아니라 구매한 한 개를 가리킴). Inventory, UserItem 금지 |
 | 아이템 카테고리 | RoomItemCategory | BACKGROUND / BED / CAT_WHEEL / CARPET / ETC. Type, Kind 금지 |
-| 장착 | Equipped | 마이룸에 놓은 상태. isEquipped, equippedRoomItems, updateEquippedRoomItems. Placement, Placed 금지 |
+| 장착 | Equipped | 마이룸에 놓은 상태. isEquipped, equippedRoomItems, updateEquippedRoomItems. 홈 응답에도 같은 equippedRoomItems(zIndex 오름차순)로 포함. Placement, Placed 금지 |
 | 배율 | Scale | 원본 대비 크기(Float, 1.0 = 원본). Size 금지 — 페이지네이션 size와 충돌 |
 | 쌓임 순서 | ZIndex | 장착 아이템이 겹칠 때 위아래 순서. 클수록 위. Order, Layer 금지 |
 
