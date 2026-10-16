@@ -7,6 +7,7 @@ import com.dandi.nyummy.home.dto.HomeResponse
 import com.dandi.nyummy.home.mapper.toHomeUserResponse
 import com.dandi.nyummy.inquiry.service.InquiryService
 import com.dandi.nyummy.meal.service.MealService
+import com.dandi.nyummy.room.service.RoomService
 import com.dandi.nyummy.user.repository.ProfileRepository
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -16,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional
 class HomeService(
     private val mealService: MealService,
     private val inquiryService: InquiryService,
+    private val roomService: RoomService,
     private val profileRepository: ProfileRepository,
 ) {
     companion object {
@@ -32,7 +34,7 @@ class HomeService(
      * 그 사이에 기록이 바뀌어 화면 안에서 어긋난 값이 보일 수 있다.
      *
      * @param userId 조회하는 사용자 ID
-     * @return 코인·연속 기록·오늘 식사 현황·안 읽은 문의 답변 여부를 담은 [HomeResponse]
+     * @return 코인·연속 기록·오늘 식사 현황·안 읽은 문의 답변 여부·마이룸 장착 아이템을 담은 [HomeResponse]
      * @throws BusinessException [UserErrorCode.PROFILE_NOT_FOUND] 사용자 프로필이 없는 경우
      */
     @Transactional(readOnly = true)
@@ -47,12 +49,14 @@ class HomeService(
         val streak = mealService.getStreak(userId)
         val todayMealSummary = mealService.getTodayMealSummary(userId)
         val hasUnreadInquiryAnswer = inquiryService.existsUnreadAnswer(userId)
+        val equippedRoomItems = roomService.getEquippedRoomItems(userId)
 
         val response = HomeResponse(
             user = profile.toHomeUserResponse(),
             streak = streak,
             todayMealSummary = todayMealSummary,
             hasUnreadInquiryAnswer = hasUnreadInquiryAnswer,
+            equippedRoomItems = equippedRoomItems,
         )
 
         return response
