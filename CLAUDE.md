@@ -230,8 +230,20 @@
 |---|---|---|
 | 이미지 키 | ImageKey | 도메인에서 이미지를 가리키는 S3 객체 키(필드 imageKey). 스토리지 계층(S3StorageClient) 파라미터는 objectKey |
 | 업로드 URL | UploadUrl | 업로드용 presigned PUT URL (createUploadUrl) |
-| 이미지 URL | ImageUrl | 조회용 presigned GET URL (createImageUrl) |
+| 이미지 URL | ImageUrl | 조회용 presigned GET URL (createImageUrl). 마이룸 아이템 이미지는 CDN base URL + imageKey로 만든 공개 URL에도 같은 이름을 쓴다 |
 | 촬영 시각 | CapturedAt | EXIF에서 읽은 촬영 시각. TakenAt, ShotAt 금지 |
+
+### 마이룸
+
+| 개념 | 사용 단어 | 비고 |
+|---|---|---|
+| 마이룸 | Room | 보유 아이템을 장착해 꾸미는 방. 패키지 room, 경로 /rooms. MyRoom 금지 |
+| 마이룸 아이템 | RoomItem | 마이룸에 놓는 아이템. Furniture, Decoration 금지 |
+| 보유 아이템 | OwnedRoomItem | 사용자가 구매한 아이템 한 개. 같은 아이템을 여러 개 사면 각각 따로 존재하며 좌표·장착 여부를 따로 가진다. 식별자는 roomItemId(상품이 아니라 구매한 한 개를 가리킴). Inventory, UserItem 금지 |
+| 아이템 카테고리 | RoomItemCategory | BACKGROUND / BED / CAT_WHEEL / CARPET / ETC. Type, Kind 금지 |
+| 장착 | Equipped | 마이룸에 놓은 상태. isEquipped, equippedRoomItems, updateEquippedRoomItems. Placement, Placed 금지 |
+| 배율 | Scale | 원본 대비 크기(Float, 1.0 = 원본). Size 금지 — 페이지네이션 size와 충돌 |
+| 쌓임 순서 | ZIndex | 장착 아이템이 겹칠 때 위아래 순서. 클수록 위. Order, Layer 금지 |
 
 ## 케이스 규칙
 

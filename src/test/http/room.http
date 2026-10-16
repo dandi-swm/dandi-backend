@@ -1,0 +1,25 @@
+### 마이룸 조회 API
+GET {{url}}/api/v1/rooms?size=2
+Authorization: Bearer {{accessToken}}
+
+### 카테고리별 아이템 페이지네이션 API
+GET {{url}}/api/v1/rooms/owned-items?category=BACKGROUND&cursor=95&size=2
+Authorization: Bearer {{accessToken}}
+
+### 꾸민 방 저장 API
+PUT {{url}}/api/v1/rooms/equipped-items
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "equippedRoomItems": [
+    { "roomItemId": 108, "x": 0.0, "y": 0.0, "zIndex": 0, "scale": 1.0 },
+    { "roomItemId": 112, "x": 52.0, "y": 130.0, "zIndex": 2, "scale": 0.8 },
+    { "roomItemId": 80, "x": 300.0, "y": 410.0, "zIndex": 1, "scale": 1.0 }
+  ]
+}
+
+### 아이템 삭제 API
+@roomItemId = 110
+DELETE {{url}}/api/v1/rooms/owned-items/{{roomItemId}}
+Authorization: Bearer {{accessToken}}
