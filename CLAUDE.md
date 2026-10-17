@@ -115,6 +115,10 @@
 | 내부 API | Internal | 외부 스케줄러가 호출하는 배치 엔드포인트(/api/v1/internal/**, API 키 인증). 패키지 internal |
 | 허용 오차 | Tolerance | 목표값 대비 허용 범위를 비율로 표현(0.2 = ±20%). 영양 판정(app.meal.intake-tolerance)과 고양이 체형(app.cat.weight-update-tolerance)이 값은 같아도 각각 선언한다. Margin, Threshold 금지 — Range는 캘린더 범위에 쓴다 |
 | 노출 비율 | Rate | 0~100 정수 퍼센트로 표현하는 노출·적용 비율 (analysisFeedbackRate). Ratio, Percentage, Chance, Probability, Sampling 금지 |
+| E2E 테스트 | E2e | 배포된 서버에 HTTP로 요청하는 테스트. source set `e2eTest`, 클래스 `~E2eTest`, 설정 `E2eProperties`. Jwt처럼 식별자는 E2e로 쓴다. E2E 전체 대문자 금지 |
+| 스모크 | Smoke | prod blue/green 전환 전에 돌리는 최소 시나리오 태그(`@Smoke`, tag `smoke`). Sanity 금지 |
+| 테스트 사전 상태 | Fixture | E2E 테스트가 공유하는 준비 상태(로그인 토큰 등). `AuthFixture`. Setup, Helper 금지 |
+| 요청 명세 | Spec | REST Assured `RequestSpecification` 묶음. `RequestSpecs`, `createAuthorizedSpec()`. Template, Builder 금지 |
 
 ### 사용자
 
