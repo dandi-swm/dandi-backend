@@ -7,13 +7,11 @@ import io.restassured.module.kotlin.extensions.Extract
 import io.restassured.module.kotlin.extensions.Given
 import io.restassured.module.kotlin.extensions.Then
 import io.restassured.module.kotlin.extensions.When
-import org.awaitility.kotlin.await
 import org.hamcrest.Matchers.equalTo
 import org.hamcrest.Matchers.hasItems
 import org.hamcrest.Matchers.oneOf
 import org.hamcrest.Matchers.startsWith
 import org.junit.jupiter.api.Test
-import java.time.Duration
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.UUID
@@ -22,11 +20,8 @@ import kotlin.test.assertTrue
 
 class MealE2eTest {
     companion object {
-        private val FINISHED_STATUSES = setOf("COMPLETED", "FAILED")
-
-        // Gemini 읽기 제한 시간(app.ai.read-timeout 30s)의 3배. 큐 대기와 재시도까지 감안한다.
-        private val ANALYSIS_TIMEOUT: Duration = Duration.ofSeconds(90)
-        private val ANALYSIS_POLL_INTERVAL: Duration = Duration.ofSeconds(2)
+        // 첫 분석을 포함해 최대 3번 시도한다. 그래도 실패하면 일시적 흔들림이 아니라 실제 문제로 본다.
+        private const val MAX_ANALYSIS_RETRY_COUNT = 2
 
         // 서버는 식사 날짜를 한국 시간 기준으로 나눈다(MealAttemptService.MEAL_ZONE).
         private val MEAL_ZONE: ZoneId = ZoneId.of("Asia/Seoul")
@@ -38,13 +33,23 @@ class MealE2eTest {
         val summaryBefore = getTodayMealSummary()
 
         val imageKey = ImageFixture.createUploadedImage("MEAL", "/images/cake-undated.jpeg", "image/jpeg")
-        val mealId = createMeal(imageKey)
+        val created = createMeal(imageKey)
+        val mealId = created.id
 
         try {
-            // 1. 분석 완료
-            val status = waitForAnalysis(mealId)
-            // FAILED는 대부분 외부(Gemini 장애·쿼터) 원인이다. Jenkins 로그만 보고 구분할 수 있게 상태를 남긴다.
-            assertEquals("COMPLETED", status, "영양 분석이 완료되지 않았습니다(mealId=$mealId)")
+            // 1. 분석 완료. Gemini 응답은 실행마다 달라 가끔 실패한다. 앱처럼 재시도 API로 다시 시도한다.
+            var status = created.status
+            var retryCount = 0
+            while (status == "FAILED" && retryCount < MAX_ANALYSIS_RETRY_COUNT) {
+                status = retryNutritionAnalysis(mealId)
+                retryCount++
+            }
+            assertEquals(
+                "COMPLETED",
+                status,
+                "영양 분석이 재시도 ${retryCount}번 후에도 완료되지 않았습니다(mealId=$mealId). " +
+                    "dev 로그의 '영양 분석 실패' 메시지를 확인하세요.",
+            )
 
             // 2. 상세: 영양 정보·이미지·평가 가능 여부
             val meal = Given {
@@ -228,7 +233,8 @@ class MealE2eTest {
         assertEquals(0, days.size % 7, "캘린더 칸 수가 주 단위가 아닙니다: ${days.size}")
     }
 
-    private fun createMeal(imageKey: String): Long = Given {
+    // 분석은 생성 요청 안에서 동기로 끝나므로 응답의 상태가 최종 결과다.
+    private fun createMeal(imageKey: String): MealStatus = Given {
         spec(RequestSpecs.createAuthorizedSpec())
         body(mapOf("imageKey" to imageKey))
     } When {
@@ -236,28 +242,11 @@ class MealE2eTest {
     } Then {
         statusCode(200)
         body("keySet()", hasItems("id", "status"))
-        // 분석은 비동기라 생성 직후에는 보통 아직 끝나지 않았다.
-        body("status", oneOf("WAITING", "ANALYZING", "COMPLETED"))
+        body("status", oneOf("COMPLETED", "FAILED"))
     } Extract {
-        jsonPath().getLong("id")
+        val response = jsonPath()
+        MealStatus(id = response.getLong("id"), status = response.getString("status"))
     }
-
-    private fun getMealStatus(mealId: Long): String = Given {
-        spec(RequestSpecs.createAuthorizedSpec())
-    } When {
-        get("/api/v1/meals/$mealId/analysis")
-    } Then {
-        statusCode(200)
-    } Extract {
-        path("status")
-    }
-
-    // 끝난 상태(COMPLETED·FAILED)가 될 때까지 기다리고 그 상태를 돌려준다.
-    private fun waitForAnalysis(mealId: Long): String = await
-        .alias("영양 분석 완료 대기(mealId=$mealId)")
-        .pollInterval(ANALYSIS_POLL_INTERVAL)
-        .atMost(ANALYSIS_TIMEOUT)
-        .until({ getMealStatus(mealId) }, { it in FINISHED_STATUSES })
 
     private fun getTodayMealSummary(): TodayMealSummary {
         val home = Given {
@@ -275,5 +264,17 @@ class MealE2eTest {
         )
     }
 
+    private fun retryNutritionAnalysis(mealId: Long): String = Given {
+        spec(RequestSpecs.createAuthorizedSpec())
+    } When {
+        post("/api/v1/meals/$mealId/analysis")
+    } Then {
+        statusCode(200)
+        body("status", oneOf("COMPLETED", "FAILED"))
+    } Extract {
+        path("status")
+    }
+
     private data class TodayMealSummary(val recordedCount: Int, val attemptCount: Int)
+    private data class MealStatus(val id: Long, val status: String)
 }
