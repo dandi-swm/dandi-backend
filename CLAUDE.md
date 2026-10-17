@@ -117,7 +117,8 @@
 | 노출 비율 | Rate | 0~100 정수 퍼센트로 표현하는 노출·적용 비율 (analysisFeedbackRate). Ratio, Percentage, Chance, Probability, Sampling 금지 |
 | E2E 테스트 | E2e | 배포된 서버에 HTTP로 요청하는 테스트. source set `e2eTest`, 클래스 `~E2eTest`, 설정 `E2eProperties`. Jwt처럼 식별자는 E2e로 쓴다. E2E 전체 대문자 금지 |
 | 스모크 | Smoke | prod blue/green 전환 전에 돌리는 최소 시나리오 태그(`@Smoke`, tag `smoke`). Sanity 금지 |
-| 테스트 사전 상태 | Fixture | E2E 테스트가 공유하는 준비 상태(로그인 토큰 등). `AuthFixture`. Setup, Helper 금지 |
+| 테스트 사전 상태 | Fixture | E2E 테스트가 공유하는 준비 상태(로그인 토큰, 업로드한 이미지 등). `AuthFixture`, `ImageFixture`. Setup, Helper 금지 |
+| 다른 사용자(E2E) | Other | 남의 리소스 접근(403·invalidKey)을 확인하는 두 번째 고정 계정. `otherAccessToken`, `E2E_OTHER_USER_EMAIL`. Second, Another, Stranger 금지 |
 | 요청 명세 | Spec | REST Assured `RequestSpecification` 묶음. `RequestSpecs`, `createAuthorizedSpec()`. Template, Builder 금지 |
 
 ### 사용자
