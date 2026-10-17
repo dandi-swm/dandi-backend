@@ -171,6 +171,75 @@ pipeline {
                 '''
             }
         }
+
+        stage('E2E Dev') {
+            environment {
+                E2E_BASE_URL = 'https://ddanddi.nyummy.co.kr'
+            }
+
+            options {
+                timeout(time: 15, unit: 'MINUTES')
+            }
+
+            steps {
+                // SSM 명령 성공은 컨테이너 교체까지다. 새 app이 요청을 받을 수 있을 때까지 기다린다.
+                sh '''#!/bin/bash
+                    set -euo pipefail
+
+                    for i in $(seq 1 36); do
+                        CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$E2E_BASE_URL/actuator/health" || true)
+
+                        if [ "$CODE" = "200" ]; then
+                            echo "dev health UP"
+                            exit 0
+                        fi
+
+                        sleep 5
+                    done
+
+                    echo "dev health 대기 시간 초과"
+                    exit 1
+                '''
+
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'e2e-dev-account',
+                        usernameVariable: 'E2E_USER_EMAIL',
+                        passwordVariable: 'E2E_USER_PASSWORD'
+                    )
+                ]) {
+                    sh '''#!/bin/bash
+                        set -euo pipefail
+
+                        mkdir -p "$HOME/.gradle"
+
+                        # 이전 빌드의 결과가 남아 있으면 이번에 실행되지 않은 테스트가 통과로 보고될 수 있다.
+                        rm -rf build/test-results/e2eTest
+
+                        # 비밀값은 -e 이름만 넘긴다. 값을 명령줄에 쓰면 프로세스 목록에 남는다.
+                        docker run --rm \
+                          --user "$(id -u):$(id -g)" \
+                          -v "$PWD:$PWD" \
+                          -v "$HOME/.gradle:/gradle-cache" \
+                          -e GRADLE_USER_HOME=/gradle-cache \
+                          -e E2E_BASE_URL \
+                          -e E2E_USER_EMAIL \
+                          -e E2E_USER_PASSWORD \
+                          -w "$PWD" \
+                          eclipse-temurin:25-jdk \
+                          sh ./gradlew e2eTest --no-daemon
+                    '''
+                }
+            }
+
+            post {
+                always {
+                    // 결과 파일이 하나도 없으면 실패한다(allowEmptyResults 기본값 false).
+                    // 태그 오타 등으로 테스트가 0개 실행됐는데 통과로 보이는 것을 막는다.
+                    junit 'build/test-results/e2eTest/*.xml'
+                }
+            }
+        }
     }
 
     post {
