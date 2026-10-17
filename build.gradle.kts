@@ -182,6 +182,8 @@ testing {
                 implementation(platform("io.rest-assured:rest-assured-bom:6.0.1"))
                 implementation("io.rest-assured:rest-assured")
                 implementation("io.rest-assured:kotlin-extensions")
+                // 요청 바디(Map)를 JSON으로 직렬화한다. 버전은 Boot BOM이 관리한다(main과 같은 Jackson 3).
+                implementation("tools.jackson.core:jackson-databind")
             }
             targets.all {
                 testTask.configure {
