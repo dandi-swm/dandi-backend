@@ -49,6 +49,10 @@ Content-Type: application/json
   "purpose": "SIGNUP"
 }
 
+> {%
+    client.global.set("emailChallengeToken", response.body.emailChallengeToken);
+%}
+
 ### 이메일 인증 API (비밀번호 찾기) - 가입된 이메일이어야 함, 미가입 이메일이면 404
 POST {{url}}/api/v1/auth/email-verification
 Content-Type: application/json
