@@ -178,7 +178,8 @@ testing {
         register<JvmTestSuite>("e2eTest") {
             useJUnitJupiter()
             dependencies {
-                // main 소스를 의존하지 않는다. DTO를 재사용하면 응답 계약이 깨져도 테스트가 같이 바뀐다.
+                // Boot 4 BOM은 REST Assured를 관리하지 않는다(3.x까지는 관리). 모듈 버전은 REST Assured BOM으로 묶는다.
+                implementation(platform("io.rest-assured:rest-assured-bom:6.0.1"))
                 implementation("io.rest-assured:rest-assured")
                 implementation("io.rest-assured:kotlin-extensions")
             }
