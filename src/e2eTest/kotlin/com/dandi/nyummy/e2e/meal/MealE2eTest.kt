@@ -2,6 +2,7 @@ package com.dandi.nyummy.e2e.meal
 
 import com.dandi.nyummy.e2e.support.ImageFixture
 import com.dandi.nyummy.e2e.support.RequestSpecs
+import com.dandi.nyummy.e2e.support.Smoke
 import io.restassured.module.kotlin.extensions.Extract
 import io.restassured.module.kotlin.extensions.Given
 import io.restassured.module.kotlin.extensions.Then
@@ -181,6 +182,50 @@ class MealE2eTest {
             // 중간에 실패하면 이미 삭제된 상태일 수 있다(그때는 404). 정리는 결과를 검증하지 않는다.
             Given { spec(RequestSpecs.createAuthorizedSpec()) } When { delete("/api/v1/meals/$mealId") }
         }
+    }
+
+    // 조회만 하므로 prod에서도 돌린다. 계정에 식사가 없어도 통과해야 한다.
+    @Smoke
+    @Test
+    fun `오늘의 일일 식사 목록을 조회한다`() {
+        val today = LocalDate.now(MEAL_ZONE)
+
+        Given {
+            spec(RequestSpecs.createAuthorizedSpec())
+            queryParams(mapOf("year" to today.year, "month" to today.monthValue, "day" to today.dayOfMonth))
+        } When {
+            get("/api/v1/meals/daily")
+        } Then {
+            statusCode(200)
+            body("keySet()", hasItems("date", "meals", "dailyNutrition"))
+            body("date", equalTo(today.toString()))
+            body("dailyNutrition.current.keySet()", hasItems("calory", "carbs", "protein", "fat"))
+            body("dailyNutrition.target.keySet()", hasItems("calory", "carbs", "protein", "fat"))
+        }
+    }
+
+    // 조회만 하므로 prod에서도 돌린다. 캘린더는 식사가 없어도 주 단위 그리드를 채워 내려준다.
+    @Smoke
+    @Test
+    fun `이번 달 식사 캘린더를 조회한다`() {
+        val today = LocalDate.now(MEAL_ZONE)
+
+        val days = Given {
+            spec(RequestSpecs.createAuthorizedSpec())
+            queryParams(mapOf("year" to today.year, "month" to today.monthValue))
+        } When {
+            get("/api/v1/meals/monthly")
+        } Then {
+            statusCode(200)
+            body("keySet()", hasItems("year", "month", "days"))
+            body("days[0].keySet()", hasItems("date", "isCurrentMonth", "dailyNutritionEvaluation", "foodIconIds"))
+            body("days.find { it.date == '$today' }.isCurrentMonth", equalTo(true))
+        } Extract {
+            jsonPath().getList<Any>("days")
+        }
+
+        // 앞뒤 달 날짜를 포함해 주 단위(일~토)로 채운 그리드라 항상 7의 배수다.
+        assertEquals(0, days.size % 7, "캘린더 칸 수가 주 단위가 아닙니다: ${days.size}")
     }
 
     private fun createMeal(imageKey: String): Long = Given {
