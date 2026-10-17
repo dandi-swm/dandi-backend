@@ -9,6 +9,7 @@ import io.restassured.module.kotlin.extensions.Given
 import io.restassured.module.kotlin.extensions.Then
 import io.restassured.module.kotlin.extensions.When
 import io.restassured.response.ValidatableResponse
+import io.restassured.specification.RequestSpecification
 import org.hamcrest.Matchers.equalTo
 import org.hamcrest.Matchers.hasItems
 import org.hamcrest.Matchers.notNullValue
@@ -181,6 +182,46 @@ class InquiryE2eTest {
         }
     }
 
+    // 업로드 URL은 신고한 형식만 보고 발급한다. 확정할 때 실제 내용을 다시 검사해야 속인 파일을 막는다.
+    @Test
+    fun `확장자와 실제 내용이 다른 이미지는 첨부할 수 없다`() {
+        val title = "E2E 형식 위조 ${UUID.randomUUID()}"
+        // PNG 파일을 JPEG라고 신고해 .jpg 키로 올린다. S3는 내용을 보지 않으므로 업로드는 성공한다.
+        val imageKey = ImageFixture.createUploadedImage("INQUIRY", "/images/inquiry.png", "image/jpeg")
+
+        Given {
+            spec(RequestSpecs.createAuthorizedSpec())
+            body(createInquiryBody(title, imageKey))
+        } When {
+            post("/api/v1/inquiries")
+        } Then {
+            statusCode(400)
+            body("code", equalTo("api.s3.unsupportedContentType"))
+        }
+
+        assertNull(findInquiryId(title), "거부된 문의가 만들어졌습니다")
+    }
+
+    // imageKey는 응답으로 노출되는 값이라 다른 사용자가 알아낼 수 있다. 확정할 때 경로의 사용자를 확인해야 한다.
+    @Test
+    fun `다른 사용자가 올린 이미지는 첨부할 수 없다`() {
+        val title = "E2E 남의 이미지 ${UUID.randomUUID()}"
+        val imageKey = ImageFixture.createUploadedImage("INQUIRY", "/images/inquiry.png", "image/png")
+        val otherSpec = RequestSpecs.createAuthorizedSpec(AuthFixture.otherAccessToken)
+
+        Given {
+            spec(otherSpec)
+            body(createInquiryBody(title, imageKey))
+        } When {
+            post("/api/v1/inquiries")
+        } Then {
+            statusCode(400)
+            body("code", equalTo("api.s3.invalidKey"))
+        }
+
+        assertNull(findInquiryId(title, otherSpec), "거부된 문의가 다른 사용자에게 만들어졌습니다")
+    }
+
     private fun createInquiry(title: String, imageKey: String? = null) {
         Given {
             spec(RequestSpecs.createAuthorizedSpec())
@@ -203,9 +244,9 @@ class InquiryE2eTest {
     private fun getInquiryId(title: String): Long =
         requireNotNull(findInquiryId(title)) { "방금 만든 문의를 목록에서 찾지 못했습니다: $title" }
 
-    private fun findInquiryId(title: String): Long? {
+    private fun findInquiryId(title: String, spec: RequestSpecification = RequestSpecs.createAuthorizedSpec()): Long? {
         val inquiries = Given {
-            spec(RequestSpecs.createAuthorizedSpec())
+            spec(spec)
         } When {
             get("/api/v1/inquiries")
         } Then {
