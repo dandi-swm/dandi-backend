@@ -185,6 +185,8 @@ testing {
                 // 요청 바디(Map)를 JSON으로 직렬화한다. 버전은 Boot BOM이 관리한다(main과 같은 Jackson 3).
                 implementation("tools.jackson.core:jackson-databind")
                 implementation("org.jetbrains.kotlin:kotlin-test-junit5")
+                // 비동기 영양 분석이 끝날 때까지 폴링한다. 버전은 Boot BOM이 관리한다(4.3.0).
+                implementation("org.awaitility:awaitility-kotlin")
             }
             targets.all {
                 testTask.configure {
