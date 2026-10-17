@@ -19,14 +19,6 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class MealE2eTest {
-    companion object {
-        // 첫 분석을 포함해 최대 3번 시도한다. 그래도 실패하면 일시적 흔들림이 아니라 실제 문제로 본다.
-        private const val MAX_ANALYSIS_RETRY_COUNT = 2
-
-        // 서버는 식사 날짜를 한국 시간 기준으로 나눈다(MealAttemptService.MEAL_ZONE).
-        private val MEAL_ZONE: ZoneId = ZoneId.of("Asia/Seoul")
-    }
-
     @Test
     fun `식사를 기록하고 분석·조회·수정·평가·삭제한다`() {
         val today = LocalDate.now(MEAL_ZONE)
@@ -234,7 +226,7 @@ class MealE2eTest {
     }
 
     // 분석은 생성 요청 안에서 동기로 끝나므로 응답의 상태가 최종 결과다.
-    private fun createMeal(imageKey: String): MealStatus = Given {
+    private fun createMeal(imageKey: String): MealStatusResponse = Given {
         spec(RequestSpecs.createAuthorizedSpec())
         body(mapOf("imageKey" to imageKey))
     } When {
@@ -245,7 +237,7 @@ class MealE2eTest {
         body("status", oneOf("COMPLETED", "FAILED"))
     } Extract {
         val response = jsonPath()
-        MealStatus(id = response.getLong("id"), status = response.getString("status"))
+        MealStatusResponse(id = response.getLong("id"), status = response.getString("status"))
     }
 
     private fun getTodayMealSummary(): TodayMealSummary {
@@ -276,5 +268,15 @@ class MealE2eTest {
     }
 
     private data class TodayMealSummary(val recordedCount: Int, val attemptCount: Int)
-    private data class MealStatus(val id: Long, val status: String)
+
+    // 생성·재시도 API의 응답(id, status). 서버 DTO 이름과 맞춘다. 상태 enum(MealStatus)과 다른 것이다.
+    private data class MealStatusResponse(val id: Long, val status: String)
+
+    companion object {
+        // 첫 분석을 포함해 최대 3번 시도한다. 그래도 실패하면 일시적 흔들림이 아니라 실제 문제로 본다.
+        private const val MAX_ANALYSIS_RETRY_COUNT = 2
+
+        // 서버는 식사 날짜를 한국 시간 기준으로 나눈다(MealAttemptService.MEAL_ZONE).
+        private val MEAL_ZONE: ZoneId = ZoneId.of("Asia/Seoul")
+    }
 }

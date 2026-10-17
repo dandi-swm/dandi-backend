@@ -17,7 +17,6 @@ import org.hamcrest.Matchers.nullValue
 import org.hamcrest.Matchers.startsWith
 import org.junit.jupiter.api.Test
 import java.util.UUID
-import kotlin.test.DefaultAsserter.assertNull
 import kotlin.test.assertNull
 
 class InquiryE2eTest {
@@ -259,12 +258,6 @@ class InquiryE2eTest {
             .get<Number?>("inquiries.find { it.questionTitle == title }.inquiryId")
             ?.toLong()
     }
-
-    private fun createInquiryBody(title: String): Map<String, String> = mapOf(
-        "category" to "QUESTION",
-        "questionTitle" to title,
-        "questionContent" to "E2E 테스트가 만든 문의입니다. 테스트가 끝나면 삭제됩니다.",
-    )
 
     private fun ValidatableResponse.validateForbidden() {
         statusCode(403)
