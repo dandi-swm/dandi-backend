@@ -170,6 +170,31 @@ tasks.named<org.springframework.boot.gradle.tasks.bundling.BootJar>("bootJar") {
     archiveFileName.set("app.jar")
 }
 
+// 배포된 서버에 HTTP로 요청하는 E2E 테스트. ./gradlew test와 분리해 배포 후 단계에서만 돌린다.
+// (E2E 테스트를 기존 src/test에 섞으면 ./gradlew test가 돌 때마다 dev 서버에 요청을 보내게 된다.)
+// 대상 서버는 E2E_BASE_URL 환경변수로 받는다. smoke만 돌리려면 -Pe2eTags=smoke.
+testing {
+    suites {
+        register<JvmTestSuite>("e2eTest") {
+            useJUnitJupiter()
+            dependencies {
+                // main 소스를 의존하지 않는다. DTO를 재사용하면 응답 계약이 깨져도 테스트가 같이 바뀐다.
+                implementation("io.rest-assured:rest-assured")
+                implementation("io.rest-assured:kotlin-extensions")
+            }
+            targets.all {
+                testTask.configure {
+                    // 대상이 외부 서버라 입력이 같아도 결과가 달라진다. up-to-date로 건너뛰지 않게 한다.
+                    outputs.upToDateWhen { false }
+                    providers.gradleProperty("e2eTags").orNull?.let { tags ->
+                        useJUnitPlatform { includeTags(*tags.split(",").toTypedArray()) }
+                    }
+                }
+            }
+        }
+    }
+}
+
 tasks.withType<Test> {
     useJUnitPlatform()
 }
