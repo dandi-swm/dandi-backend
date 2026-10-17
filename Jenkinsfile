@@ -206,6 +206,11 @@ pipeline {
                         credentialsId: 'e2e-dev-account',
                         usernameVariable: 'E2E_USER_EMAIL',
                         passwordVariable: 'E2E_USER_PASSWORD'
+                    ),
+                    usernamePassword(
+                        credentialsId: 'e2e-dev-account-2',
+                        usernameVariable: 'E2E_OTHER_USER_EMAIL',
+                        passwordVariable: 'E2E_OTHER_USER_PASSWORD'
                     )
                 ]) {
                     sh '''#!/bin/bash
@@ -225,6 +230,8 @@ pipeline {
                           -e E2E_BASE_URL \
                           -e E2E_USER_EMAIL \
                           -e E2E_USER_PASSWORD \
+                          -e E2E_OTHER_USER_EMAIL \
+                          -e E2E_OTHER_USER_PASSWORD \
                           -w "$PWD" \
                           eclipse-temurin:25-jdk \
                           sh ./gradlew e2eTest --no-daemon
