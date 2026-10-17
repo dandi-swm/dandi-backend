@@ -1,0 +1,844 @@
+// 운영 배포. 수동 실행(Build with Parameters)만 한다.
+// 빌드하지 않고 main Jenkins가 ECR에 올린 이미지(dev 배포·dev E2E를 통과한 태그)를 digest로 고정해 배포한다.
+//
+// 서비스는 ECS blue/green(BLUE_GREEN)으로 배포한다. green이 뜨면 테스트 리스너(:8443)가 green을 가리키고
+// POST_TEST_TRAFFIC_SHIFT의 PAUSE 훅에서 멈춘다. 이 파이프라인이 green에 smoke를 돌려
+// 통과하면 CONTINUE(운영 트래픽 전환), 실패·중단하면 ROLLBACK한다. 아무도 응답하지 않으면 훅이 30분 뒤 롤백한다.
+pipeline {
+    agent any
+
+    options {
+        disableConcurrentBuilds()
+        timestamps()
+        // 승인 대기 + green 기동(인스턴스 증설 포함) + smoke + 운영 전환·bake 10분
+        timeout(time: 90, unit: 'MINUTES')
+    }
+
+    parameters {
+        string(
+            name: 'IMAGE_TAG',
+            defaultValue: '',
+            description: 'DEV 배포에 성공한 ECR 이미지 태그 (예: 8d27e4b7dd15-53)'
+        )
+    }
+
+    environment {
+        AWS_REGION = 'ap-northeast-2'
+        AWS_ACCOUNT = '723300665166'
+        ECR_REPOSITORY = 'nyummy-backend'
+
+        ECS_CLUSTER = 'nyummy-prod-cluster'
+        ECS_SERVICE = 'nyummy-prod-backend-service'
+        CONTAINER_NAME = 'nyummy-backend'
+
+        HEALTH_URL = 'https://api.nyummy.co.kr/actuator/health'
+        // blue/green 테스트 리스너. ALB 보안 그룹에서 Jenkins IP만 허용한다.
+        GREEN_BASE_URL = 'https://api.nyummy.co.kr:8443'
+    }
+
+    stages {
+
+        stage('Verify Image') {
+            steps {
+                script {
+                    // 파라미터와 같은 이름(env.IMAGE_TAG)에 대입하면 파라미터 값이 우선해
+                    // trim 결과가 무시될 수 있으므로 별도 이름을 쓴다.
+                    env.DEPLOY_TAG = (params.IMAGE_TAG ?: '').trim()
+
+                    if (!env.DEPLOY_TAG) {
+                        error('IMAGE_TAG를 입력하세요.')
+                    }
+
+                    if (!(env.DEPLOY_TAG ==~ /[a-f0-9]{12}-[0-9]+/)) {
+                        error('Invalid IMAGE_TAG')
+                    }
+
+                    env.IMAGE_DIGEST = sh(
+                        script: '''
+                            set -eu
+
+                            aws ecr describe-images \
+                              --region "$AWS_REGION" \
+                              --repository-name "$ECR_REPOSITORY" \
+                              --image-ids "imageTag=$DEPLOY_TAG" \
+                              --query 'imageDetails[0].imageDigest' \
+                              --output text
+                        ''',
+                        returnStdout: true
+                    ).trim()
+
+                    if (!(env.IMAGE_DIGEST ==~ /sha256:[a-f0-9]{64}/)) {
+                        error('Invalid image digest')
+                    }
+
+                    env.ECR_REGISTRY =
+                        "${env.AWS_ACCOUNT}.dkr.ecr.${env.AWS_REGION}.amazonaws.com"
+
+                    env.TAGGED_IMAGE =
+                        "${env.ECR_REGISTRY}/${env.ECR_REPOSITORY}:${env.DEPLOY_TAG}"
+
+                    env.DEPLOY_IMAGE =
+                        "${env.ECR_REGISTRY}/${env.ECR_REPOSITORY}@${env.IMAGE_DIGEST}"
+
+                    echo "Verified image tag: ${env.DEPLOY_TAG}"
+                    echo "Verified image digest: ${env.IMAGE_DIGEST}"
+                    echo "Deploy image: ${env.DEPLOY_IMAGE}"
+                }
+            }
+        }
+
+        stage('Check Current Production') {
+            steps {
+                script {
+                    env.CURRENT_TASK_DEF_AT_CHECK = sh(
+                        script: '''
+                            set -eu
+
+                            aws ecs describe-services \
+                              --region "$AWS_REGION" \
+                              --cluster "$ECS_CLUSTER" \
+                              --services "$ECS_SERVICE" \
+                              --query 'services[0].taskDefinition' \
+                              --output text
+                        ''',
+                        returnStdout: true
+                    ).trim()
+
+                    if (!env.CURRENT_TASK_DEF_AT_CHECK.startsWith(
+                        "arn:aws:ecs:${env.AWS_REGION}:${env.AWS_ACCOUNT}:task-definition/nyummy-prod-backend:"
+                    )) {
+                        error('Unexpected production Task Definition')
+                    }
+
+                    // 배포 전후 태스크 수 비교 기준. 고정값(2) 대신 현재 서비스 값을 쓴다.
+                    env.DESIRED_COUNT_AT_CHECK = sh(
+                        script: '''
+                            set -eu
+
+                            aws ecs describe-services \
+                              --region "$AWS_REGION" \
+                              --cluster "$ECS_CLUSTER" \
+                              --services "$ECS_SERVICE" \
+                              --query 'services[0].desiredCount' \
+                              --output text
+                        ''',
+                        returnStdout: true
+                    ).trim()
+
+                    if (!(env.DESIRED_COUNT_AT_CHECK ==~ /[1-9][0-9]*/)) {
+                        error("Unexpected desiredCount: ${env.DESIRED_COUNT_AT_CHECK}")
+                    }
+
+                    env.CURRENT_IMAGE_AT_CHECK = sh(
+                        script: '''
+                            set -eu
+
+                            aws ecs describe-task-definition \
+                              --region "$AWS_REGION" \
+                              --task-definition "$CURRENT_TASK_DEF_AT_CHECK" \
+                              --query 'taskDefinition' \
+                              --output json \
+                            | jq -er --arg name "$CONTAINER_NAME" '
+                                [.containerDefinitions[]
+                                 | select(.name == $name)
+                                 | .image]
+                                | if length == 1
+                                  then .[0]
+                                  else error("Invalid container count")
+                                  end
+                              '
+                        ''',
+                        returnStdout: true
+                    ).trim()
+
+                    echo "Current Task Definition: ${env.CURRENT_TASK_DEF_AT_CHECK}"
+                    echo "Current image: ${env.CURRENT_IMAGE_AT_CHECK}"
+                    echo "Current desiredCount: ${env.DESIRED_COUNT_AT_CHECK}"
+
+                    if (
+                        env.CURRENT_IMAGE_AT_CHECK == env.TAGGED_IMAGE ||
+                        env.CURRENT_IMAGE_AT_CHECK == env.DEPLOY_IMAGE
+                    ) {
+                        env.SKIP_DEPLOY = 'true'
+                        echo 'SKIP: 동일 이미지이므로 운영 배포를 생략합니다.'
+                    } else {
+                        env.SKIP_DEPLOY = 'false'
+                        echo 'DIFFERENT IMAGE: 운영 배포가 필요합니다.'
+                    }
+                }
+            }
+        }
+
+        stage('Verify Production Readiness') {
+            when {
+                expression {
+                    env.SKIP_DEPLOY == 'false'
+                }
+            }
+
+            steps {
+                sh '''
+                    set -eu
+                    set +x
+
+                    aws ecs describe-services \
+                      --region "$AWS_REGION" \
+                      --cluster "$ECS_CLUSTER" \
+                      --services "$ECS_SERVICE" \
+                      --output json \
+                    | jq -e \
+                      --arg service "$ECS_SERVICE" \
+                      --arg expected "$CURRENT_TASK_DEF_AT_CHECK" \
+                      --argjson desired "$DESIRED_COUNT_AT_CHECK" '
+                        (.failures | length) == 0
+                        and (.services | length) == 1
+                        and (
+                          .services[0]
+                          | .serviceName == $service
+                            and .status == "ACTIVE"
+                            and .taskDefinition == $expected
+                            and .desiredCount == $desired
+                            and .runningCount == .desiredCount
+                            and .pendingCount == 0
+                            and (.deployments | length) == 1
+                            and (
+                              .deployments[0]
+                              | .status == "PRIMARY"
+                                and .rolloutState == "COMPLETED"
+                                and .taskDefinition == $expected
+                            )
+                        )
+                      ' > /dev/null || {
+                        echo "ERROR: 운영 서비스가 배포 가능한 안정 상태가 아닙니다." >&2
+                        exit 1
+                    }
+
+                    echo 'Production is stable and ready for deployment.'
+                '''
+            }
+        }
+
+        stage('Manual Approval') {
+            when {
+                expression {
+                    env.SKIP_DEPLOY == 'false'
+                }
+            }
+
+            steps {
+                input(
+                    message: """운영 배포를 승인하시겠습니까?
+
+현재 Task Definition:
+${env.CURRENT_TASK_DEF_AT_CHECK}
+
+현재 이미지:
+${env.CURRENT_IMAGE_AT_CHECK}
+
+배포 이미지 태그:
+${env.DEPLOY_TAG}
+
+배포 이미지:
+${env.DEPLOY_IMAGE}
+
+승인하면 green을 띄우고 smoke를 통과한 경우에만 운영 트래픽을 전환합니다.""",
+                    ok: '운영 배포 승인',
+                    submitter: 'dandi-ryo'
+                )
+            }
+        }
+
+        stage('Deploy Production') {
+            when {
+                expression {
+                    env.SKIP_DEPLOY == 'false'
+                }
+            }
+
+            steps {
+                script {
+                    env.NEW_TASK_DEF = sh(
+                        script: '''
+                            set -eu
+                            set +x
+
+                            WORK_DIR=$(mktemp -d)
+                            trap 'rm -rf "$WORK_DIR"' EXIT
+
+                            # 승인 후 운영 Revision 재확인
+                            CURRENT_TASK_DEF=$(aws ecs describe-services \
+                              --region "$AWS_REGION" \
+                              --cluster "$ECS_CLUSTER" \
+                              --services "$ECS_SERVICE" \
+                              --query 'services[0].taskDefinition' \
+                              --output text)
+
+                            if [ "$CURRENT_TASK_DEF" != "$CURRENT_TASK_DEF_AT_CHECK" ]; then
+                                echo "ERROR: 승인 대기 중 운영 Task Definition 변경" >&2
+                                exit 1
+                            fi
+
+                            # 승인 후에도 서비스가 안정 상태인지 확인
+                            aws ecs describe-services \
+                              --region "$AWS_REGION" \
+                              --cluster "$ECS_CLUSTER" \
+                              --services "$ECS_SERVICE" \
+                              --output json \
+                            | jq -e \
+                              --arg expected "$CURRENT_TASK_DEF_AT_CHECK" \
+                              --argjson desired "$DESIRED_COUNT_AT_CHECK" '
+                                (.failures | length) == 0
+                                and (.services | length) == 1
+                                and (
+                                  .services[0]
+                                  | .status == "ACTIVE"
+                                    and .taskDefinition == $expected
+                                    and .desiredCount == $desired
+                                    and .runningCount == .desiredCount
+                                    and .pendingCount == 0
+                                    and (.deployments | length) == 1
+                                    and (
+                                      .deployments[0]
+                                      | .status == "PRIMARY"
+                                        and .rolloutState == "COMPLETED"
+                                        and .taskDefinition == $expected
+                                    )
+                                )
+                              ' > /dev/null || {
+                                echo "ERROR: 승인 후 운영 서비스가 안정 상태가 아닙니다." >&2
+                                exit 1
+                            }
+
+                            aws ecs describe-task-definition \
+                              --region "$AWS_REGION" \
+                              --task-definition "$CURRENT_TASK_DEF" \
+                              --query 'taskDefinition' \
+                              --output json > "$WORK_DIR/original.json"
+
+                            # 대상 컨테이너와 승인 전 이미지 재확인
+                            jq -e \
+                              --arg name "$CONTAINER_NAME" \
+                              --arg expected "$CURRENT_IMAGE_AT_CHECK" '
+                                [.containerDefinitions[]
+                                 | select(.name == $name)]
+                                | length == 1 and .[0].image == $expected
+                              ' "$WORK_DIR/original.json" > /dev/null || {
+                                echo "ERROR: 대상 컨테이너가 하나가 아니거나 현재 이미지가 승인 시점과 다릅니다." >&2
+                                exit 1
+                            }
+
+                            # 응답 전용 필드를 제거하고 등록 가능한 설정 유지
+                            jq --arg name "$CONTAINER_NAME" \
+                               --arg image "$DEPLOY_IMAGE" '
+                              def registration_fields:
+                                with_entries(
+                                  select(.key as $key | [
+                                    "family",
+                                    "taskRoleArn",
+                                    "executionRoleArn",
+                                    "networkMode",
+                                    "containerDefinitions",
+                                    "volumes",
+                                    "placementConstraints",
+                                    "requiresCompatibilities",
+                                    "cpu",
+                                    "memory",
+                                    "pidMode",
+                                    "ipcMode",
+                                    "proxyConfiguration",
+                                    "ephemeralStorage",
+                                    "runtimePlatform",
+                                    "enableFaultInjection"
+                                  ] | index($key))
+                                );
+
+                              registration_fields
+                              | .containerDefinitions |= map(
+                                  if .name == $name
+                                  then .image = $image
+                                  else .
+                                  end
+                                )
+                            ' "$WORK_DIR/original.json" > "$WORK_DIR/new.json"
+
+                            # 이미지 이외 등록 설정이 동일한지 비교
+                            jq -n -e \
+                              --arg name "$CONTAINER_NAME" \
+                              --arg image "$DEPLOY_IMAGE" \
+                              --slurpfile old "$WORK_DIR/original.json" \
+                              --slurpfile new "$WORK_DIR/new.json" '
+                                def registration_fields:
+                                  with_entries(
+                                    select(.key as $key | [
+                                      "family", "taskRoleArn",
+                                      "executionRoleArn", "networkMode",
+                                      "containerDefinitions", "volumes",
+                                      "placementConstraints",
+                                      "requiresCompatibilities",
+                                      "cpu", "memory", "pidMode",
+                                      "ipcMode", "proxyConfiguration",
+                                      "ephemeralStorage", "runtimePlatform",
+                                      "enableFaultInjection"
+                                    ] | index($key))
+                                  );
+
+                                (
+                                  $old[0]
+                                  | registration_fields
+                                  | .containerDefinitions |= map(
+                                      if .name == $name
+                                      then .image = $image
+                                      else .
+                                      end
+                                    )
+                                ) == $new[0]
+                              ' > /dev/null || {
+                                echo "ERROR: 새 Task Definition의 이미지 외 등록 설정이 원본과 다릅니다." >&2
+                                exit 1
+                            }
+
+                            echo "Registering Task Definition..." >&2
+
+                            NEW_TASK_DEF=$(aws ecs register-task-definition \
+                              --region "$AWS_REGION" \
+                              --cli-input-json "file://$WORK_DIR/new.json" \
+                              --query 'taskDefinition.taskDefinitionArn' \
+                              --output text)
+
+                            if [ -z "$NEW_TASK_DEF" ] || [ "$NEW_TASK_DEF" = "None" ]; then
+                                echo "ERROR: Task Definition registration failed" >&2
+                                exit 1
+                            fi
+
+                            # 새 Revision 등록 후 서비스 변경 여부 재확인
+                            LATEST_TASK_DEF=$(aws ecs describe-services \
+                              --region "$AWS_REGION" \
+                              --cluster "$ECS_CLUSTER" \
+                              --services "$ECS_SERVICE" \
+                              --query 'services[0].taskDefinition' \
+                              --output text)
+
+                            if [ "$LATEST_TASK_DEF" != "$CURRENT_TASK_DEF_AT_CHECK" ]; then
+                                echo "ERROR: 다른 운영 배포가 감지되었습니다." >&2
+                                echo "새 Revision은 등록됐지만 서비스는 업데이트하지 않았습니다: $NEW_TASK_DEF" >&2
+                                exit 1
+                            fi
+
+                            UPDATED_TASK_DEF=$(aws ecs update-service \
+                              --region "$AWS_REGION" \
+                              --cluster "$ECS_CLUSTER" \
+                              --service "$ECS_SERVICE" \
+                              --task-definition "$NEW_TASK_DEF" \
+                              --query 'service.taskDefinition' \
+                              --output text)
+
+                            if [ "$UPDATED_TASK_DEF" != "$NEW_TASK_DEF" ]; then
+                                echo "ERROR: Service update result mismatch (expected $NEW_TASK_DEF, got $UPDATED_TASK_DEF)" >&2
+                                exit 1
+                            fi
+
+                            echo "ECS service update submitted." >&2
+
+                            # stdout에는 ARN만 반환
+                            printf '%s\n' "$NEW_TASK_DEF"
+                        ''',
+                        returnStdout: true
+                    ).trim()
+
+                    // stdout에는 신규 Task Definition ARN 한 줄만 반환되어야 한다.
+                    if (!env.NEW_TASK_DEF.matches(
+                        'arn:aws:ecs:ap-northeast-2:723300665166:task-definition/nyummy-prod-backend:[0-9]+'
+                    )) {
+                        error("Unexpected NEW_TASK_DEF: ${env.NEW_TASK_DEF}")
+                    }
+
+                    echo "New Task Definition: ${env.NEW_TASK_DEF}"
+                }
+            }
+        }
+
+        stage('Wait For Green') {
+            when {
+                expression {
+                    env.SKIP_DEPLOY == 'false'
+                }
+            }
+
+            steps {
+                // green 기동(인스턴스 증설 포함)과 테스트 트래픽 전환까지. 첫 리허설에서 약 12분 걸렸다.
+                timeout(time: 30, unit: 'MINUTES') {
+                    script {
+                        // 이번 update-service가 만든 배포를 찾는다. 대상 리비전의 Task Definition으로 확인해
+                        // 다른 사람이 동시에 시작한 배포를 잘못 잡지 않는다.
+                        env.SERVICE_DEPLOYMENT_ARN = sh(
+                            script: '''
+                                set -eu
+                                set +x
+
+                                for i in $(seq 1 24); do
+                                    ARNS=$(aws ecs list-service-deployments \
+                                      --region "$AWS_REGION" \
+                                      --cluster "$ECS_CLUSTER" \
+                                      --service "$ECS_SERVICE" \
+                                      --status IN_PROGRESS PENDING \
+                                      --query 'serviceDeployments[].serviceDeploymentArn' \
+                                      --output text)
+
+                                    for ARN in $ARNS; do
+                                        REVISION=$(aws ecs describe-service-deployments \
+                                          --region "$AWS_REGION" \
+                                          --service-deployment-arns "$ARN" \
+                                          --query 'serviceDeployments[0].targetServiceRevision.arn' \
+                                          --output text)
+
+                                        TASK_DEF=$(aws ecs describe-service-revisions \
+                                          --region "$AWS_REGION" \
+                                          --service-revision-arns "$REVISION" \
+                                          --query 'serviceRevisions[0].taskDefinition' \
+                                          --output text)
+
+                                        if [ "$TASK_DEF" = "$NEW_TASK_DEF" ]; then
+                                            printf '%s\n' "$ARN"
+                                            exit 0
+                                        fi
+                                    done
+
+                                    sleep 5
+                                done
+
+                                echo "ERROR: $NEW_TASK_DEF 의 service deployment를 찾지 못했습니다." >&2
+                                exit 1
+                            ''',
+                            returnStdout: true
+                        ).trim()
+
+                        echo "Service deployment: ${env.SERVICE_DEPLOYMENT_ARN}"
+
+                        // smoke 지점(POST_TEST_TRAFFIC_SHIFT)의 PAUSE 훅에 도착할 때까지 기다린다.
+                        env.HOOK_ID = sh(
+                            script: '''
+                                set -eu
+                                set +x
+
+                                while true; do
+                                    RESULT=$(aws ecs describe-service-deployments \
+                                      --region "$AWS_REGION" \
+                                      --service-deployment-arns "$SERVICE_DEPLOYMENT_ARN" \
+                                      --cli-connect-timeout 10 \
+                                      --cli-read-timeout 20 \
+                                      --output json)
+
+                                    STATUS=$(printf '%s' "$RESULT" | jq -r '.serviceDeployments[0].status')
+                                    STAGE=$(printf '%s' "$RESULT" | jq -r '.serviceDeployments[0].lifecycleStage // "-"')
+                                    HOOK=$(printf '%s' "$RESULT" | jq -r '
+                                        [.serviceDeployments[0].lifecycleHookDetails[]?
+                                         | select(.status == "AWAITING_ACTION")
+                                         | .hookId][0] // empty
+                                    ')
+
+                                    echo "status=$STATUS stage=$STAGE" >&2
+
+                                    if [ -n "$HOOK" ]; then
+                                        printf '%s\n' "$HOOK"
+                                        exit 0
+                                    fi
+
+                                    case "$STATUS" in
+                                        PENDING|IN_PROGRESS) ;;
+                                        *)
+                                            echo "ERROR: smoke 지점 전에 배포가 끝났습니다: $STATUS" >&2
+                                            printf '%s' "$RESULT" | jq -r '.serviceDeployments[0].statusReason // empty' >&2
+                                            exit 1
+                                            ;;
+                                    esac
+
+                                    sleep 15
+                                done
+                            ''',
+                            returnStdout: true
+                        ).trim()
+
+                        echo "Paused at POST_TEST_TRAFFIC_SHIFT: ${env.HOOK_ID}"
+                    }
+                }
+            }
+        }
+
+        stage('Smoke Green') {
+            when {
+                expression {
+                    env.SKIP_DEPLOY == 'false'
+                }
+            }
+
+            steps {
+                // 배포하는 이미지와 같은 커밋의 smoke를 돌린다. 이미지 태그 앞 12자리가 그 이미지를 빌드한 main 커밋이다.
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'e2e-prod-account',
+                        usernameVariable: 'E2E_USER_EMAIL',
+                        passwordVariable: 'E2E_USER_PASSWORD'
+                    )
+                ]) {
+                    timeout(time: 15, unit: 'MINUTES') {
+                        sh '''#!/bin/bash
+                            set -euo pipefail
+
+                            SHA="${DEPLOY_TAG%%-*}"
+
+                            # 짧은 SHA로 체크아웃하려면 커밋 기록이 필요하다. 파일 내용은 필요한 것만 받는다.
+                            rm -rf e2e-src
+                            git clone --quiet --filter=blob:none \
+                              https://github.com/dandi-swm/dandi-backend.git e2e-src
+                            git -C e2e-src checkout --quiet --detach "$SHA"
+
+                            mkdir -p "$HOME/.gradle"
+                            cd e2e-src
+
+                            # 비밀값은 -e 이름만 넘긴다. 값을 명령줄에 쓰면 프로세스 목록에 남는다.
+                            docker run --rm \
+                              --user "$(id -u):$(id -g)" \
+                              -v "$PWD:$PWD" \
+                              -w "$PWD" \
+                              -v "$HOME/.gradle:/gradle-cache" \
+                              -e GRADLE_USER_HOME=/gradle-cache \
+                              -e E2E_BASE_URL="$GREEN_BASE_URL" \
+                              -e E2E_USER_EMAIL \
+                              -e E2E_USER_PASSWORD \
+                              eclipse-temurin:25-jdk \
+                              sh ./gradlew e2eTest -Pe2eTags=smoke --no-daemon
+                        '''
+                    }
+                }
+            }
+
+            post {
+                always {
+                    // 결과 파일이 하나도 없으면 실패한다(allowEmptyResults 기본값 false).
+                    // 태그 오타 등으로 smoke가 0개 실행되고 통과로 보이는 것을 막는다.
+                    junit 'e2e-src/build/test-results/e2eTest/*.xml'
+                }
+            }
+        }
+
+        stage('Shift Production Traffic') {
+            when {
+                expression {
+                    env.SKIP_DEPLOY == 'false'
+                }
+            }
+
+            steps {
+                sh '''
+                    set -eu
+                    set +x
+
+                    aws ecs continue-service-deployment \
+                      --region "$AWS_REGION" \
+                      --service-deployment-arn "$SERVICE_DEPLOYMENT_ARN" \
+                      --hook-id "$HOOK_ID" \
+                      --action CONTINUE > /dev/null
+
+                    echo "green smoke 통과: 운영 트래픽을 green으로 전환합니다."
+                '''
+            }
+        }
+
+        stage('Wait For Completion') {
+            when {
+                expression {
+                    env.SKIP_DEPLOY == 'false'
+                }
+            }
+
+            steps {
+                // 운영 전환 + bake 10분 + blue 정리.
+                timeout(time: 25, unit: 'MINUTES') {
+                    sh '''
+                        set -eu
+                        set +x
+
+                        while true; do
+                            RESULT=$(aws ecs describe-service-deployments \
+                              --region "$AWS_REGION" \
+                              --service-deployment-arns "$SERVICE_DEPLOYMENT_ARN" \
+                              --cli-connect-timeout 10 \
+                              --cli-read-timeout 20 \
+                              --output json)
+
+                            STATUS=$(printf '%s' "$RESULT" | jq -r '.serviceDeployments[0].status')
+                            STAGE=$(printf '%s' "$RESULT" | jq -r '.serviceDeployments[0].lifecycleStage // "-"')
+                            echo "status=$STATUS stage=$STAGE"
+
+                            case "$STATUS" in
+                                SUCCESSFUL)
+                                    echo "Blue/green deployment completed."
+                                    exit 0
+                                    ;;
+                                PENDING|IN_PROGRESS) ;;
+                                *)
+                                    echo "ERROR: 운영 전환 뒤 배포가 실패했습니다: $STATUS"
+                                    printf '%s' "$RESULT" | jq -r '.serviceDeployments[0].statusReason // empty'
+                                    exit 1
+                                    ;;
+                            esac
+
+                            sleep 20
+                        done
+                    '''
+                }
+            }
+        }
+
+        stage('Verify Deployment Result') {
+            when {
+                expression {
+                    env.SKIP_DEPLOY == 'false'
+                }
+            }
+
+            steps {
+                sh '''
+                    set -eu
+                    set +x
+
+                    aws ecs describe-services \
+                      --region "$AWS_REGION" \
+                      --cluster "$ECS_CLUSTER" \
+                      --services "$ECS_SERVICE" \
+                      --output json \
+                    | jq -e \
+                      --arg expected "$NEW_TASK_DEF" \
+                      --argjson desired "$DESIRED_COUNT_AT_CHECK" '
+                        (.failures | length) == 0
+                        and (.services | length) == 1
+                        and (
+                          .services[0]
+                          | .status == "ACTIVE"
+                            and .taskDefinition == $expected
+                            and .desiredCount == $desired
+                            and .runningCount == $desired
+                            and .pendingCount == 0
+                            and (.deployments | length) == 1
+                            and (
+                              .deployments[0]
+                              | .status == "PRIMARY"
+                                and .rolloutState == "COMPLETED"
+                                and .taskDefinition == $expected
+                            )
+                        )
+                      ' > /dev/null || {
+                        echo "ERROR: 배포 완료 후 서비스 상태가 목표 Revision과 다릅니다." >&2
+                        exit 1
+                    }
+
+                    echo "ECS deployment completed with expected Revision."
+
+                    curl \
+                      --fail \
+                      --silent \
+                      --show-error \
+                      --max-time 20 \
+                      "$HEALTH_URL" \
+                    | jq -e '.status == "UP"' > /dev/null || {
+                        echo "ERROR: HTTPS 헬스 체크 실패: $HEALTH_URL" >&2
+                        exit 1
+                    }
+
+                    echo "HTTPS health check: UP"
+                    echo "PROD DEPLOY SUCCESS: $NEW_TASK_DEF"
+                '''
+            }
+        }
+
+        stage('Deployment Result') {
+            steps {
+                script {
+                    if (env.SKIP_DEPLOY == 'true') {
+                        echo 'SUCCESS: 동일 이미지이므로 배포를 건너뛰었습니다.'
+                    } else {
+                        echo "SUCCESS: 운영 배포 완료 - ${env.NEW_TASK_DEF}"
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        failure {
+            script {
+                rollbackPausedDeployment()
+            }
+
+            echo 'PROD PIPELINE FAILED: 운영 ECS 상태를 확인하세요.'
+
+            sh(
+                returnStatus: true,
+                script: '''
+                    aws ecs describe-services \
+                      --region "$AWS_REGION" \
+                      --cluster "$ECS_CLUSTER" \
+                      --services "$ECS_SERVICE" \
+                      --query 'services[0].{
+                        TaskDefinition:taskDefinition,
+                        Desired:desiredCount,
+                        Running:runningCount,
+                        Pending:pendingCount,
+                        Deployments:deployments[].{
+                          Status:status,
+                          RolloutState:rolloutState,
+                          Reason:rolloutStateReason,
+                          Running:runningCount,
+                          Pending:pendingCount,
+                          FailedTasks:failedTasks,
+                          TaskDefinition:taskDefinition
+                        },
+                        RecentEvents:events[0:10].{Time:createdAt,Message:message}
+                      }' \
+                      --output json
+                '''
+            )
+        }
+
+        aborted {
+            script {
+                rollbackPausedDeployment()
+            }
+        }
+    }
+}
+
+// smoke 지점에서 멈춘 배포가 있으면 바로 롤백한다. 훅의 30분 자동 롤백을 기다리지 않는다.
+// 운영 트래픽은 아직 blue라 사용자 영향은 없다. 이미 CONTINUE해 운영이 green으로 넘어간 뒤에는
+// 훅이 AWAITING_ACTION이 아니므로 아무것도 하지 않고, 실패 출력을 보고 사람이 판단한다.
+def rollbackPausedDeployment() {
+    if (!env.SERVICE_DEPLOYMENT_ARN || !env.HOOK_ID) {
+        return
+    }
+
+    sh(
+        returnStatus: true,
+        script: '''
+            set +x
+
+            HOOK_STATUS=$(aws ecs describe-service-deployments \
+              --region "$AWS_REGION" \
+              --service-deployment-arns "$SERVICE_DEPLOYMENT_ARN" \
+              --output json \
+            | jq -r --arg hook "$HOOK_ID" '
+                [.serviceDeployments[0].lifecycleHookDetails[]?
+                 | select(.hookId == $hook)
+                 | .status][0] // empty
+              ')
+
+            if [ "$HOOK_STATUS" = "AWAITING_ACTION" ]; then
+                aws ecs continue-service-deployment \
+                  --region "$AWS_REGION" \
+                  --service-deployment-arn "$SERVICE_DEPLOYMENT_ARN" \
+                  --hook-id "$HOOK_ID" \
+                  --action ROLLBACK > /dev/null
+                echo "ROLLBACK: green smoke 단계에서 배포를 되돌렸습니다. 운영 트래픽은 blue 그대로입니다."
+            fi
+        '''
+    )
+}
