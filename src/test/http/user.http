@@ -4,9 +4,15 @@ Content-Type: application/json
 Authorization: Bearer {{accessToken}}
 
 {
-  "password": "Password123!",
-  "newPassword": "NewPassword123!"
+  "currentPassword": "{{password}}",
+  "newPassword": "Password123!",
+  "confirmNewPassword": "Password123!"
 }
+
+> {%
+    client.global.set("accessToken", response.body.accessToken);
+    client.global.set("refreshToken", response.body.refreshToken);
+%}
 
 ### 프로필 API
 GET {{url}}/api/v1/users/me
