@@ -7,6 +7,10 @@ object E2eProperties {
     val email: String by lazy { getRequiredEnv("E2E_USER_EMAIL") }
     val password: String by lazy { getRequiredEnv("E2E_USER_PASSWORD") }
 
+    // 남의 리소스 접근(403)을 확인할 때만 쓰는 두 번째 고정 계정. dev 전용이라 prod 스모크에는 필요 없다.
+    val otherEmail: String by lazy { getRequiredEnv("E2E_OTHER_USER_EMAIL") }
+    val otherPassword: String by lazy { getRequiredEnv("E2E_OTHER_USER_PASSWORD") }
+
     private fun getRequiredEnv(name: String): String =
         System.getenv(name)?.takeIf { it.isNotBlank() } ?: error("$name 환경변수가 없습니다")
 }

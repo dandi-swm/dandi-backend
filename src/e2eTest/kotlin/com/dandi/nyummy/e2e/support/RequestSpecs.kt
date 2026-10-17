@@ -47,9 +47,9 @@ object RequestSpecs {
             .build()
     }
 
-    // 고정 테스트 계정으로 인증한 요청. 처음 호출할 때 AuthFixture가 로그인한다.
-    fun createAuthorizedSpec(): RequestSpecification = RequestSpecBuilder()
+    // 기본은 고정 테스트 계정. 남의 리소스 접근을 확인할 때는 AuthFixture.otherAccessToken을 넘긴다.
+    fun createAuthorizedSpec(accessToken: String = AuthFixture.accessToken): RequestSpecification = RequestSpecBuilder()
         .addRequestSpecification(base)
-        .addHeader("Authorization", "Bearer ${AuthFixture.accessToken}")
+        .addHeader("Authorization", "Bearer $accessToken")
         .build()
 }
