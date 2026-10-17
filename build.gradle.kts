@@ -184,6 +184,7 @@ testing {
                 implementation("io.rest-assured:kotlin-extensions")
                 // 요청 바디(Map)를 JSON으로 직렬화한다. 버전은 Boot BOM이 관리한다(main과 같은 Jackson 3).
                 implementation("tools.jackson.core:jackson-databind")
+                implementation("org.jetbrains.kotlin:kotlin-test-junit5")
             }
             targets.all {
                 testTask.configure {
