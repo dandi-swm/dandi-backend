@@ -18,7 +18,12 @@ spring:
       connect-timeout: 1s
 
   flyway:
-    enabled: false
+    enabled: true
+    # prod는 V0.34까지 수동 SQL로 적용했고 이력 테이블이 없다.
+    # 이력 테이블이 없을 때만 V0.34를 기준으로 기록하고(baseline), 이후 버전(V0.35~)부터 Flyway가 적용한다.
+    # 이력 테이블이 생긴 뒤에는 이 두 설정이 동작하지 않는다.
+    baseline-on-migrate: true
+    baseline-version: "0.34"
 
   jpa:
     show-sql: false
