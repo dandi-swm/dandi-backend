@@ -702,35 +702,64 @@ ${env.DEPLOY_IMAGE}
                     set -eu
                     set +x
 
-                    aws ecs describe-services \
-                      --region "$AWS_REGION" \
-                      --cluster "$ECS_CLUSTER" \
-                      --services "$ECS_SERVICE" \
-                      --output json \
-                    | jq -e \
-                      --arg expected "$NEW_TASK_DEF" \
-                      --argjson desired "$DESIRED_COUNT_AT_CHECK" '
-                        (.failures | length) == 0
-                        and (.services | length) == 1
-                        and (
-                          .services[0]
-                          | .status == "ACTIVE"
-                            and .taskDefinition == $expected
-                            and .desiredCount == $desired
-                            and .runningCount == $desired
-                            and .pendingCount == 0
-                            and (.deployments | length) == 1
+                    # service deployment가 SUCCESSFUL이 된 직후에는 describe-services의 deployments·runningCount가
+                    # 아직 반영되지 않았을 수 있다. 바로 실패하지 않고 잠시 다시 확인한다(최대 약 2분).
+                    for i in $(seq 1 12); do
+                        SERVICE_JSON=$(aws ecs describe-services \
+                          --region "$AWS_REGION" \
+                          --cluster "$ECS_CLUSTER" \
+                          --services "$ECS_SERVICE" \
+                          --output json)
+
+                        if printf '%s' "$SERVICE_JSON" | jq -e \
+                          --arg expected "$NEW_TASK_DEF" \
+                          --argjson desired "$DESIRED_COUNT_AT_CHECK" '
+                            (.failures | length) == 0
+                            and (.services | length) == 1
                             and (
-                              .deployments[0]
-                              | .status == "PRIMARY"
-                                and .rolloutState == "COMPLETED"
+                              .services[0]
+                              | .status == "ACTIVE"
                                 and .taskDefinition == $expected
+                                and .desiredCount == $desired
+                                and .runningCount == $desired
+                                and .pendingCount == 0
+                                and (.deployments | length) == 1
+                                and (
+                                  .deployments[0]
+                                  | .status == "PRIMARY"
+                                    and .rolloutState == "COMPLETED"
+                                    and .taskDefinition == $expected
+                                )
                             )
-                        )
-                      ' > /dev/null || {
-                        echo "ERROR: 배포 완료 후 서비스 상태가 목표 Revision과 다릅니다." >&2
-                        exit 1
-                    }
+                          ' > /dev/null; then
+                            break
+                        fi
+
+                        if [ "$i" -eq 12 ]; then
+                            echo "ERROR: 배포 완료 후 서비스 상태가 목표 Revision과 다릅니다." >&2
+                            # 어느 조건이 틀렸는지 보이도록 실제 상태를 남긴다.
+                            printf '%s' "$SERVICE_JSON" | jq '
+                              .services[0] | {
+                                status,
+                                taskDefinition,
+                                desiredCount,
+                                runningCount,
+                                pendingCount,
+                                deployments: [.deployments[] | {
+                                  status,
+                                  rolloutState,
+                                  taskDefinition,
+                                  runningCount,
+                                  pendingCount
+                                }]
+                              }
+                            ' >&2
+                            exit 1
+                        fi
+
+                        echo "서비스 상태 반영 대기 중... ($i/12)"
+                        sleep 10
+                    done
 
                     echo "ECS deployment completed with expected Revision."
 
