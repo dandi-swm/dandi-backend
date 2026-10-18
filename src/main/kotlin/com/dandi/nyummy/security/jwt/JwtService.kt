@@ -24,8 +24,16 @@ class JwtService(
         private val logger = LoggerFactory.getLogger(JwtService::class.java)
     }
 
-    fun getAuthentication(token: String): Authentication {
-        val (userId, issuedAt) = jwtProvider.getAccessTokenClaims(token)
+    fun getAuthentication(token: String): Authentication =
+        when (val claims = jwtProvider.getAuthenticationClaims(token)) {
+            is AccessTokenClaims -> getUserAuthentication(claims, token)
+
+            // 어드민 인증은 아직 붙이지 않았다. 어드민 토큰으로는 어떤 경로도 인증되지 않는다.
+            is AdminTokenClaims -> throw BusinessException(AuthErrorCode.UNAUTHORIZED)
+        }
+
+    private fun getUserAuthentication(claims: AccessTokenClaims, token: String): Authentication {
+        val (userId, issuedAt) = claims
 
         val invalidatedAt = try {
             tokenInvalidationRepository.findInvalidatedAt(userId)
@@ -71,7 +79,14 @@ class JwtService(
     fun getUserId(token: String, type: TokenType): Long = jwtProvider.getUserId(token, type)
 }
 
-data class AccessTokenClaims(val userId: Long, val issuedAt: Instant)
+/**
+ * 요청 인증에 쓰는 토큰의 클레임. 서명을 검증한 뒤 type 클레임으로 갈라 반환한다.
+ */
+sealed interface AuthenticationClaims
+
+data class AccessTokenClaims(val userId: Long, val issuedAt: Instant) : AuthenticationClaims
+
+data class AdminTokenClaims(val adminId: Long) : AuthenticationClaims
 
 data class EmailChallengeClaims(val email: String, val purpose: AuthPurpose)
 

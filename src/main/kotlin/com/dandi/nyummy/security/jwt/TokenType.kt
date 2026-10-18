@@ -5,4 +5,5 @@ enum class TokenType(val value: String, val isEncrypted: Boolean) {
     REFRESH("refresh", false),
     EMAIL_CHALLENGE("emailChallenge", true),
     VERIFIED("verified", true),
+    ADMIN("admin", false),
 }

@@ -183,6 +183,7 @@ app:
     refresh-absolute-time-to-live: 90d
     email-challenge-time-to-live: 5m
     verified-time-to-live: 30m
+    admin-time-to-live: 8h
   argon2:
     salt-length: 16
     hash-length: 32

@@ -5,18 +5,12 @@ import java.time.Duration
 
 @ConfigurationProperties(prefix = "app.jwt")
 class JwtProperties(
-
     val secretKey: String,
-
     val encryptionKey: String,
-
     val accessTimeToLive: Duration,
-
     val refreshTimeToLive: Duration,
-
     val refreshAbsoluteTimeToLive: Duration,
-
     val emailChallengeTimeToLive: Duration,
-
     val verifiedTimeToLive: Duration,
+    val adminTimeToLive: Duration,
 )

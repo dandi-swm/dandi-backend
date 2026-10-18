@@ -52,23 +52,29 @@ class JwtProvider(private val jwtProperties: JwtProperties, private val clock: C
     }
 
     /**
-     * AccessToken에서 사용자 ID와 발급 시각(iat)을 함께 꺼낸다.
+     * 요청 인증용 토큰(AccessToken, 어드민 토큰)을 한 번 파싱해 type에 맞는 클레임으로 꺼낸다.
      *
-     * 둘을 따로 조회하면 매 요청 토큰을 두 번 파싱해 서명 검증도 두 번 하게 되므로, 한 번에 읽는다.
+     * 필터는 요청이 어느 토큰으로 왔는지 미리 알 수 없다. 타입마다 따로 파싱하면 서명 검증을 여러 번 하게 되므로,
+     * 한 번 검증한 뒤 type으로 가른다. 어느 경로에 어떤 토큰을 받을지는 SecurityConfig가 권한으로 정한다.
      */
-    fun getAccessTokenClaims(token: String): AccessTokenClaims {
-        val claims = getClaims(token, TokenType.ACCESS)
-        val userId = claims.subject?.toLongOrNull() ?: throw BusinessException(AuthErrorCode.UNAUTHORIZED)
-        return AccessTokenClaims(userId, claims.issuedAt.toInstant())
+    fun getAuthenticationClaims(token: String): AuthenticationClaims {
+        val claims = jwsParser.parseSignedClaims(token).payload
+        val subjectId = claims.subject?.toLongOrNull() ?: throw BusinessException(AuthErrorCode.UNAUTHORIZED)
+
+        return when (claims["type"]) {
+            TokenType.ACCESS.value -> AccessTokenClaims(subjectId, claims.issuedAt.toInstant())
+            TokenType.ADMIN.value -> AdminTokenClaims(subjectId)
+            else -> throw JwtException("요청 인증에 쓸 수 없는 토큰 타입입니다: ${claims["type"]}")
+        }
     }
 
-    private fun createToken(userId: Long, type: TokenType): String {
+    private fun createToken(subjectId: Long, type: TokenType): String {
         val now = clock.instant()
 
         val timeToLive = getTimeToLive(type)
 
         return Jwts.builder()
-            .subject(userId.toString())
+            .subject(subjectId.toString())
             .claim("type", type.value)
             .issuedAt(Date.from(now))
             .expiration(Date.from(now.plus(timeToLive)))
@@ -96,6 +102,7 @@ class JwtProvider(private val jwtProperties: JwtProperties, private val clock: C
         TokenType.REFRESH -> jwtProperties.refreshTimeToLive
         TokenType.EMAIL_CHALLENGE -> jwtProperties.emailChallengeTimeToLive
         TokenType.VERIFIED -> jwtProperties.verifiedTimeToLive
+        TokenType.ADMIN -> jwtProperties.adminTimeToLive
     }
 
     fun createEmailChallengeToken(email: String, purpose: AuthPurpose): String =
