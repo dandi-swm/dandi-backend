@@ -286,6 +286,10 @@
 | 함수/프로퍼티 | camelCase | `getMeal`, `imageUrl` |
 | DB 테이블/컬럼 | snake_case | `meals`, `image_url` |
 | DB 테이블 이름 | 복수형 | `meals`, `refresh_tokens` (V0.31에서 통일). 엔티티 클래스는 단수형(`Meal`) + `@Table(name = "meals")` |
+| DB 외래 키 | `fk_{테이블}_{참조 테이블 단수형}` | `fk_meals_user`, `fk_meals_icon`, `fk_mail_items_mail`. MySQL이 FK 컬럼에 자동으로 만드는 인덱스도 같은 이름을 그대로 쓴다(따로 `idx_`로 바꾸지 않는다) |
+| DB 유니크 제약 | `uk_{테이블}_{컬럼들}` | `uk_meals_image_key`, `uk_cats_user_id`, `uk_users_provider_email`. 컬럼 정의에 `UNIQUE`를 바로 붙이면 MySQL이 컬럼명(`user_id`, `email`)으로 이름을 자동으로 정하므로, 항상 `CONSTRAINT uk_... UNIQUE (...)`로 이름을 붙인다 |
+| DB 인덱스 | `idx_{테이블}_{컬럼들}` | `idx_meals_user_id_meal_at`, `idx_mails_user_id_id`. 컬럼은 인덱스 순서대로 적는다. 이름은 64자 이하(MySQL 식별자 제한) |
+| 테이블 이름을 바꿀 때 | 제약·인덱스 이름도 같은 마이그레이션에서 바꾼다 | `RENAME TABLE`은 제약 이름을 바꾸지 않는다(V0.4·V0.31에서 남은 `fk_history_user`, `fk_meal_icon`). 인덱스는 `RENAME INDEX`, FK는 지우고 다시 만든다 |
 
 ## 기타
 
