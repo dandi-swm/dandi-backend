@@ -1,10 +1,12 @@
 package com.dandi.nyummy.security.jwt
 
+import com.dandi.nyummy.admin.repository.AdminRepository
 import com.dandi.nyummy.auth.enum.AuthProvider
 import com.dandi.nyummy.auth.enum.AuthPurpose
 import com.dandi.nyummy.auth.repository.TokenInvalidationRepository
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.AuthErrorCode
+import com.dandi.nyummy.security.AuthAdmin
 import com.dandi.nyummy.security.AuthUser
 import io.jsonwebtoken.ExpiredJwtException
 import io.jsonwebtoken.JwtException
@@ -12,6 +14,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.dao.DataAccessException
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
 import org.springframework.security.core.Authentication
+import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.stereotype.Service
 import java.time.Instant
 
@@ -19,6 +22,7 @@ import java.time.Instant
 class JwtService(
     private val jwtProvider: JwtProvider,
     private val tokenInvalidationRepository: TokenInvalidationRepository,
+    private val adminRepository: AdminRepository,
 ) {
     companion object {
         private val logger = LoggerFactory.getLogger(JwtService::class.java)
@@ -46,7 +50,26 @@ class JwtService(
             throw BusinessException(AuthErrorCode.UNAUTHORIZED)
         }
 
-        return UsernamePasswordAuthenticationToken.authenticated(AuthUser(userId, token), null, emptyList())
+        return UsernamePasswordAuthenticationToken.authenticated(
+            AuthUser(userId, token),
+            null,
+            listOf(SimpleGrantedAuthority(AuthUser.AUTHORITY)),
+        )
+    }
+
+    /**
+     * 비활성화한 어드민의 토큰은 만료 전이라도 거절한다. 어드민 요청에만 조회가 한 번 더해진다.
+     */
+    private fun getAdminAuthentication(claims: AdminTokenClaims): Authentication {
+        if (!adminRepository.existsByIdAndDisabledAtIsNull(claims.adminId)) {
+            throw BusinessException(AuthErrorCode.UNAUTHORIZED)
+        }
+
+        return UsernamePasswordAuthenticationToken.authenticated(
+            AuthAdmin(claims.adminId),
+            null,
+            listOf(SimpleGrantedAuthority(AuthAdmin.AUTHORITY)),
+        )
     }
 
     fun createTokenPair(userId: Long): Pair<String, String> {

@@ -30,12 +30,12 @@ class SecurityConfig(
                 authorize(DispatcherTypeRequestMatcher(DispatcherType.ERROR), permitAll)
                 authorize("/actuator/health", permitAll)
                 authorize("/api/v1/internal/**", hasAuthority(InternalApiKeyFilter.BATCH_AUTHORITY))
-                authorize("/api/v1/auth/logout", authenticated)
-                authorize("/api/v1/auth/**", permitAll)
+                authorize("/api/v1/auth/logout", hasAuthority(AuthUser.AUTHORITY))
+                authorize("/api/v1/auth/**", permitAll) // 로그인 하기 전에 부르는 API --> USER 권한 요구 X
                 authorize("/swagger-ui/**", permitAll)
                 authorize("/swagger-ui.html", permitAll)
                 authorize("/v3/api-docs/**", permitAll)
-                authorize("/api/**", authenticated)
+                authorize("/api/**", hasAuthority(AuthUser.AUTHORITY))
                 authorize(anyRequest, denyAll)
             }
             exceptionHandling {
