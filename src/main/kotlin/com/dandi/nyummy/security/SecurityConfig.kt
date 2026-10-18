@@ -1,6 +1,7 @@
 package com.dandi.nyummy.security
 
 import com.dandi.nyummy.admin.config.AdminProperties
+import com.dandi.nyummy.filter.AdminOriginFilter
 import com.dandi.nyummy.filter.InternalApiKeyFilter
 import com.dandi.nyummy.filter.JwtAuthorizationFilter
 import com.dandi.nyummy.internal.config.InternalProperties
@@ -57,6 +58,9 @@ class SecurityConfig(
             addFilterBefore<UsernamePasswordAuthenticationFilter>(JwtAuthorizationFilter(jwtService))
             addFilterBefore<UsernamePasswordAuthenticationFilter>(
                 InternalApiKeyFilter(internalProperties.batchKey),
+            )
+            addFilterBefore<UsernamePasswordAuthenticationFilter>(
+                AdminOriginFilter(adminProperties.allowedOrigins, securityExceptionHandler),
             )
         }
 
