@@ -103,6 +103,8 @@ jdbc:
 app:
   internal:
     batch-key: ${NYUMMY_BATCH_SECRET}
+  admin:
+    allowed-origins: ${ADMIN_ALLOWED_ORIGINS}
   fcm:
     # Firebase를 띄울지. false면 FirebaseMessaging 빈 없이 StubPushClient가 주입된다.
     enabled: true
