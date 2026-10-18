@@ -31,9 +31,7 @@ class JwtService(
     fun getAuthentication(token: String): Authentication =
         when (val claims = jwtProvider.getAuthenticationClaims(token)) {
             is AccessTokenClaims -> getUserAuthentication(claims, token)
-
-            // 어드민 인증은 아직 붙이지 않았다. 어드민 토큰으로는 어떤 경로도 인증되지 않는다.
-            is AdminTokenClaims -> throw BusinessException(AuthErrorCode.UNAUTHORIZED)
+            is AdminTokenClaims -> getAdminAuthentication(claims)
         }
 
     private fun getUserAuthentication(claims: AccessTokenClaims, token: String): Authentication {
