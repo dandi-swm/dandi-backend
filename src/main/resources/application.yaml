@@ -104,7 +104,9 @@ app:
   internal:
     batch-key: ${NYUMMY_BATCH_SECRET}
   admin:
-    allowed-origins: ${ADMIN_ALLOWED_ORIGINS}
+    # 어드민 서비스에서만 true. 앱 서비스는 false라 어드민 빈을 만들지 않고 ADMIN_* 환경변수도 필요 없다.
+    enabled: ${ADMIN_ENABLED:false}
+    google-client-id: ${ADMIN_GOOGLE_CLIENT_ID:}
   fcm:
     # Firebase를 띄울지. false면 FirebaseMessaging 빈 없이 StubPushClient가 주입된다.
     enabled: true

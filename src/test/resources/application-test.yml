@@ -39,8 +39,6 @@ logging:
 app:
   internal:
     batch-key: test-batch-key
-  admin:
-    allowed-origins: http://localhost:3000
   fcm:
     enabled: false
   ai:
