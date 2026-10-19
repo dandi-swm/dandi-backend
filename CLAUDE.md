@@ -2,7 +2,7 @@
 
 ## 작업 규칙
 
-1. **API를 추가하거나 요청·응답을 바꾸면 같은 PR에서 E2E 시나리오를 추가하거나 고친다.** 내부 배치 API(`/api/v1/internal/**`)는 제외한다. `src/e2eTest`의 도메인별 `~E2eTest`에 넣는다. E2E는 main 머지 후 dev 배포가 끝나면 Jenkins가 돌리므로, PR에서는 `./gradlew compileE2eTestKotlin`으로 컴파일까지 확인한다.
+1. **API를 추가하거나 요청·응답을 바꾸면 같은 PR에서 E2E 시나리오를 추가하거나 고친다.** 내부 배치 API(`/api/v1/internal/**`)와 어드민 API(`/admin/v1/**` — ALB 밖이라 배포 서버에 HTTP로 닿지 않는다)는 제외한다. `src/e2eTest`의 도메인별 `~E2eTest`에 넣는다. E2E는 main 머지 후 dev 배포가 끝나면 Jenkins가 돌리므로, PR에서는 `./gradlew compileE2eTestKotlin`으로 컴파일까지 확인한다.
    - main 코드를 의존하지 않는다. 응답은 main DTO가 아니라 JSON 경로로 검증하고, 요청 바디는 키를 문자 그대로 적은 `Map`으로 만든다. DTO를 재사용하면 계약이 깨져도 테스트가 같이 바뀐다.
    - 고정 계정의 상태를 되돌린다. 바꾼 설정과 만든 리소스는 `finally`에서 원래대로 돌리고, 이미 지워졌을 수 있는 정리는 결과를 검증하지 않는다.
    - 거부(4xx) 테스트는 부작용이 없었는지도 확인한다. 4xx가 와도 저장이 먼저 일어났을 수 있다.
@@ -100,6 +100,7 @@
 
 - 프로덕션 코드의 임시 대역 `Stub`(Fake·Mock 금지 — Mock은 테스트 전용), 확정 전·임시 `Temp`(Temporary·Tmp 금지)
 - 같은 기능을 쓰는 흐름 구분 `~Purpose`(`AuthPurpose`), 외부 스케줄러가 부르는 배치 API `Internal`(`/api/v1/internal/**`)
+- 운영자 `Admin`(패키지 admin, 경로 상수 `AdminPaths.PREFIX` = `/admin/v1`, 에러 코드 `api.admin.*`). Manager·Operator·Backoffice 금지. 배치 API `Internal`과 다른 것. 어드민 서비스에서만 만드는 빈은 `@ConditionalOnAdminEnabled`(`app.admin.enabled`)
 - 커서 `Cursor` — 무한 스크롤 기준점(직전 묶음의 마지막 id), 응답은 `nextCursor` + `hasNext`. 페이지 번호 방식은 `Offset`
 - 허용 오차 `Tolerance` — 목표 대비 비율(0.2 = ±20%). Margin·Threshold 금지
 - 노출 비율·뽑힐 확률 `Rate` — 0~100 정수 퍼센트. Ratio·Percentage·Chance·Probability·Sampling 금지
@@ -112,8 +113,10 @@
 - 로그인 제공자 `Provider`(`AuthProvider`, `providerUserId`) — 접미사 ~Provider(토큰 컴포넌트)와 다른 뜻
 - 인증 `Auth`(패키지 auth, 에러 코드 `api.auth.*`), Spring Security 기반 시설 `Security`(패키지 security — 인증 API의 컨트롤러·DTO는 auth)
 - 현재 사용자 principal `AuthUser`(Principal·LoginUser·SessionUser 금지), 컨트롤러 파라미터 주입 `@CurrentUser`
+- 현재 운영자 principal `AuthAdmin`(AdminUser 금지 — 앱 사용자 `User`와 다른 주체), 컨트롤러 파라미터 주입 `@CurrentAdmin`. 권한 이름은 principal의 `AUTHORITY`(`ROLE_USER`·`ROLE_ADMIN`)
 - 소유권 `Ownership`(`validateOwnership`, OwnerShip 금지)
-- 토큰 `AccessToken`·`RefreshToken`, 이메일 확인 중 `EmailChallengeToken`, 확인 완료 `VerifiedToken`. type 클레임 값은 `access`·`refresh`·`emailChallenge`·`verified`. 설정 문자열·키 객체 모두 `secretKey`
+- 토큰 `AccessToken`·`RefreshToken`, 이메일 확인 중 `EmailChallengeToken`, 확인 완료 `VerifiedToken`, 운영자 `AdminToken`(`createAdminToken`, 필드 `adminToken`). type 클레임 값은 `access`·`refresh`·`emailChallenge`·`verified`·`admin`. 설정 문자열·키 객체 모두 `secretKey`
+- 어드민 토큰을 싣는 쿠키 `AdminTokenCookie`(쿠키 이름 `admin_token`). 앱은 Authorization 헤더, 어드민 웹은 쿠키로만 보낸다
 - 이메일 인증 코드 `AuthCode`(엔티티·테이블만 `Code`·`codes`)
 - 세션 `Session` — RefreshToken 한 행 = 로그인 1회. 절대 만료 `absoluteExpiresAt`, 재발급은 rotate, 재로그인은 restart. 이전 AccessToken 무효화 `Invalidation`(`invalidatedAt`)
 
