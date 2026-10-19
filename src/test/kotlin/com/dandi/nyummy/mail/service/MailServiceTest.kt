@@ -1,5 +1,11 @@
 package com.dandi.nyummy.mail.service
 
+import com.dandi.nyummy.coin.enum.CoinHistoryCategory
+import com.dandi.nyummy.coin.service.CoinService
+import com.dandi.nyummy.exception.BusinessException
+import com.dandi.nyummy.exception.errorcode.AuthErrorCode
+import com.dandi.nyummy.exception.errorcode.ErrorCode
+import com.dandi.nyummy.exception.errorcode.MailErrorCode
 import com.dandi.nyummy.mail.entity.Mail
 import com.dandi.nyummy.mail.enum.MailCategory
 import com.dandi.nyummy.mail.enum.RewardBoxCategory
@@ -16,6 +22,7 @@ import java.time.Instant
 import java.time.ZoneOffset
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -27,26 +34,45 @@ class MailServiceTest {
     private val userId = 1L
     private val expiresAt = Instant.parse("2026-10-25T00:00:00Z")
 
-    private val mailRepository = mockk<MailRepository>()
+    private val mailId = 10L
 
-    private val mailService = MailService(mailRepository = mailRepository, clock = clock)
+    private val mailRepository = mockk<MailRepository>()
+    private val coinService = mockk<CoinService>()
+
+    private val mailService = MailService(mailRepository = mailRepository, coinService = coinService, clock = clock)
+
+    init {
+        every { coinService.increaseBalance(any(), any(), any(), any()) } returns 0
+    }
 
     private fun mail(
         id: Long,
         category: MailCategory = MailCategory.COIN,
+        ownerId: Long = userId,
+        coinQuantity: Int? = null,
         representativeItemId: Long? = null,
         rewardBoxCategory: RewardBoxCategory? = null,
     ) = Mail(
-        userId = userId,
+        userId = ownerId,
         category = category,
         title = "제목",
         content = "식사 기록 보상",
+        coinQuantity = coinQuantity,
         representativeItemId = representativeItemId,
         rewardBoxCategory = rewardBoxCategory,
         expiresAt = expiresAt,
     ).apply {
         // id는 DB가 채우는 val이라 테스트에서만 직접 넣는다.
         ReflectionTestUtils.setField(this, "id", id)
+    }
+
+    private fun givenMail(mail: Mail?) {
+        every { mailRepository.findMailWithLockByIdAndDeletedAtIsNull(mailId) } returns mail
+    }
+
+    private fun assertBusinessException(expected: ErrorCode, block: () -> Unit) {
+        val exception = assertFailsWith<BusinessException>(block = block)
+        assertEquals(expected, exception.errorCode)
     }
 
     private fun givenMails(vararg mails: Mail) {
@@ -139,5 +165,75 @@ class MailServiceTest {
         val mail = mailService.getMails(userId, cursor = null, size = 10).mails.single()
 
         assertEquals(1L, mail.imageId)
+    }
+
+    // claimMail
+
+    @Test
+    fun `상자 우편을 받으면 상자에 든 코인을 지급하고 코인과 상자 번호를 준다`() {
+        val mail = mail(
+            id = mailId,
+            category = MailCategory.REWARD_BOX,
+            coinQuantity = 270,
+            rewardBoxCategory = RewardBoxCategory.SILVER,
+        )
+        givenMail(mail)
+
+        val reward = mailService.claimMail(userId, mailId)
+
+        verify { coinService.increaseBalance(userId, 270, CoinHistoryCategory.MAIL_CLAIM, mailId) }
+        assertEquals(now, mail.claimedAt)
+        assertEquals(270, reward.coin?.quantity)
+        assertEquals(1L, reward.coin?.imageId)
+        assertEquals(2L, reward.rewardBox?.imageId)
+        assertNull(reward.rewardBox?.animationUrl)
+        assertNull(reward.items)
+    }
+
+    @Test
+    fun `코인 우편을 받으면 코인을 지급하고 상자는 null이다`() {
+        givenMail(mail(id = mailId, category = MailCategory.COIN, coinQuantity = 100))
+
+        val reward = mailService.claimMail(userId, mailId)
+
+        verify { coinService.increaseBalance(userId, 100, CoinHistoryCategory.MAIL_CLAIM, mailId) }
+        assertEquals(100, reward.coin?.quantity)
+        assertNull(reward.rewardBox)
+    }
+
+    @Test
+    fun `코인이 없는 우편은 코인을 지급하지 않는다`() {
+        givenMail(mail(id = mailId, category = MailCategory.ITEM, representativeItemId = 3L))
+
+        val reward = mailService.claimMail(userId, mailId)
+
+        verify(exactly = 0) { coinService.increaseBalance(any(), any(), any(), any()) }
+        assertNull(reward.coin)
+    }
+
+    @Test
+    fun `없거나 삭제된 우편이면 거부한다`() {
+        givenMail(null)
+
+        assertBusinessException(MailErrorCode.MAIL_NOT_FOUND) { mailService.claimMail(userId, mailId) }
+        verify(exactly = 0) { coinService.increaseBalance(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `다른 사용자의 우편이면 받은 상태로 바꾸지 않고 거부한다`() {
+        val mail = mail(id = mailId, ownerId = 2L, coinQuantity = 100)
+        givenMail(mail)
+
+        assertBusinessException(AuthErrorCode.FORBIDDEN) { mailService.claimMail(userId, mailId) }
+        assertNull(mail.claimedAt)
+        verify(exactly = 0) { coinService.increaseBalance(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `이미 받은 우편이면 코인을 다시 지급하지 않는다`() {
+        givenMail(mail(id = mailId, coinQuantity = 100).apply { claimedAt = now.minusSeconds(600) })
+
+        assertBusinessException(MailErrorCode.ALREADY_CLAIMED) { mailService.claimMail(userId, mailId) }
+        verify(exactly = 0) { coinService.increaseBalance(any(), any(), any(), any()) }
     }
 }

@@ -1,6 +1,9 @@
 package com.dandi.nyummy.mail.mapper
 
 import com.dandi.nyummy.mail.dto.MailSummaryResponse
+import com.dandi.nyummy.mail.dto.RewardBoxResponse
+import com.dandi.nyummy.mail.dto.RewardCoinResponse
+import com.dandi.nyummy.mail.dto.RewardResponse
 import com.dandi.nyummy.mail.entity.Mail
 import com.dandi.nyummy.mail.enum.MailCategory
 
@@ -20,4 +23,11 @@ fun Mail.toMailSummaryResponse(): MailSummaryResponse = MailSummaryResponse(
     isClaimed = this.isClaimed,
     expiresAt = this.expiresAt,
     createdAt = this.createdAt,
+)
+
+// 아이템 지급은 아직 구현 전이라 mail_items는 보지 않는다. 지금은 코인과 상자만 담는다.
+fun Mail.toRewardResponse(): RewardResponse = RewardResponse(
+    coin = this.coinQuantity?.let { RewardCoinResponse(quantity = it, imageId = COIN_IMAGE_ID) },
+    items = null,
+    rewardBox = this.rewardBoxCategory?.let { RewardBoxResponse(imageId = it.id.toLong(), animationUrl = null) },
 )

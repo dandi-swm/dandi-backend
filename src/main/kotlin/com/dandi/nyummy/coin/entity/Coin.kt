@@ -37,4 +37,12 @@ class Coin(
     @LastModifiedDate
     @Column(name = "updated_at", nullable = false)
     var updatedAt: Instant = Instant.now()
+
+    /**
+     * 잔액을 [quantity]만큼 늘린다. 지급 수량은 서버가 정한 값이므로 0 이하면 데이터 오류로 본다.
+     */
+    fun increaseBalance(quantity: Int) {
+        require(quantity > 0) { "늘릴 코인 수는 1 이상이어야 합니다: $quantity" }
+        balance += quantity
+    }
 }

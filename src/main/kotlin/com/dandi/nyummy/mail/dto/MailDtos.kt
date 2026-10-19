@@ -32,8 +32,15 @@ data class RewardResponse(
 
 data class TotalRewardResponse(val coin: RewardCoinResponse?, val items: List<RewardItemResponse>?)
 
-data class RewardCoinResponse(val quantity: Int, val imageUrl: String)
+/**
+ * 받은 보상의 이미지는 목록과 같이 앱이 [imageId]로 조립한다.
+ * 코인은 `coins/{imageId}.png`, 아이템은 `items/{imageId}.png`, 상자는 `reward-boxes/{imageId}.png`다.
+ */
+data class RewardCoinResponse(val quantity: Int, val imageId: Long)
 
-data class RewardItemResponse(val itemId: Long, val name: String, val imageUrl: String, val quantity: Int)
+/**
+ * @property imageId 아이템 이미지 번호. 지금은 [itemId]와 같지만, 보상 객체마다 같은 규칙으로 조립하도록 따로 둔다.
+ */
+data class RewardItemResponse(val itemId: Long, val name: String, val imageId: Long, val quantity: Int)
 
-data class RewardBoxResponse(val imageUrl: String, val animationUrl: String?)
+data class RewardBoxResponse(val imageId: Long, val animationUrl: String?)

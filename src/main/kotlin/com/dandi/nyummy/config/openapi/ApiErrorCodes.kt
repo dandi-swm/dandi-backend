@@ -6,6 +6,7 @@ import com.dandi.nyummy.exception.errorcode.CatErrorCode
 import com.dandi.nyummy.exception.errorcode.EmailErrorCode
 import com.dandi.nyummy.exception.errorcode.InquiryErrorCode
 import com.dandi.nyummy.exception.errorcode.InternalErrorCode
+import com.dandi.nyummy.exception.errorcode.MailErrorCode
 import com.dandi.nyummy.exception.errorcode.MealErrorCode
 import com.dandi.nyummy.exception.errorcode.S3ErrorCode
 import com.dandi.nyummy.exception.errorcode.UserErrorCode
@@ -30,6 +31,7 @@ annotation class ApiErrorCodes(
     val email: Array<EmailErrorCode> = [],
     val inquiry: Array<InquiryErrorCode> = [],
     val internal: Array<InternalErrorCode> = [],
+    val mail: Array<MailErrorCode> = [],
     val meal: Array<MealErrorCode> = [],
     val s3: Array<S3ErrorCode> = [],
     val user: Array<UserErrorCode> = [],

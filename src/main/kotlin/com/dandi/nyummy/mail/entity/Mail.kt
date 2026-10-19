@@ -1,5 +1,8 @@
 package com.dandi.nyummy.mail.entity
 
+import com.dandi.nyummy.exception.BusinessException
+import com.dandi.nyummy.exception.errorcode.AuthErrorCode
+import com.dandi.nyummy.exception.errorcode.MailErrorCode
 import com.dandi.nyummy.mail.enum.MailCategory
 import com.dandi.nyummy.mail.enum.RewardBoxCategory
 import jakarta.persistence.Column
@@ -75,4 +78,32 @@ class Mail(
 
     val isClaimed: Boolean
         get() = claimedAt != null
+
+    /**
+     * [now] 기준으로 만료됐는지 확인한다. 목록 조회와 같은 기준이다(expiresAt이 now보다 뒤여야 유효).
+     */
+    fun isExpired(now: Instant): Boolean = expiresAt?.let { !it.isAfter(now) } ?: false
+
+    fun validateOwnership(requestUserId: Long) {
+        if (userId != requestUserId) {
+            throw BusinessException(AuthErrorCode.FORBIDDEN)
+        }
+    }
+
+    /**
+     * 우편을 받은 상태로 바꾼다. 이미 받았거나 [claimedAt] 기준으로 만료된 우편은 받을 수 없다.
+     *
+     * @throws BusinessException [MailErrorCode.ALREADY_CLAIMED] 이미 받은 우편인 경우
+     * @throws BusinessException [MailErrorCode.MAIL_EXPIRED] 만료된 우편인 경우
+     */
+    fun claim(claimedAt: Instant) {
+        if (isClaimed) {
+            throw BusinessException(MailErrorCode.ALREADY_CLAIMED)
+        }
+        if (isExpired(claimedAt)) {
+            throw BusinessException(MailErrorCode.MAIL_EXPIRED)
+        }
+
+        this.claimedAt = claimedAt
+    }
 }

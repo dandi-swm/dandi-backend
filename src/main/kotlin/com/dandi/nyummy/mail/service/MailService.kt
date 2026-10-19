@@ -1,10 +1,17 @@
 package com.dandi.nyummy.mail.service
 
+import com.dandi.nyummy.coin.enum.CoinHistoryCategory
+import com.dandi.nyummy.coin.service.CoinService
+import com.dandi.nyummy.exception.BusinessException
+import com.dandi.nyummy.exception.errorcode.AuthErrorCode
+import com.dandi.nyummy.exception.errorcode.MailErrorCode
 import com.dandi.nyummy.mail.dto.MailsResponse
+import com.dandi.nyummy.mail.dto.RewardResponse
 import com.dandi.nyummy.mail.entity.Mail
 import com.dandi.nyummy.mail.enum.MailCategory
 import com.dandi.nyummy.mail.enum.RewardBoxCategory
 import com.dandi.nyummy.mail.mapper.toMailSummaryResponse
+import com.dandi.nyummy.mail.mapper.toRewardResponse
 import com.dandi.nyummy.mail.repository.MailRepository
 import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
@@ -13,7 +20,11 @@ import java.time.Clock
 import java.time.Instant
 
 @Service
-class MailService(private val mailRepository: MailRepository, private val clock: Clock) {
+class MailService(
+    private val mailRepository: MailRepository,
+    private val coinService: CoinService,
+    private val clock: Clock,
+) {
 
     /**
      * 보상 상자 우편을 만든다. 제목은 등급 이름이다.
@@ -68,5 +79,32 @@ class MailService(private val mailRepository: MailRepository, private val clock:
             nextCursor = if (mails.hasNext()) mails.content.last().id else null,
             hasNext = mails.hasNext(),
         )
+    }
+
+    /**
+     * 우편 하나를 받고 지급한 보상을 반환한다. 우편에 든 코인을 잔액에 더하고 내역을 남긴다.
+     *
+     * 같은 우편을 동시에 받아 두 번 지급되지 않도록 우편 행을 잠근 뒤 검증한다. 뒤에 온 요청은 앞 요청이
+     * 커밋할 때까지 기다렸다가 이미 받은 우편으로 거절된다. 잠금 순서는 우편 → 코인이다.
+     *
+     * 받은 우편만 삭제할 수 있으므로 삭제된 우편은 없는 우편으로 본다.
+     * 아이템 지급은 아직 구현 전이라 우편에 든 아이템(mail_items)은 지급하지 않는다.
+     *
+     * @throws BusinessException [MailErrorCode.MAIL_NOT_FOUND] 우편이 없거나, 삭제된 경우
+     * @throws BusinessException [AuthErrorCode.FORBIDDEN] 다른 사용자의 우편인 경우
+     * @throws BusinessException [MailErrorCode.ALREADY_CLAIMED] 이미 받은 우편인 경우
+     * @throws BusinessException [MailErrorCode.MAIL_EXPIRED] 만료된 우편인 경우
+     */
+    @Transactional
+    fun claimMail(userId: Long, mailId: Long): RewardResponse {
+        val mail = mailRepository.findMailWithLockByIdAndDeletedAtIsNull(mailId)
+            ?: throw BusinessException(MailErrorCode.MAIL_NOT_FOUND)
+
+        mail.validateOwnership(userId)
+        mail.claim(Instant.now(clock))
+
+        mail.coinQuantity?.let { coinService.increaseBalance(userId, it, CoinHistoryCategory.MAIL_CLAIM, mail.id) }
+
+        return mail.toRewardResponse()
     }
 }
