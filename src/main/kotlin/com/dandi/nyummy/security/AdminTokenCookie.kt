@@ -1,5 +1,6 @@
 package com.dandi.nyummy.security
 
+import com.dandi.nyummy.admin.config.AdminPaths
 import org.springframework.http.ResponseCookie
 import java.time.Duration
 
@@ -13,7 +14,7 @@ import java.time.Duration
  */
 object AdminTokenCookie {
     const val NAME = "admin_token"
-    private const val PATH = "/api/v1/admin"
+    private const val PATH = AdminPaths.PREFIX
 
     fun createCookie(token: String, timeToLive: Duration): ResponseCookie = ResponseCookie.from(NAME, token)
         .httpOnly(true)

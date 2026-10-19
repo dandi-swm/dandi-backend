@@ -1,5 +1,6 @@
 package com.dandi.nyummy.filter
 
+import com.dandi.nyummy.admin.config.AdminPaths
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
@@ -24,7 +25,7 @@ class AdminOriginFilter(
 ) : OncePerRequestFilter() {
 
     companion object {
-        private const val ADMIN_PATH_PREFIX = "/api/v1/admin/"
+        private const val ADMIN_PATH_PREFIX = "${AdminPaths.PREFIX}/"
         private val SAFE_METHODS = setOf("GET", "HEAD", "OPTIONS")
         private val log = LoggerFactory.getLogger(AdminOriginFilter::class.java)
     }

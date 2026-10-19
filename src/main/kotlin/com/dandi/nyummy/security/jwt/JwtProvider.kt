@@ -152,6 +152,8 @@ class JwtProvider(private val jwtProperties: JwtProperties, private val clock: C
 
     fun createRefreshToken(userId: Long): String = createToken(userId, TokenType.REFRESH)
 
+    fun createAdminToken(adminId: Long): String = createToken(adminId, TokenType.ADMIN)
+
     fun getUserId(token: String, type: TokenType): Long = getClaims(token, type).subject?.toLongOrNull()
         ?: throw BusinessException(AuthErrorCode.UNAUTHORIZED)
 

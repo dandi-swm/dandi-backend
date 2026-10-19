@@ -3,7 +3,6 @@ package com.dandi.nyummy.admin.config
 import com.dandi.nyummy.infra.oauth.google.AdminGoogleOAuthClient
 import com.dandi.nyummy.infra.oauth.google.GoogleOAuthProperties
 import com.dandi.nyummy.infra.oauth.google.createGoogleJwtDecoder
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.security.oauth2.jwt.JwtDecoder
@@ -16,7 +15,7 @@ import java.time.Clock
  * 어드민 웹에서 Google 로그인을 거친 것이다.
  */
 @Configuration
-@ConditionalOnProperty(prefix = "app.admin", name = ["enabled"], havingValue = "true")
+@ConditionalOnAdminEnabled
 class AdminGoogleOAuthConfig {
 
     @Bean

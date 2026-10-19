@@ -76,6 +76,8 @@ class JwtService(
         return Pair(access, refresh)
     }
 
+    fun createAdminToken(adminId: Long): String = jwtProvider.createAdminToken(adminId)
+
     fun createEmailChallengeToken(email: String, purpose: AuthPurpose): String =
         jwtProvider.createEmailChallengeToken(email, purpose)
 

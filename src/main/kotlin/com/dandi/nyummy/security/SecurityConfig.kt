@@ -1,5 +1,6 @@
 package com.dandi.nyummy.security
 
+import com.dandi.nyummy.admin.config.AdminPaths
 import com.dandi.nyummy.admin.config.AdminProperties
 import com.dandi.nyummy.filter.AdminOriginFilter
 import com.dandi.nyummy.filter.InternalApiKeyFilter
@@ -41,8 +42,9 @@ class SecurityConfig(
                 authorize(DispatcherTypeRequestMatcher(DispatcherType.ERROR), permitAll)
                 authorize("/actuator/health", permitAll)
                 authorize("/api/v1/internal/**", hasAuthority(InternalApiKeyFilter.BATCH_AUTHORITY))
-                authorize("/api/v1/admin/auth/login", permitAll)
-                authorize("/api/v1/admin/**", hasAuthority(AuthAdmin.AUTHORITY))
+                authorize("${AdminPaths.PREFIX}/auth/login", permitAll)
+                authorize("${AdminPaths.PREFIX}/auth/logout", permitAll)
+                authorize("${AdminPaths.PREFIX}/**", hasAuthority(AuthAdmin.AUTHORITY))
                 authorize("/api/v1/auth/logout", hasAuthority(AuthUser.AUTHORITY))
                 authorize("/api/v1/auth/**", permitAll) // 로그인 하기 전에 부르는 API --> USER 권한 요구 X
                 authorize("/swagger-ui/**", permitAll)
@@ -84,6 +86,6 @@ private fun createAdminCorsConfigurationSource(adminProperties: AdminProperties)
     }
 
     return UrlBasedCorsConfigurationSource().apply {
-        registerCorsConfiguration("/api/v1/admin/**", configuration)
+        registerCorsConfiguration("${AdminPaths.PREFIX}/**", configuration)
     }
 }
