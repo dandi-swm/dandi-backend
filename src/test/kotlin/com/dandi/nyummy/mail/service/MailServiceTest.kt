@@ -200,6 +200,15 @@ class MailServiceTest {
         assertEquals(1L, mail.imageId)
     }
 
+    // existsNotClaimedMail
+
+    @Test
+    fun `현재 시각을 기준으로 받을 수 있는 우편이 있는지 확인한다`() {
+        every { mailRepository.existsByUserIdAndClaimedAtIsNull(userId, now) } returns true
+
+        assertTrue(mailService.existsNotClaimedMail(userId))
+    }
+
     // claimMail
 
     @Test

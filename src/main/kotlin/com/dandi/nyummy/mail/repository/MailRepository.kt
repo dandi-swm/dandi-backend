@@ -43,6 +43,26 @@ interface MailRepository : JpaRepository<Mail, Long> {
     ): List<Mail>
 
     /**
+     * 사용자에게 안 받은 우편이 있는지 확인한다. 홈 우편함 배지에 쓴다.
+     * 조건은 모두 받기와 같다. 삭제된 우편과 [now] 기준으로 만료된 우편은 제외한다.
+     *
+     * 개수를 세지 않고 exists로 묻는다. 조건에 맞는 첫 행을 찾으면 더 읽지 않는다.
+     */
+    @Query(
+        """
+        select exists (
+            select 1
+            from Mail as m
+            where m.userId = :userId
+                and m.deletedAt is null
+                and m.claimedAt is null
+                and (m.expiresAt is null or m.expiresAt > :now)
+        )
+    """,
+    )
+    fun existsByUserIdAndClaimedAtIsNull(@Param("userId") userId: Long, @Param("now") now: Instant): Boolean
+
+    /**
      * id가 [cursor]보다 작은 우편을 최신순(id 내림차순)으로 조회한다.
      * 삭제된 우편과 [now] 기준으로 만료된 우편은 받은 우편이어도 제외한다. expiresAt이 null이면 만료되지 않는다.
      *

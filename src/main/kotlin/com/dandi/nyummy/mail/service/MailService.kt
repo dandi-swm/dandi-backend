@@ -91,6 +91,16 @@ class MailService(
     }
 
     /**
+     * 받을 수 있는 우편이 있는지 확인한다. 홈 우편함 배지에 쓴다.
+     *
+     * 받지 않았고 만료되지 않은 우편만 본다. 만료는 조회하는 시각을 기준으로 판단하며, 목록 조회·받기와 같은 기준이다.
+     * 받은 우편만 삭제할 수 있으므로 삭제된 우편은 해당하지 않는다.
+     */
+    @Transactional(readOnly = true)
+    fun existsNotClaimedMail(userId: Long): Boolean =
+        mailRepository.existsByUserIdAndClaimedAtIsNull(userId, Instant.now(clock))
+
+    /**
      * 우편 하나를 받고 지급한 보상을 반환한다. 우편에 든 아이템은 개수만큼 보유 아이템으로 만들고,
      * 코인은 잔액에 더하고 내역을 남긴다. 보상 상자에 든 아이템도 같이 지급한다.
      *
