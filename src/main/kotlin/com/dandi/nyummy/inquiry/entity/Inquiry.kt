@@ -119,4 +119,25 @@ class Inquiry(
             throw BusinessException(InquiryErrorCode.ALREADY_ANSWERED)
         }
     }
+
+    /**
+     * 처음 답변을 등록한다. 답변 시각은 이때 정해지고 이후 수정해도 바뀌지 않는다.
+     *
+     * 등록·수정 중 무엇을 부를지는 호출부가 [isAnswered]로 정하므로, 어긋나면 코드 버그라 check로 막는다.
+     */
+    fun createAnswer(answerTitle: String, answerContent: String, answeredAt: Instant) {
+        check(!isAnswered) { "이미 답변이 등록된 문의입니다: inquiryId=$id" }
+        this.answerTitle = answerTitle
+        this.answerContent = answerContent
+        this.answeredAt = answeredAt
+    }
+
+    /**
+     * 등록된 답변의 제목·내용을 고친다. 오타 정정용이라 답변 시각과 읽음 기록은 그대로 둔다.
+     */
+    fun updateAnswer(answerTitle: String, answerContent: String) {
+        check(isAnswered) { "답변이 없는 문의는 답변을 수정할 수 없습니다: inquiryId=$id" }
+        this.answerTitle = answerTitle
+        this.answerContent = answerContent
+    }
 }

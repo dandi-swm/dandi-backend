@@ -2,6 +2,7 @@
 
 package com.dandi.nyummy.inquiry.dto
 
+import com.dandi.nyummy.inquiry.entity.Inquiry
 import com.dandi.nyummy.inquiry.enum.InquiryCategory
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Size
@@ -58,3 +59,10 @@ data class InquiryResponse(
     val answerContent: String?,
     val answeredAt: Instant?,
 )
+
+/**
+ * 답변 저장 결과. (컨트롤러에 노출되지 않는 서비스 내부 반환값)
+ *
+ * @property isFirstAnswer 처음 등록이면 true. 호출부가 알림을 보낼지 정한다
+ */
+data class InquiryAnswerResult(val inquiry: Inquiry, val isFirstAnswer: Boolean)

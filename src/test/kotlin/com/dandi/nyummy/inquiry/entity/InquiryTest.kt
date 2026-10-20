@@ -111,4 +111,52 @@ class InquiryTest {
     fun `다른 사용자의 문의는 거부한다`() {
         assertBusinessException(AuthErrorCode.FORBIDDEN) { inquiry().validateOwnership(userId + 1) }
     }
+
+    // createAnswer · updateAnswer
+
+    @Test
+    fun `답변을 처음 등록하면 제목·내용과 답변 시각이 정해진다`() {
+        val inquiry = inquiry()
+
+        inquiry.createAnswer("답변 제목", "답변 내용", answeredAt)
+
+        assertTrue(inquiry.isAnswered)
+        assertEquals("답변 제목", inquiry.answerTitle)
+        assertEquals("답변 내용", inquiry.answerContent)
+        assertEquals(answeredAt, inquiry.answeredAt)
+        assertNull(inquiry.answerReadAt)
+    }
+
+    @Test
+    fun `이미 답변이 있으면 다시 등록하지 않는다`() {
+        val inquiry = inquiry(answeredAt = answeredAt)
+
+        assertFailsWith<IllegalStateException> {
+            inquiry.createAnswer("답변 제목", "답변 내용", readAt)
+        }
+        assertEquals(answeredAt, inquiry.answeredAt)
+    }
+
+    @Test
+    fun `답변을 수정해도 답변 시각과 읽음 기록은 그대로다`() {
+        val inquiry = inquiry(answeredAt = answeredAt, answerReadAt = readAt)
+
+        inquiry.updateAnswer("고친 제목", "고친 내용")
+
+        assertEquals("고친 제목", inquiry.answerTitle)
+        assertEquals("고친 내용", inquiry.answerContent)
+        assertEquals(answeredAt, inquiry.answeredAt)
+        assertEquals(readAt, inquiry.answerReadAt)
+        assertFalse(inquiry.hasUnreadAnswer)
+    }
+
+    @Test
+    fun `답변이 없으면 수정하지 않는다`() {
+        val inquiry = inquiry()
+
+        assertFailsWith<IllegalStateException> {
+            inquiry.updateAnswer("고친 제목", "고친 내용")
+        }
+        assertNull(inquiry.answerTitle)
+    }
 }
