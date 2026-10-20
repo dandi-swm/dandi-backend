@@ -92,7 +92,7 @@ GET {{url}}/api/v1/inquiries?size=51
 Authorization: Bearer {{accessToken}}
 
 ### 문의 상세 조회 API
-# 답변이 달린 문의를 처음 조회하면 answer_read_at이 기록되고, 홈의 hasUnreadInquiryAnswer가 false가 된다.
+# 답변이 달린 문의를 처음 조회하면 answer_read_at이 기록된다. 받을 수 있는 우편도 없으면 홈의 hasMailboxBadge가 false가 된다.
 @inquiryId = 1
 GET {{url}}/api/v1/inquiries/{{inquiryId}}
 Authorization: Bearer {{accessToken}}

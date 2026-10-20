@@ -21,7 +21,9 @@ class HomeController(private val homeService: HomeService) {
         summary = "홈 화면 조회",
         description = "홈 화면을 그리는 데 필요한 값을 한 번에 조회한다. " +
             "보유 코인, 연속 기록 현황(streak), 오늘의 식사 현황(기록한 끼니 수, 섭취·목표 칼로리), " +
-            "안 읽은 문의 답변 여부(hasUnreadInquiryAnswer), 마이룸에 장착한 아이템(equippedRoomItems)이 들어 있다. " +
+            "우편함 배지 여부(hasMailboxBadge), 마이룸에 장착한 아이템(equippedRoomItems)이 들어 있다. " +
+            "hasMailboxBadge는 받을 수 있는(받지 않았고 만료되지 않은) 우편이나 안 읽은 문의 답변 중 " +
+            "하나라도 있으면 true다. " +
             "equippedRoomItems는 마이룸 조회 API의 equippedRoomItems와 같으며 zIndex 오름차순이다. " +
             "todayRecordedCount는 삭제하지 않은 식사 수이고, todayAttemptCount는 삭제·실패까지 포함한 " +
             "시도 횟수다. 등록 가능 여부는 todayAttemptCount와 todayMaxAttemptCount를 비교해 판단한다. " +

@@ -9,6 +9,6 @@ data class HomeResponse(
     val user: HomeUserResponse,
     val streak: StreakResponse,
     val todayMealSummary: TodayMealSummaryResponse,
-    val hasUnreadInquiryAnswer: Boolean,
+    val hasMailboxBadge: Boolean,
     val equippedRoomItems: List<EquippedRoomItemResponse>,
 )

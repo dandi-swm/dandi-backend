@@ -3,6 +3,7 @@ package com.dandi.nyummy.home.service
 import com.dandi.nyummy.coin.service.CoinService
 import com.dandi.nyummy.home.dto.HomeResponse
 import com.dandi.nyummy.inquiry.service.InquiryService
+import com.dandi.nyummy.mail.service.MailService
 import com.dandi.nyummy.meal.service.MealService
 import com.dandi.nyummy.room.service.RoomService
 import com.dandi.nyummy.user.dto.HomeUserResponse
@@ -13,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional
 class HomeService(
     private val mealService: MealService,
     private val inquiryService: InquiryService,
+    private val mailService: MailService,
     private val roomService: RoomService,
     private val coinService: CoinService,
 ) {
@@ -25,22 +27,25 @@ class HomeService(
      * 한 번의 요청으로 묶는 이유는 값들이 서로 맞물려 있기 때문이다. 따로 조회하면
      * 그 사이에 기록이 바뀌어 화면 안에서 어긋난 값이 보일 수 있다.
      *
+     * 우편함 배지는 받을 수 있는 우편이나 안 읽은 문의 답변 중 하나라도 있으면 켠다. 두 도메인을 묶는 규칙이라
+     * 어느 한 도메인 서비스에 둘 수 없어 여기서 합친다. 우편을 먼저 확인하고, 있으면 문의는 조회하지 않는다.
+     *
      * @param userId 조회하는 사용자 ID
-     * @return 코인·연속 기록·오늘 식사 현황·안 읽은 문의 답변 여부·마이룸 장착 아이템을 담은 [HomeResponse]
+     * @return 코인·연속 기록·오늘 식사 현황·우편함 배지 여부·마이룸 장착 아이템을 담은 [HomeResponse]
      */
     @Transactional(readOnly = true)
     fun getHome(userId: Long): HomeResponse {
         val coin = coinService.getBalance(userId)
         val streak = mealService.getStreak(userId)
         val todayMealSummary = mealService.getTodayMealSummary(userId)
-        val hasUnreadInquiryAnswer = inquiryService.existsUnreadAnswer(userId)
+        val hasMailboxBadge = mailService.existsNotClaimedMail(userId) || inquiryService.existsUnreadAnswer(userId)
         val equippedRoomItems = roomService.getEquippedRoomItems(userId)
 
         val response = HomeResponse(
             user = HomeUserResponse(coin = coin),
             streak = streak,
             todayMealSummary = todayMealSummary,
-            hasUnreadInquiryAnswer = hasUnreadInquiryAnswer,
+            hasMailboxBadge = hasMailboxBadge,
             equippedRoomItems = equippedRoomItems,
         )
 
