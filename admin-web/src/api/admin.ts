@@ -1,6 +1,6 @@
 import { request } from "./client";
 
-const PREFIX = "/admin/v1";
+const PREFIX = "/admin/api";
 
 export type AdminResponse = { adminId: number; email: string; name: string };
 

@@ -44,7 +44,7 @@ class AdminWebFallbackResourceResolverTest {
 
     @Test
     fun `없는 API 경로는 index html로 대신하지 않는다`() {
-        assertNull(resolve("v1/unknown"))
+        assertNull(resolve("api/unknown"))
     }
 
     @Test

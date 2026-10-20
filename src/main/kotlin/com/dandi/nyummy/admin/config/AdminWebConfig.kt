@@ -9,7 +9,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer
 /**
  * 어드민 서비스가 빌드된 admin-web을 /admin/ 아래로 내려준다. 팀원은 SSM 터널만 열고 브라우저로 쓴다.
  *
- * 컨트롤러가 리소스 핸들러보다 먼저 매칭되므로 /admin/v1 API와 겹치지 않는다. 앱 서비스에서는 만들지 않는다.
+ * 컨트롤러가 리소스 핸들러보다 먼저 매칭되므로 /admin/api API와 겹치지 않는다. 앱 서비스에서는 만들지 않는다.
  *
  * 배포마다 index.html이 새 assets를 가리키므로 캐시하지 않는다(no-cache는 매번 재검증). 내부 도구라 assets를
  * 오래 캐시해서 얻을 이득도 작다.

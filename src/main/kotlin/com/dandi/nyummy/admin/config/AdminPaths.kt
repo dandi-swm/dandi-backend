@@ -8,5 +8,5 @@ object AdminPaths {
     const val WEB_PREFIX = "/admin"
 
     /** 어드민 API. 쿠키 Path, Origin 필터, 권한 규칙, CORS가 모두 이 값을 써야 서로 어긋나지 않는다. */
-    const val PREFIX = "$WEB_PREFIX/v1"
+    const val PREFIX = "$WEB_PREFIX/api"
 }

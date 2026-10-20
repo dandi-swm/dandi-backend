@@ -2,7 +2,7 @@
 
 ## 작업 규칙
 
-1. **API를 추가하거나 요청·응답을 바꾸면 같은 PR에서 E2E 시나리오를 추가하거나 고친다.** 내부 배치 API(`/api/v1/internal/**`)와 어드민 API(`/admin/v1/**` — ALB 밖이라 배포 서버에 HTTP로 닿지 않는다)는 제외한다. `src/e2eTest`의 도메인별 `~E2eTest`에 넣는다. E2E는 main 머지 후 dev 배포가 끝나면 Jenkins가 돌리므로, PR에서는 `./gradlew compileE2eTestKotlin`으로 컴파일까지 확인한다.
+1. **API를 추가하거나 요청·응답을 바꾸면 같은 PR에서 E2E 시나리오를 추가하거나 고친다.** 내부 배치 API(`/api/v1/internal/**`)와 어드민 API(`/admin/api/**` — ALB 밖이라 배포 서버에 HTTP로 닿지 않는다)는 제외한다. `src/e2eTest`의 도메인별 `~E2eTest`에 넣는다. E2E는 main 머지 후 dev 배포가 끝나면 Jenkins가 돌리므로, PR에서는 `./gradlew compileE2eTestKotlin`으로 컴파일까지 확인한다.
    - main 코드를 의존하지 않는다. 응답은 main DTO가 아니라 JSON 경로로 검증하고, 요청 바디는 키를 문자 그대로 적은 `Map`으로 만든다. DTO를 재사용하면 계약이 깨져도 테스트가 같이 바뀐다.
    - 고정 계정의 상태를 되돌린다. 바꾼 설정과 만든 리소스는 `finally`에서 원래대로 돌리고, 이미 지워졌을 수 있는 정리는 결과를 검증하지 않는다.
    - 거부(4xx) 테스트는 부작용이 없었는지도 확인한다. 4xx가 와도 저장이 먼저 일어났을 수 있다.
@@ -100,7 +100,7 @@
 
 - 프로덕션 코드의 임시 대역 `Stub`(Fake·Mock 금지 — Mock은 테스트 전용), 확정 전·임시 `Temp`(Temporary·Tmp 금지)
 - 같은 기능을 쓰는 흐름 구분 `~Purpose`(`AuthPurpose`), 외부 스케줄러가 부르는 배치 API `Internal`(`/api/v1/internal/**`)
-- 운영자 `Admin`(패키지 admin, 경로 상수 `AdminPaths.PREFIX` = `/admin/v1`, 에러 코드 `api.admin.*`). Manager·Operator·Backoffice 금지. 배치 API `Internal`과 다른 것. 어드민 서비스에서만 만드는 빈은 `@ConditionalOnAdminEnabled`(`app.admin.enabled`). 어드민 웹 화면 `admin-web`(폴더, 경로 상수 `AdminPaths.WEB_PREFIX` = `/admin` — API 접두 `PREFIX`와 구분)
+- 운영자 `Admin`(패키지 admin, 경로 상수 `AdminPaths.PREFIX` = `/admin/api`, 에러 코드 `api.admin.*`). Manager·Operator·Backoffice 금지. 배치 API `Internal`과 다른 것. 어드민 서비스에서만 만드는 빈은 `@ConditionalOnAdminEnabled`(`app.admin.enabled`). 어드민 웹 화면 `admin-web`(폴더, 경로 상수 `AdminPaths.WEB_PREFIX` = `/admin` — API 접두 `PREFIX`와 구분)
 - 커서 `Cursor` — 무한 스크롤 기준점(직전 묶음의 마지막 id), 응답은 `nextCursor` + `hasNext`. 페이지 번호 방식은 `Offset`
 - 허용 오차 `Tolerance` — 목표 대비 비율(0.2 = ±20%). Margin·Threshold 금지
 - 노출 비율·뽑힐 확률 `Rate` — 0~100 정수 퍼센트. Ratio·Percentage·Chance·Probability·Sampling 금지
