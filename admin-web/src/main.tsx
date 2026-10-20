@@ -1,0 +1,52 @@
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { createBrowserRouter, Navigate, RouterProvider } from "react-router-dom";
+import { isUnauthorized } from "./api/client";
+import { AdminLayout } from "./components/AdminLayout";
+import { InquiryDetailPage } from "./pages/InquiryDetailPage";
+import { InquiryListPage } from "./pages/InquiryListPage";
+import { LoginPage } from "./pages/LoginPage";
+import "./styles.css";
+
+// 화면은 /admin/ 아래에 있다(vite base, 라우터 basename과 같은 값).
+const BASE_PATH = import.meta.env.BASE_URL.replace(/\/$/, "");
+const LOGIN_PATH = `${BASE_PATH}/login`;
+
+// 토큰(쿠키)이 만료되거나 어드민이 비활성화되면 어느 요청이든 401이 온다. 그때는 로그인 화면으로 보낸다.
+const redirectToLoginOnUnauthorized = (error: unknown) => {
+  if (isUnauthorized(error) && window.location.pathname !== LOGIN_PATH) {
+    window.location.assign(LOGIN_PATH);
+  }
+};
+
+const queryClient = new QueryClient({
+  queryCache: new QueryCache({ onError: redirectToLoginOnUnauthorized }),
+  mutationCache: new MutationCache({ onError: redirectToLoginOnUnauthorized }),
+  defaultOptions: {
+    queries: { retry: (count, error) => !isUnauthorized(error) && count < 1, refetchOnWindowFocus: false },
+  },
+});
+
+const router = createBrowserRouter(
+  [
+  { path: "/login", element: <LoginPage /> },
+  {
+    element: <AdminLayout />,
+    children: [
+      { path: "/", element: <Navigate to="/inquiries" replace /> },
+      { path: "/inquiries", element: <InquiryListPage /> },
+      { path: "/inquiries/:inquiryId", element: <InquiryDetailPage /> },
+    ],
+  },
+  ],
+  { basename: BASE_PATH },
+);
+
+createRoot(document.getElementById("root")!).render(
+  <StrictMode>
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>
+  </StrictMode>,
+);

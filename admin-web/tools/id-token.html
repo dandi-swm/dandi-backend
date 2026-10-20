@@ -1,0 +1,14 @@
+<!doctype html>
+<html>
+<body>
+<script src="https://accounts.google.com/gsi/client" async></script>
+<div id="g_id_onload" data-client_id="361364614030-233srg12cucp0ftvo9u3jsknkft913mn.apps.googleusercontent.com" data-callback="onCredential"></div>
+<div class="g_id_signin" data-type="standard"></div>
+<pre id="out" style="white-space: pre-wrap; word-break: break-all"></pre>
+<script>
+    function onCredential(response) {
+        document.getElementById("out").textContent = response.credential;
+    }
+</script>
+</body>
+</html>

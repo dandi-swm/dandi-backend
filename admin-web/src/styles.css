@@ -1,0 +1,354 @@
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --border: #e3e6ea;
+  --text: #1f2328;
+  --muted: #6b7280;
+  --primary: #f08a24;
+  --primary-hover: #d97614;
+  --waiting: #b45309;
+  --waiting-bg: #fef3c7;
+  --done: #047857;
+  --done-bg: #d1fae5;
+  --error: #b91c1c;
+  --success: #047857;
+  font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", system-ui, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+}
+
+a {
+  color: inherit;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.error {
+  color: var(--error);
+}
+
+.success {
+  color: var(--success);
+}
+
+.center {
+  text-align: center;
+  margin-top: 20vh;
+}
+
+/* 로그인 */
+.login {
+  max-width: 360px;
+  margin: 18vh auto 0;
+  padding: 32px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  text-align: center;
+}
+
+.login h1 {
+  margin: 0 0 8px;
+  font-size: 22px;
+}
+
+.login > div {
+  display: flex;
+  justify-content: center;
+  margin: 24px 0 8px;
+}
+
+/* 틀 */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 0 24px;
+  height: 56px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.brand {
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.header nav a {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.me {
+  margin-left: auto;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.content {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+button.link {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+}
+
+/* 문의함 */
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.toolbar h2 {
+  margin: 0;
+}
+
+.filters {
+  display: flex;
+  gap: 12px;
+}
+
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.segmented button {
+  border: none;
+  background: none;
+  padding: 6px 14px;
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.segmented button.active {
+  background: var(--text);
+  color: #fff;
+}
+
+select {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: var(--surface);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.table th,
+.table td {
+  padding: 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.table th {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.table td.title {
+  white-space: normal;
+  width: 100%;
+}
+
+.table td.title a {
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.table td.title a:hover {
+  text-decoration: underline;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+
+.badge.waiting {
+  color: var(--waiting);
+  background: var(--waiting-bg);
+  border-color: transparent;
+}
+
+.badge.done {
+  color: var(--done);
+  background: var(--done-bg);
+  border-color: transparent;
+}
+
+.more {
+  display: block;
+  margin: 16px auto 0;
+  padding: 8px 20px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+/* 상세 */
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.back {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.card h2 {
+  margin: 16px 0 8px;
+  overflow-wrap: anywhere;
+}
+
+/* 줄바꿈은 살리되, 내용은 항상 텍스트로만 보여 준다. */
+.body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.attachment {
+  display: block;
+  margin-top: 16px;
+  max-width: 320px;
+  max-height: 320px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.answer {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.answer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.answer h3 {
+  margin: 0;
+}
+
+.notice {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.answer label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--muted);
+  position: relative;
+}
+
+.answer input,
+.answer textarea {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--text);
+  resize: vertical;
+}
+
+.counter {
+  align-self: flex-end;
+  font-size: 12px;
+}
+
+button.primary {
+  align-self: flex-end;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  background: var(--primary);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button.primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+
+button.primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
