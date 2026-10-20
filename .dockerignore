@@ -24,3 +24,9 @@ out/
 .DS_Store
 *.log
 README.md
+
+# 어드민 웹: 의존성과 빌드 결과는 이미지 안에서 다시 만든다
+admin-web/node_modules/
+admin-web/dist/
+admin-web/.env.local
+admin-web/*.tsbuildinfo

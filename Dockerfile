@@ -1,4 +1,17 @@
 # syntax=docker/dockerfile:1
+# 0단계: 어드민 웹 빌드. 어드민 서비스(app.admin.enabled=true)가 /admin/ 아래로 내려준다.
+# 앱 서비스 이미지에도 같이 들어가지만 앱 서비스에서는 내려주지 않는다.
+# package.json·lock 파일을 먼저 복사해 의존성 설치 레이어를 캐시한다.
+FROM node:24-slim AS admin-web
+WORKDIR /admin-web
+
+COPY admin-web/package.json admin-web/package-lock.json ./
+RUN npm ci
+
+COPY admin-web/ ./
+RUN npm run build
+
+
 # 1단계: 애플리케이션 빌드
 FROM eclipse-temurin:25-jdk AS build
 WORKDIR /app
@@ -69,10 +82,13 @@ ENV PYROSCOPE_AGENT_ENABLED=false \
 
 COPY --from=build /app/build/libs/app.jar app.jar
 
+# 어드민 웹 빌드 결과(AdminProperties.webLocation 기본값 file:/app/admin-web/)
+COPY --from=admin-web /admin-web/dist /app/admin-web
+
 # 기존 Java CA 목록을 보존하면서 RDS CA를 추가한 저장소
 COPY --from=certs /tmp/rds-cacerts /app/rds-cacerts
 
-RUN chown spring:spring app.jar rds-cacerts pyroscope.jar
+RUN chown -R spring:spring app.jar rds-cacerts pyroscope.jar admin-web
 
 USER spring
 
