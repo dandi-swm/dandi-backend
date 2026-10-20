@@ -1,6 +1,7 @@
 package com.dandi.nyummy.inquiry.repository
 
 import com.dandi.nyummy.inquiry.entity.Inquiry
+import com.dandi.nyummy.inquiry.enum.InquiryCategory
 import org.springframework.data.domain.Pageable
 import org.springframework.data.domain.Slice
 import org.springframework.data.jpa.repository.JpaRepository
@@ -33,6 +34,32 @@ interface InquiryRepository : JpaRepository<Inquiry, Long> {
     )
     fun findInquiriesByUserIdBeforeCursor(
         @Param("userId") userId: Long,
+        @Param("cursor") cursor: Long,
+        pageable: Pageable,
+    ): Slice<Inquiry>
+
+    /**
+     * 어드민 문의함. 유형·답변 여부로 거르고 id가 [cursor]보다 작은 문의를 최신순(id 내림차순)으로 조회한다.
+     * 조건이 null이면 그 조건으로 거르지 않는다. 사용자가 삭제한 문의는 제외한다.
+     *
+     * 위치는 cursor 조건이 정하므로 [pageable]은 page 0으로 개수만 정한다.
+     */
+    @Query(
+        """
+        select i
+        from Inquiry as i
+        where i.deletedAt is null
+            and i.id < :cursor
+            and (:category is null or i.category = :category)
+            and (:isAnswered is null
+                or (:isAnswered = true and i.answeredAt is not null)
+                or (:isAnswered = false and i.answeredAt is null))
+        order by i.id desc
+    """,
+    )
+    fun findInquiriesBeforeCursor(
+        @Param("category") category: InquiryCategory?,
+        @Param("isAnswered") isAnswered: Boolean?,
         @Param("cursor") cursor: Long,
         pageable: Pageable,
     ): Slice<Inquiry>
