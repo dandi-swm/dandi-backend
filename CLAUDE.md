@@ -154,12 +154,13 @@
 
 - 문의 `Inquiry` — 사용자가 쓴 질문 `Question`(`questionTitle`·`questionContent`)과 운영자 답변 `Answer`(`answerTitle`·`answerContent`, Reply 금지)
 - 답변 여부는 상태 컬럼 없이 `isAnswered`(= `answeredAt` 있음), 답변 읽음 `answerReadAt` — 도메인의 Read이고 메서드 동사로는 쓰지 않는다
-- 안 읽은 답변 `UnreadAnswer`(`hasUnreadAnswer`·`hasUnreadInquiryAnswer`·`existsUnreadAnswer`, New 금지)
+- 안 읽은 답변 `UnreadAnswer`(`hasUnreadAnswer`·`existsUnreadAnswer`, New 금지)
 
 ### 우편
 
 - 우편 `Mail` — 보상을 받는 우편함의 한 건. 문의와 다른 리소스이고, 한 건을 Item이라 부르지 않는다
 - 받기 `claim`, 받은 상태 `isClaimed`, 얻은 경로 문구 `content`(문의 본문 `questionContent`와 다른 뜻)
+- 우편함 배지 `MailboxBadge`(`hasMailboxBadge`) — 받을 수 있는 우편과 안 읽은 문의 답변을 함께 알리는 홈 표시. 우편 한 건 `Mail`과 다른 뜻이고, Notification·Alert·Dot 금지
 - 보상 `Reward`(하나 받기 `RewardResponse`, 모두 받기 `TotalRewardResponse`), 보상 상자 `RewardBox`(Box 단독·Chest 금지), 여러 우편 보상의 합 `Total`(Sum 금지), 열기 애니메이션 `animationUrl`(ActionUrl 금지)
 - 보상 상자 등급 `RewardBoxCategory`(Grade·Tier 금지) — 우편 종류 `MailCategory`와 다른 enum
 - 게임 아이템 `Item`(`itemId`), 지급 개수 `Quantity`(Amount·Count 금지)
