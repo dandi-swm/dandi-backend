@@ -19,6 +19,7 @@ import org.hamcrest.Matchers.oneOf
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class MailE2eTest {
     // 조회만 하므로 prod에서도 돌린다. 계정에 우편이 없어도 통과해야 하므로 원소 구조와 페이지 나누기는 보지 않는다.
@@ -66,6 +67,9 @@ class MailE2eTest {
             } Extract {
                 jsonPath().getLong("mails[0].mailId")
             }
+            // 안 받은 상자가 있으니 홈 우편함 배지가 켜진다. 다른 우편·문의 답변이 있어도 결과는 같다.
+            // 꺼지는 경우는 고정 계정에 다른 우편·안 읽은 답변이 남아 있을 수 있어 단위 테스트(HomeServiceTest)가 맡는다.
+            assertTrue(getMailboxBadge(ownerSpec), "안 받은 우편이 있는데 홈 우편함 배지가 꺼져 있습니다")
             val coinBefore = getCoin(ownerSpec)
             val otherCoinBefore = getCoin(otherSpec)
 
@@ -178,6 +182,16 @@ class MailE2eTest {
         statusCode(200)
     } Extract {
         path("user.coin")
+    }
+
+    private fun getMailboxBadge(spec: RequestSpecification): Boolean = Given {
+        spec(spec)
+    } When {
+        get("/api/v1/home")
+    } Then {
+        statusCode(200)
+    } Extract {
+        path("hasMailboxBadge")
     }
 
     private fun ValidatableResponse.validateForbidden() {
