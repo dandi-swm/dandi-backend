@@ -154,6 +154,7 @@ app:
     signup-url: "/signup"
     meal-detail-url: "/meals"
     onboarding-url: "/onboarding"
+    inquiry-detail-url: "/inquiries"
 
   email:
     client: ${EMAIL_CLIENT:smtp} # smtp | ses (ses는 샌드박스 해제 후 전환)

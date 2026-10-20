@@ -56,6 +56,7 @@ class AuthServiceTest {
         signupUrl = "/signup",
         mealDetailUrl = "/meals",
         onboardingUrl = "/onboarding",
+        inquiryDetailUrl = "/inquiries",
     )
 
     private val userRepository = mockk<UserRepository>()

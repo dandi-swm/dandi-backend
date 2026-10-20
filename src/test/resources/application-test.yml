@@ -55,6 +55,7 @@ app:
     signup-url: "/signup"
     meal-detail-url: "/meals"
     onboarding-url: "/onboarding"
+    inquiry-detail-url: "/inquiries"
   oauth:
     kakao:
       app-key: test-kakao-app-key
