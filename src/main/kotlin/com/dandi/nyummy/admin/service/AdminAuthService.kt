@@ -1,8 +1,10 @@
 package com.dandi.nyummy.admin.service
 
+import com.dandi.nyummy.admin.config.AdminProperties
 import com.dandi.nyummy.admin.config.ConditionalOnAdminEnabled
 import com.dandi.nyummy.admin.dto.AdminLoginRequest
 import com.dandi.nyummy.admin.dto.AdminLoginResult
+import com.dandi.nyummy.admin.dto.GoogleClientResponse
 import com.dandi.nyummy.admin.mapper.toAdminResponse
 import com.dandi.nyummy.admin.repository.AdminRepository
 import com.dandi.nyummy.exception.BusinessException
@@ -21,6 +23,7 @@ class AdminAuthService(
     private val adminRepository: AdminRepository,
     private val jwtService: JwtService,
     private val jwtProperties: JwtProperties,
+    private val adminProperties: AdminProperties,
 ) {
     companion object {
         private val logger = LoggerFactory.getLogger(AdminAuthService::class.java)
@@ -47,4 +50,13 @@ class AdminAuthService(
             admin = admin.toAdminResponse(),
         )
     }
+
+    /**
+     * 어드민 웹이 Google 로그인 버튼을 그릴 때 쓰는 클라이언트 ID. 브라우저에 노출되는 공개 값이다.
+     *
+     * 웹 빌드에 박지 않고 여기서 내려주면 백엔드 설정(ADMIN_GOOGLE_CLIENT_ID) 하나만 관리하면 된다.
+     * 값이 없으면 어드민 서비스가 기동하지 않으므로([com.dandi.nyummy.admin.config.AdminGoogleOAuthConfig]) 여기서는 항상 있다.
+     */
+    fun getGoogleClient(): GoogleClientResponse =
+        GoogleClientResponse(clientId = checkNotNull(adminProperties.googleClientId))
 }

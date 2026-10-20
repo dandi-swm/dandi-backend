@@ -42,9 +42,13 @@ class SecurityConfig(
                 authorize(DispatcherTypeRequestMatcher(DispatcherType.ERROR), permitAll)
                 authorize("/actuator/health", permitAll)
                 authorize("/api/v1/internal/**", hasAuthority(InternalApiKeyFilter.BATCH_AUTHORITY))
+                authorize("${AdminPaths.PREFIX}/auth/google-client", permitAll)
                 authorize("${AdminPaths.PREFIX}/auth/login", permitAll)
                 authorize("${AdminPaths.PREFIX}/auth/logout", permitAll)
                 authorize("${AdminPaths.PREFIX}/**", hasAuthority(AuthAdmin.AUTHORITY))
+                // 어드민 웹 화면 파일. 데이터는 위 API 규칙이 쿠키로 막고, 화면은 어드민 서비스(터널 안)에서만 내려준다.
+                authorize(AdminPaths.WEB_PREFIX, permitAll)
+                authorize("${AdminPaths.WEB_PREFIX}/**", permitAll)
                 authorize("/api/v1/auth/logout", hasAuthority(AuthUser.AUTHORITY))
                 authorize("/api/v1/auth/**", permitAll) // 로그인 하기 전에 부르는 API --> USER 권한 요구 X
                 authorize("/swagger-ui/**", permitAll)

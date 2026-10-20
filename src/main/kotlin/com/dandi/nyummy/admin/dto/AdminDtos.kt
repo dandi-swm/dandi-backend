@@ -17,3 +17,6 @@ data class AdminResponse(val adminId: Long, val email: String, val name: String)
  * @property timeToLive 쿠키 수명. 토큰 수명과 맞춘다
  */
 data class AdminLoginResult(val adminToken: String, val timeToLive: Duration, val admin: AdminResponse)
+
+/** 어드민 웹용 Google OAuth 클라이언트 ID. 공개 값이다. */
+data class GoogleClientResponse(val clientId: String)

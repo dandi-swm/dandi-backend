@@ -1,5 +1,6 @@
 package com.dandi.nyummy.admin.service
 
+import com.dandi.nyummy.admin.config.AdminProperties
 import com.dandi.nyummy.admin.dto.AdminLoginRequest
 import com.dandi.nyummy.admin.dto.AdminResponse
 import com.dandi.nyummy.admin.entity.Admin
@@ -36,12 +37,14 @@ class AdminAuthServiceTest {
     private val adminRepository = mockk<AdminRepository>()
     private val jwtService = mockk<JwtService>()
     private val jwtProperties = mockk<JwtProperties>()
+    private val adminProperties = AdminProperties(enabled = true, googleClientId = "admin-web-client-id")
 
     private val adminAuthService = AdminAuthService(
         adminGoogleOAuthClient = adminGoogleOAuthClient,
         adminRepository = adminRepository,
         jwtService = jwtService,
         jwtProperties = jwtProperties,
+        adminProperties = adminProperties,
     )
 
     init {
@@ -111,5 +114,10 @@ class AdminAuthServiceTest {
         }
         verify(exactly = 0) { adminRepository.findByEmail(any()) }
         verify(exactly = 0) { jwtService.createAdminToken(any()) }
+    }
+
+    @Test
+    fun `어드민 웹용 Google 클라이언트 ID를 내려준다`() {
+        assertEquals("admin-web-client-id", adminAuthService.getGoogleClient().clientId)
     }
 }
