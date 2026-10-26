@@ -101,9 +101,9 @@ class MealTransactionServiceConcurrencyTest @Autowired constructor(
         val rewardBoxMailCount = mailRepository.findAll().count { it.userId == userId }
         val summary = "성공 ${successCount}건, 오늘 식사 ${todayAttempts}건, 상자 우편 ${rewardBoxMailCount}건"
 
-        assertEquals(1, successCount, summary)
-        assertEquals(5L, todayAttempts, summary)
-        assertEquals(1, rewardBoxMailCount, summary)
+        assertEquals(6, successCount, summary)
+        assertEquals(10L, todayAttempts, summary)
+        assertEquals(6, rewardBoxMailCount, summary)
         assertEquals(1, streakRepository.findByUserId(userId)?.streakDays, summary)
         results.mapNotNull { it.exceptionOrNull() }.forEach { failure ->
             assertEquals(MealErrorCode.DAILY_COUNT_EXCEEDED, (failure as BusinessException).errorCode, summary)
