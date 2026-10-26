@@ -148,7 +148,7 @@ app:
         z-index: 1
         scale: 1.0
   meal:
-    max-daily-count: 5
+    max-daily-count: 10
     # 영양 분석 평가 요청을 띄울 식사 비율(%). 0이면 아무에게도 안 뜨고, 100이면 모든 식사에 뜬다.
     analysis-feedback-rate: 100
     intake-tolerance: 0.2
