@@ -23,6 +23,9 @@ class GeminiNutritionAnalysisClient(
 
     companion object {
 
+        private val RECOMMENDATION_CUISINES = listOf("한식", "중식", "일식", "양식", "분식")
+        private val RECOMMENDATION_DISH_FORMS = listOf("밥·덮밥", "면", "국·찌개·탕", "구이·조림 정식", "볶음")
+
         private const val PROMPT =
             """
                 이 사진이 사용자가 실제로 섭취한 음식의 사진인지 판단하고, 아래 JSON만 출력해.
@@ -55,8 +58,12 @@ class GeminiNutritionAnalysisClient(
 
                 isFood가 false면 name 이하 필드는 모두 null로 채워.
                 영양소 추정 시 calory ≈ carbs*4 + protein*4 + fat*9 를 만족시켜.
-                catComment에는 고양이 말투로 식사에 대해 영양 분석과 관련해서 피드백을 해줘.
-                이때 다음 식사는 건강을 위해 어떤 음식을 먹으면 좋을지도 추천해줘 (100자 내외).
+                catComment에는 고양이 말투로 100자 내외의 피드백을 써.
+                1. 이 식사에서 많은 영양소와 부족한 영양소를 한 문장으로 짚어.
+                2. 부족한 영양소를 채울 다음 식사 메뉴를 하나 추천해.
+                   - 집이나 식당에서 평소에 먹는 일반 메뉴 중에서 골라.
+                   - 이번 추천은 {cuisine} 메뉴 중에서, 가능하면 {dishForm} 형태로 골라.
+                   - 닭가슴살·샐러드 같은 다이어트 식단은 이 식사에 그 영양소가 정말 부족할 때만 추천해.
             """
 
         private val RESPONSE_SCHEMA = mapOf(
@@ -87,7 +94,11 @@ class GeminiNutritionAnalysisClient(
         val icons = iconService.getIcons()
         val iconsJson = objectMapper.writeValueAsString(icons)
 
-        val prompt = "$PROMPT 음식 아이콘 목록은 다음과 같아: $iconsJson 만약 뚜렷하게 맞는 것이 없으면 5(밥)를 골라줘."
+        // 다음 식사 추천이 한 메뉴로 몰리지 않게 음식 종류와 메뉴 형태를 요청마다 무작위로 정한다.
+        val promptWithRecommendation = PROMPT
+            .replace("{cuisine}", RECOMMENDATION_CUISINES.random())
+            .replace("{dishForm}", RECOMMENDATION_DISH_FORMS.random())
+        val prompt = "$promptWithRecommendation 음식 아이콘 목록은 다음과 같아: $iconsJson 만약 뚜렷하게 맞는 것이 없으면 5(밥)를 골라줘."
 
         val requestBody = mapOf(
             "contents" to listOf(
