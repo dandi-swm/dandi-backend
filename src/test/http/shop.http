@@ -60,3 +60,18 @@ Content-Type: application/json
 ### 장바구니 빼기 API
 DELETE {{url}}/api/v1/shop/cart/items?productIds=117,121
 Authorization: Bearer {{accessToken}}
+
+### 구매 API
+# Idempotency-Key는 구매 버튼을 누를 때마다 새로 만들고, 재시도할 때만 같은 값을 보낸다
+POST {{url}}/api/v1/shop/purchases
+Authorization: Bearer {{accessToken}}
+Idempotency-Key: {{$random.uuid}}
+Content-Type: application/json
+
+{
+  "products": [
+    { "productId": 117, "quantity": 2, "purchasePrice": 150 },
+    { "productId": 121, "quantity": 1, "purchasePrice": 320 },
+    { "productId": 133, "quantity": 1, "purchasePrice": 1000 }
+  ]
+}
