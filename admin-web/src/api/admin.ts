@@ -58,12 +58,14 @@ export type AdminIcons = { icons: AdminIcon[] };
 export const ICON_NAME_MAX = 100;
 export const ICON_IMAGE_MAX_BYTES = 512 * 1024;
 
-export type RoomItemCategory = "BACKGROUND" | "BED" | "ETC";
+export type RoomItemCategory = "BACKGROUND" | "BED" | "CAT_WHEEL" | "RUG" | "ETC";
 
 export const ROOM_ITEM_CATEGORY_LABELS: Record<RoomItemCategory, string> = {
   BACKGROUND: "배경",
   BED: "침대",
-  ETC: "기타",
+  CAT_WHEEL: "캣휠",
+  RUG: "러그",
+  ETC: "소품",
 };
 
 /**
