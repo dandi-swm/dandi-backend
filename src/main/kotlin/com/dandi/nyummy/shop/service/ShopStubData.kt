@@ -92,7 +92,7 @@ internal object ShopStubData {
      * 진행 중인 프로모션. 배너 한 장이 프로모션 하나를 알리고, 누르면 그 상품 목록을 연다.
      *
      * @property productIds 목록에 보일 상품. 이 순서대로 진열한다
-     * @property titleColor 배너 그림에 맞춘 제목 색(hex)
+     * @property titleColor 배너 그림에 맞춘 제목 색 토큰. 어두운 그림 위에서는 contentOnInverse
      */
     data class StubPromotion(
         val promotionId: Long,
@@ -112,8 +112,8 @@ internal object ShopStubData {
             title = "신입 집사 환영",
             description = "가입하고 7일 동안 스타터 묶음 50% 할인",
             imageUrl = "https://cdn.nyummy.co.kr/shop/banners/new-butler.png",
-            titleColor = "#2F3A2E",
-            descriptionColor = "#5B6658",
+            titleColor = "contentPrimary",
+            descriptionColor = "contentSecondary",
             productIds = listOf(301, 117, 101),
         ),
         StubPromotion(
@@ -122,8 +122,8 @@ internal object ShopStubData {
             title = "첫 구매 혜택",
             description = "처음 사는 가구는 20% 할인",
             imageUrl = "https://cdn.nyummy.co.kr/shop/banners/first-purchase.png",
-            titleColor = "#FFFFFF",
-            descriptionColor = "#FFE7C2",
+            titleColor = "contentOnInverse",
+            descriptionColor = "contentOnInverse",
             productIds = listOf(121, 115),
         ),
         StubPromotion(
@@ -132,8 +132,8 @@ internal object ShopStubData {
             title = "다시 만나 반가워요",
             description = "돌아온 집사를 위한 가구 모음",
             imageUrl = "https://cdn.nyummy.co.kr/shop/banners/welcome-back.png",
-            titleColor = "#FFFFFF",
-            descriptionColor = "#F2F2F2",
+            titleColor = "contentOnInverse",
+            descriptionColor = "contentOnInverse",
             productIds = listOf(114, 127, 123),
         ),
     )

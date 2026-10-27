@@ -66,7 +66,7 @@ data class HeroBannerContentResponse(val banners: List<ShopBannerResponse>)
  *
  * @property imageUrl 배너 그림 주소. 7:4이고 그림 안에 글자가 없다
  * @property cornerStyle 배너 모서리 모양. 추천 탭은 ROUNDED, 프로모션 화면 맨 위는 SQUARE
- * @property title 큰 제목. 그림에 맞춘 색을 쓰도록 color에 hex(#RRGGBB)가 올 수 있다
+ * @property title 큰 제목. 배너 그림에 맞춰 색 토큰을 고른다(어두운 그림 위에서는 contentOnInverse)
  * @property description 제목 아래 한 줄. 없으면 null
  * @property action 누르면 그 프로모션 화면(/shop/promotions/{promotionId})을 연다. 프로모션 화면 맨 위 배너는 null
  */
@@ -118,7 +118,7 @@ data class ShopItemResponse(
  *
  * @property text 글자. 아이콘 조각이면 null
  * @property typeScale 글자 토큰(displayM, titleS, labelS, numberS). 모르는 값이면 앱이 bodyM으로 그린다
- * @property color 색 토큰(contentPrimary, contentSecondary, contentTertiary, contentPromo) 또는 hex(#RRGGBB). 배너 글자는 그림에 맞춰 hex를 쓴다
+ * @property color 색 토큰(contentPrimary, contentSecondary, contentTertiary, contentPromo, contentOnInverse). 모르는 값이면 앱이 contentPrimary로 그린다
  * @property icon 아이콘 조각(coin, clock, chevronRight). clock, chevronRight는 [color]로 색을 정한다
  * @property strike 취소선. null이면 없음
  */
