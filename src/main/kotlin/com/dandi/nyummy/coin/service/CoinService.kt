@@ -1,5 +1,7 @@
 package com.dandi.nyummy.coin.service
 
+import com.dandi.nyummy.coin.dto.CoinHistoriesResponse
+import com.dandi.nyummy.coin.dto.CoinHistoryResponse
 import com.dandi.nyummy.coin.entity.CoinHistory
 import com.dandi.nyummy.coin.enum.CoinHistoryCategory
 import com.dandi.nyummy.coin.repository.CoinHistoryRepository
@@ -7,6 +9,7 @@ import com.dandi.nyummy.coin.repository.CoinRepository
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.time.Instant
 
 @Service
 class CoinService(
@@ -71,4 +74,42 @@ class CoinService(
 
         return coin.balance
     }
+
+    /**
+     * 사용자의 코인 내역을 최신순으로 [size]개씩 조회한다. 무한 스크롤용 cursor 방식이다.
+     *
+     * 지금은 해피케이스라 요청과 관계없이 고정 내역을 반환한다. 실제 조회는 coin_histories의 (user_id, id) 인덱스로 붙인다.
+     *
+     * @param cursor 직전 묶음의 마지막 coinHistoryId. null이면 가장 최신 내역부터 조회한다
+     */
+    fun getCoinHistories(userId: Long, cursor: Long?, size: Int): CoinHistoriesResponse = CoinHistoriesResponse(
+        coinHistories = listOf(
+            CoinHistoryResponse(
+                coinHistoryId = 511,
+                category = CoinHistoryCategory.ROOM_ITEM_PURCHASE,
+                title = "발바닥 방석 외 2개 구매",
+                quantity = -1620,
+                balanceAfter = 860,
+                createdAt = Instant.parse("2026-10-23T06:00:00Z"),
+            ),
+            CoinHistoryResponse(
+                coinHistoryId = 498,
+                category = CoinHistoryCategory.MAIL_CLAIM,
+                title = "우편 받기",
+                quantity = 300,
+                balanceAfter = 2480,
+                createdAt = Instant.parse("2026-10-22T09:00:00Z"),
+            ),
+            CoinHistoryResponse(
+                coinHistoryId = 476,
+                category = CoinHistoryCategory.MAIL_CLAIM,
+                title = "우편 받기",
+                quantity = 150,
+                balanceAfter = 2180,
+                createdAt = Instant.parse("2026-10-21T12:00:00Z"),
+            ),
+        ),
+        nextCursor = null,
+        hasNext = false,
+    )
 }

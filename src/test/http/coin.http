@@ -1,0 +1,3 @@
+### 코인 내역 조회 API
+GET {{url}}/api/v1/coins/histories?size=20
+Authorization: Bearer {{accessToken}}
