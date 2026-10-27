@@ -176,9 +176,21 @@
 
 ### 마이룸
 
-- 마이룸 `Room`(MyRoom 금지), 마이룸 아이템 `RoomItem`(Furniture·Decoration 금지)
+- 마이룸 `Room`(MyRoom 금지), 마이룸 아이템 `RoomItem`(Furniture·Decoration 금지), 아이템 분류 `RoomItemCategory` — 러그는 `RUG`(Carpet 금지), 소품은 `ETC`
 - 보유 아이템 `OwnedRoomItem` — 구매한 한 개. 같은 상품을 여러 개 사면 각각 따로이고 식별자 `ownedRoomItemId`는 그 한 개를 가리킨다(Inventory·UserItem 금지, roomItemId 금지 — 상품 id `itemId`와 헷갈림)
 - 장착 `Equipped`(`isEquipped`, `equippedRoomItems`, Placement·Placed 금지), 배율 `Scale`(Size 금지 — 페이지 size와 충돌), 쌓임 순서 `ZIndex`(Order·Layer 금지)
+
+### 상점
+
+- 상점 `Shop`(Store 금지 — 앱스토어와 혼동), 탭 `ShopTab`, 인테리어 탭의 분류 칩 `ShopCategory` — 아이템 분류 `RoomItemCategory`와 다른 enum(`LIMITED`는 판매 방식이라 칩에만 있다)
+- 판매 단위 `Product`(`productId`, 단품·세트 공통) — 게임 아이템 `Item`(`itemId`)과 다른 것. 정렬 기준 `ProductSort`
+- 장바구니 `Cart`, 장바구니 한 항목 `CartItem`(Basket·Bag 금지), 장바구니 결제 정보 `summary`, 담긴 상품 종류 수 `cartItemCount`·선택된 수 `selectedItemCount`
+- 1개 결제가(할인 적용) `purchasePrice`, 정가 `listPrice`, 할인된 코인 `discountPrice`(Sale 금지 — 판매 기간 `saleEndsAt`과 혼동), 기간 한정 `isLimited`
+- 담을 수 있는 최대 수량 `maxQuantity`, 선택 `isSelected`, 구매 가능 `canPurchase`, 불가 사유 `unavailableReason`
+- 보유 개수 `ownedCount` — SDUI 규격 필드라 Count를 쓴다. 우편 지급 개수 `Quantity`와 다른 뜻
+- SDUI: 화면 `pageKey`, 칸 목록 `sduiComponents`, 칸 종류 `viewType`과 내용 `content`, 꾸민 글자 `RichText`, 상품 태그 `Tag`(색 `TagTone`), 누르면 할 일 `Action`(`actionType`). `viewType`·`actionType`은 앱과 맞춘 규격 이름이라 Type을 그대로 쓴다. 상품 카드 공통 객체 `ShopItem`
+- 프로모션 `Promotion`(Event·Campaign 금지) — 신입 집사 환영·첫 구매 혜택처럼 기간·대상을 정해 상품을 묶어 파는 것. 이를 알리는 배너 `ShopBanner`(SDUI 칸 이름 `HeroBanner`와 구분), 배너 모서리 `cornerStyle`(`BannerCornerStyle`)
+- 앱(Remote Config)이 정한 A/B 그룹 `Variant`(Test·Group·Bucket 금지). 추천 탭 배치 그룹은 헤더 `X-Shop-Layout-Variant`로 받는다
 
 ### 관측
 
