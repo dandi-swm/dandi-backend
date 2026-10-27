@@ -68,7 +68,7 @@ data class HeroBannerContentResponse(val banners: List<ShopBannerResponse>)
  * @property cornerStyle 배너 모서리 모양. 추천 탭은 ROUNDED, 프로모션 화면 맨 위는 SQUARE
  * @property title 큰 제목. 배너 그림에 맞춰 색 토큰을 고른다(어두운 그림 위에서는 contentOnInverse)
  * @property description 제목 아래 한 줄. 없으면 null
- * @property price 할인 프로모션의 대표 상품 가격 글자(할인율, 코인, 할인가, 취소선 정가). 할인 프로모션이 아니면 null
+ * @property price 프로모션 상품 전체를 묶음으로 본 가격 글자(할인율, 코인, 결제가 합, 취소선 정가 합). 할인이 없으면 null
  * @property action 누르면 그 프로모션 화면(/shop/promotions/{promotionId})을 연다. 프로모션 화면 맨 위 배너는 null
  */
 data class ShopBannerResponse(

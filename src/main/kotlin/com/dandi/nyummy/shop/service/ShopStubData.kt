@@ -74,8 +74,6 @@ internal object ShopStubData {
         StubProduct(133, 33, "민트 체크 방", RoomItemCategory.BACKGROUND, 1000, salesCount = 35),
         StubProduct(134, 34, "별빛 다락방", RoomItemCategory.BACKGROUND, 1200, isLimited = true, salesCount = 25),
         StubProduct(135, 35, "벚꽃 방", RoomItemCategory.BACKGROUND, 1200, isNew = true, salesCount = 5),
-        // 세트(돔 고양이 침대 + 발바닥 방석 + 플로어 조명). 카드 그림은 대표 아이템인 돔 고양이 침대다.
-        StubProduct(301, 11, "새 집사 스타터 묶음", RoomItemCategory.BED, 1200, purchasePrice = 600, salesCount = 20),
     )
 
     val productsById = products.associateBy { it.productId }
@@ -91,8 +89,7 @@ internal object ShopStubData {
     /**
      * 진행 중인 프로모션. 배너 한 장이 프로모션 하나를 알리고, 누르면 그 상품 목록을 연다.
      *
-     * @property productIds 목록에 보일 상품. 이 순서대로 진열한다
-     * @property representativeProductId 할인 프로모션이면 배너 가격표에 보일 대표 상품. 할인 프로모션이 아니면 null
+     * @property products 목록에 보일 상품. 이 순서대로 진열한다
      * @property titleColor 배너 그림에 맞춘 제목 색 토큰. 어두운 그림 위에서는 contentOnInverse
      */
     data class StubPromotion(
@@ -103,21 +100,30 @@ internal object ShopStubData {
         val imageUrl: String,
         val titleColor: String,
         val descriptionColor: String,
-        val productIds: List<Long>,
-        val representativeProductId: Long? = null,
+        val products: List<StubPromotionProduct>,
     )
+
+    /**
+     * 프로모션에 진열한 상품 하나.
+     *
+     * @property purchasePrice 이 프로모션에서 파는 1개 가격. null이면 상품의 평소 결제가 그대로
+     */
+    data class StubPromotionProduct(val productId: Long, val purchasePrice: Int? = null)
 
     val promotions = listOf(
         StubPromotion(
             promotionId = 3,
             bannerId = 21,
             title = "신입 집사 환영",
-            description = "가입하고 7일 동안 스타터 묶음 50% 할인",
+            description = "가입하고 7일 동안 가구 30% 할인",
             imageUrl = "https://cdn.nyummy.co.kr/shop/banners/new-butler.png",
             titleColor = "contentPrimary",
             descriptionColor = "contentSecondary",
-            productIds = listOf(301, 117, 101),
-            representativeProductId = 301,
+            products = listOf(
+                StubPromotionProduct(productId = 101, purchasePrice = 455),
+                StubPromotionProduct(productId = 117, purchasePrice = 105),
+                StubPromotionProduct(productId = 127, purchasePrice = 280),
+            ),
         ),
         StubPromotion(
             promotionId = 4,
@@ -127,8 +133,7 @@ internal object ShopStubData {
             imageUrl = "https://cdn.nyummy.co.kr/shop/banners/first-purchase.png",
             titleColor = "contentOnInverse",
             descriptionColor = "contentOnInverse",
-            productIds = listOf(121, 115),
-            representativeProductId = 121,
+            products = listOf(StubPromotionProduct(productId = 121), StubPromotionProduct(productId = 115)),
         ),
         StubPromotion(
             promotionId = 5,
@@ -138,11 +143,23 @@ internal object ShopStubData {
             imageUrl = "https://cdn.nyummy.co.kr/shop/banners/welcome-back.png",
             titleColor = "contentOnInverse",
             descriptionColor = "contentOnInverse",
-            productIds = listOf(114, 127, 123),
+            products = listOf(
+                StubPromotionProduct(productId = 114),
+                StubPromotionProduct(productId = 127),
+                StubPromotionProduct(productId = 123),
+            ),
         ),
     )
 
     val promotionsById = promotions.associateBy { it.promotionId }
+
+    // 프로모션 화면에 보일 판매 중인 상품. 프로모션 가격이 있으면 그 가격으로 바꿔 둔다.
+    fun StubPromotion.toPromotionProducts(): List<StubProduct> = products
+        .map { promotionProduct ->
+            val product = productsById.getValue(promotionProduct.productId)
+            promotionProduct.purchasePrice?.let { product.copy(purchasePrice = it) } ?: product
+        }
+        .filter { it.isOnSale }
 
     // 추천 탭 배너는 둥근 모서리이고, 누르면 그 프로모션 화면을 연다
     fun createHeroBanner(): HeroBannerComponentResponse = HeroBannerComponentResponse(
@@ -173,11 +190,18 @@ internal object ShopStubData {
         description = listOf(
             RichTextResponse(text = promotion.description, typeScale = "labelS", color = promotion.descriptionColor),
         ),
-        price = promotion.representativeProductId
-            ?.let { productsById.getValue(it) }
-            ?.let { createPriceText(it.listPrice, it.purchasePrice) },
+        price = createPromotionPriceText(promotion),
         action = action,
     )
+
+    // 프로모션 상품 전체를 묶음으로 본 가격. 정가 합보다 결제가 합이 낮을 때만 할인율과 함께 보여주고, 할인이 없으면 null이다.
+    private fun createPromotionPriceText(promotion: StubPromotion): List<RichTextResponse>? {
+        val products = promotion.toPromotionProducts()
+        val listPrice = products.sumOf { it.listPrice }
+        val purchasePrice = products.sumOf { it.purchasePrice }
+        if (purchasePrice >= listPrice) return null
+        return createPriceText(listPrice, purchasePrice)
+    }
 
     fun createNavigateAction(path: String): ActionResponse =
         ActionResponse(actionType = "navigate", navigateLink = LINK + path, message = null)

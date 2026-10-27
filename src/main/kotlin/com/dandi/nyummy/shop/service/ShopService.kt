@@ -20,6 +20,7 @@ import com.dandi.nyummy.shop.enum.ProductSort
 import com.dandi.nyummy.shop.enum.ShopCategory
 import com.dandi.nyummy.shop.enum.ShopTab
 import com.dandi.nyummy.shop.service.ShopStubData.StubProduct
+import com.dandi.nyummy.shop.service.ShopStubData.toPromotionProducts
 import com.dandi.nyummy.shop.service.ShopStubData.toShopItemResponse
 import org.springframework.stereotype.Service
 
@@ -121,7 +122,7 @@ class ShopService {
     fun getPromotionProducts(userId: Long, promotionId: Long, cursor: Long?, size: Int): PromotionProductsResponse {
         val promotion = ShopStubData.promotionsById[promotionId]
             ?: throw BusinessException(ShopErrorCode.PROMOTION_NOT_FOUND)
-        val products = promotion.productIds.map { ShopStubData.productsById.getValue(it) }.filter { it.isOnSale }
+        val products = promotion.toPromotionProducts()
 
         val page = createPage(products, cursor, size)
         return PromotionProductsResponse(
