@@ -191,6 +191,7 @@
 - SDUI: 화면 `pageKey`, 칸 목록 `sduiComponents`, 칸 종류 `viewType`과 내용 `content`, 꾸민 글자 `RichText`, 상품 태그 `Tag`(색 `TagTone`), 누르면 할 일 `Action`(`actionType`). `viewType`·`actionType`은 앱과 맞춘 규격 이름이라 Type을 그대로 쓴다. 상품 카드 공통 객체 `ShopItem`
 - 프로모션 `Promotion`(Event·Campaign 금지) — 신입 집사 환영·첫 구매 혜택처럼 기간·대상을 정해 상품을 묶어 파는 것. 이를 알리는 배너 `ShopBanner`(SDUI 칸 이름 `HeroBanner`와 구분), 배너 모서리 `cornerStyle`(`BannerCornerStyle`)
 - 앱(Remote Config)이 정한 A/B 그룹 `Variant`(Test·Group·Bucket 금지). 추천 탭 배치 그룹은 헤더 `X-Shop-Layout-Variant`로 받는다
+- 상점 구매 `ItemPurchase`(`itemPurchaseId`, Order 금지) — 1개 결제가 `purchasePrice`와 다른 개념. 재시도를 알아보는 키는 헤더 `Idempotency-Key`(RequestId·Nonce 금지)
 
 ### 관측
 
