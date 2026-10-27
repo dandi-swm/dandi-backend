@@ -92,6 +92,7 @@ internal object ShopStubData {
      * 진행 중인 프로모션. 배너 한 장이 프로모션 하나를 알리고, 누르면 그 상품 목록을 연다.
      *
      * @property productIds 목록에 보일 상품. 이 순서대로 진열한다
+     * @property representativeProductId 할인 프로모션이면 배너 가격표에 보일 대표 상품. 할인 프로모션이 아니면 null
      * @property titleColor 배너 그림에 맞춘 제목 색 토큰. 어두운 그림 위에서는 contentOnInverse
      */
     data class StubPromotion(
@@ -103,6 +104,7 @@ internal object ShopStubData {
         val titleColor: String,
         val descriptionColor: String,
         val productIds: List<Long>,
+        val representativeProductId: Long? = null,
     )
 
     val promotions = listOf(
@@ -115,6 +117,7 @@ internal object ShopStubData {
             titleColor = "contentPrimary",
             descriptionColor = "contentSecondary",
             productIds = listOf(301, 117, 101),
+            representativeProductId = 301,
         ),
         StubPromotion(
             promotionId = 4,
@@ -125,6 +128,7 @@ internal object ShopStubData {
             titleColor = "contentOnInverse",
             descriptionColor = "contentOnInverse",
             productIds = listOf(121, 115),
+            representativeProductId = 121,
         ),
         StubPromotion(
             promotionId = 5,
@@ -169,6 +173,9 @@ internal object ShopStubData {
         description = listOf(
             RichTextResponse(text = promotion.description, typeScale = "labelS", color = promotion.descriptionColor),
         ),
+        price = promotion.representativeProductId
+            ?.let { productsById.getValue(it) }
+            ?.let { createPriceText(it.listPrice, it.purchasePrice) },
         action = action,
     )
 

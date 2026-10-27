@@ -121,7 +121,7 @@ class ShopE2eTest {
         banners.firstOrNull()?.let { banner ->
             assertTrue(
                 banner.keys.containsAll(
-                    listOf("bannerId", "imageUrl", "cornerStyle", "title", "description", "action"),
+                    listOf("bannerId", "imageUrl", "cornerStyle", "title", "description", "price", "action"),
                 ),
                 "배너 필드가 빠졌습니다: ${banner.keys}",
             )
