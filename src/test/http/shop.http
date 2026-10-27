@@ -1,0 +1,62 @@
+### 상점 조회 API
+GET {{url}}/api/v1/shop/pages/recommend
+Authorization: Bearer {{accessToken}}
+X-Shop-Layout-Variant: {{shopLayoutVariant}}
+
+### 상품 목록 조회 API (인테리어, 인기순)
+GET {{url}}/api/v1/shop/products?tab=INTERIOR&sort=POPULAR&size=3
+Authorization: Bearer {{accessToken}}
+
+### 상품 목록 조회 API (인테리어, 기간 한정 칩)
+GET {{url}}/api/v1/shop/products?tab=INTERIOR&category=LIMITED
+Authorization: Bearer {{accessToken}}
+
+### 상품 목록 조회 API (방 배경, 가격 높은 순)
+GET {{url}}/api/v1/shop/products?tab=BACKGROUND&sort=PRICE_DESC
+Authorization: Bearer {{accessToken}}
+
+### 프로모션 상품 목록 조회 API (배너 링크 /shop/promotions/{promotionId})
+@promotionId = 3
+GET {{url}}/api/v1/shop/promotions/{{promotionId}}/products
+Authorization: Bearer {{accessToken}}
+
+### 상단 바 조회 API
+GET {{url}}/api/v1/shop/me
+Authorization: Bearer {{accessToken}}
+
+### 장바구니 조회 API
+GET {{url}}/api/v1/shop/cart
+Authorization: Bearer {{accessToken}}
+
+### 장바구니 담기 API
+POST {{url}}/api/v1/shop/cart/items
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "productId": 115,
+  "quantity": 2
+}
+
+### 장바구니 수량 변경 API
+@productId = 117
+PUT {{url}}/api/v1/shop/cart/items/{{productId}}
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "quantity": 3
+}
+
+### 장바구니 선택 변경 API
+PUT {{url}}/api/v1/shop/cart/selection
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "productIds": [117, 121]
+}
+
+### 장바구니 빼기 API
+DELETE {{url}}/api/v1/shop/cart/items?productIds=117,121
+Authorization: Bearer {{accessToken}}

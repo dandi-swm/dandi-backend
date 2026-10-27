@@ -11,6 +11,7 @@ import com.dandi.nyummy.exception.errorcode.MailErrorCode
 import com.dandi.nyummy.exception.errorcode.MealErrorCode
 import com.dandi.nyummy.exception.errorcode.RoomErrorCode
 import com.dandi.nyummy.exception.errorcode.S3ErrorCode
+import com.dandi.nyummy.exception.errorcode.ShopErrorCode
 import com.dandi.nyummy.exception.errorcode.UserErrorCode
 
 /**
@@ -38,5 +39,6 @@ annotation class ApiErrorCodes(
     val meal: Array<MealErrorCode> = [],
     val room: Array<RoomErrorCode> = [],
     val s3: Array<S3ErrorCode> = [],
+    val shop: Array<ShopErrorCode> = [],
     val user: Array<UserErrorCode> = [],
 )
