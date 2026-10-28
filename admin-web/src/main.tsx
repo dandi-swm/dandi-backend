@@ -9,6 +9,7 @@ import { LinksPage } from "./pages/LinksPage";
 import { InquiryDetailPage } from "./pages/InquiryDetailPage";
 import { InquiryListPage } from "./pages/InquiryListPage";
 import { LoginPage } from "./pages/LoginPage";
+import { ProductListPage } from "./pages/ProductListPage";
 import { RoomItemListPage } from "./pages/RoomItemListPage";
 import "./styles.css";
 
@@ -42,6 +43,7 @@ const router = createBrowserRouter(
       { path: "/inquiries/:inquiryId", element: <InquiryDetailPage /> },
       { path: "/icons", element: <IconListPage /> },
       { path: "/room-items", element: <RoomItemListPage /> },
+      { path: "/products", element: <ProductListPage /> },
     ],
   },
   ],

@@ -385,6 +385,7 @@ button.primary:disabled {
 
 .form input[type="text"],
 .form input[type="number"],
+.form input[type="datetime-local"],
 .form select {
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -546,4 +547,28 @@ button.secondary:disabled {
   overflow-x: auto;
   white-space: nowrap;
   user-select: all;
+}
+
+.form label.checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 상품 구성품 고르기. 고른 아이템은 테두리로 표시한다. */
+.grid.picker {
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.thumb-card.pick {
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.thumb-card.pick.selected {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary);
 }

@@ -166,3 +166,66 @@ export function updateRoomItemImage(itemId: number, image: File) {
 
   return request<AdminRoomItem>(`${PREFIX}/room-items/${itemId}/image`, { method: "PUT", body });
 }
+
+/** 상품의 구성품. imageUrl은 앱과 같은 규칙(CDN 주소 + /items/{itemId}.png)의 미리보기 주소다. */
+export type AdminProductItem = { itemId: number; name: string; listPrice: number; imageUrl: string };
+
+/**
+ * 상품(판매 단위). 구성품이 하나면 단품, 여럿이면 세트다. price는 1개 정가이고, 할인가는 프로모션이 정한다.
+ * 정가·분류·구성품·대표 구성품은 만든 뒤 바꿀 수 없다.
+ */
+export type AdminProduct = {
+  productId: number;
+  name: string;
+  category: RoomItemCategory;
+  representativeItemId: number;
+  imageUrl: string;
+  price: number;
+  isLimited: boolean;
+  saleStartsAt: string;
+  saleEndsAt: string | null;
+  purchaseLimit: number | null;
+  salesCount: number;
+  items: AdminProductItem[];
+  createdAt: string;
+};
+
+export type AdminProducts = { products: AdminProduct[] };
+
+export type CreateProductInput = {
+  name: string;
+  category: RoomItemCategory;
+  representativeItemId: number;
+  price: number;
+  isLimited: boolean;
+  saleStartsAt: string;
+  saleEndsAt: string | null;
+  purchaseLimit: number | null;
+  items: { itemId: number; listPrice: number }[];
+};
+
+export type UpdateProductInput = {
+  name: string;
+  isLimited: boolean;
+  saleStartsAt: string;
+  saleEndsAt: string | null;
+  purchaseLimit: number | null;
+};
+
+/** 서버 검사와 같은 값. 화면은 먼저 안내만 하고, 기준은 서버다. */
+export const PRODUCT_NAME_MAX = 100;
+export const PRODUCT_ITEMS_MAX = 20;
+
+export function getProducts(category?: RoomItemCategory) {
+  const params = new URLSearchParams();
+  if (category) params.set("category", category);
+
+  return request<AdminProducts>(`${PREFIX}/products?${params}`);
+}
+
+export const createProduct = (input: CreateProductInput) =>
+  request<AdminProduct>(`${PREFIX}/products`, { method: "POST", body: JSON.stringify(input) });
+
+/** 이름·기간 한정·판매 기간·1인 구매 한도를 보낸 값으로 통째로 바꾼다(PUT). 판매 중지는 saleEndsAt에 지금 시각을 보낸다. */
+export const updateProduct = (productId: number, input: UpdateProductInput) =>
+  request<AdminProduct>(`${PREFIX}/products/${productId}`, { method: "PUT", body: JSON.stringify(input) });
