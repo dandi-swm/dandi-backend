@@ -103,7 +103,7 @@
 - 운영자 `Admin`(패키지 admin, 경로 상수 `AdminPaths.PREFIX` = `/admin/api`, 에러 코드 `api.admin.*`). Manager·Operator·Backoffice 금지. 배치 API `Internal`과 다른 것. 어드민 서비스에서만 만드는 빈은 `@ConditionalOnAdminEnabled`(`app.admin.enabled`). 어드민 웹 화면 `admin-web`(폴더, 경로 상수 `AdminPaths.WEB_PREFIX` = `/admin` — API 접두 `PREFIX`와 구분)
 - 커서 `Cursor` — 무한 스크롤 기준점(직전 묶음의 마지막 id), 응답은 `nextCursor` + `hasNext`. 페이지 번호 방식은 `Offset`
 - 허용 오차 `Tolerance` — 목표 대비 비율(0.2 = ±20%). Margin·Threshold 금지
-- 노출 비율·뽑힐 확률 `Rate` — 0~100 정수 퍼센트. Ratio·Percentage·Chance·Probability·Sampling 금지
+- 노출 비율·뽑힐 확률·할인율 `Rate` — 0~100 정수 퍼센트. Ratio·Percentage·Chance·Probability·Sampling 금지
 - 비관적 잠금 조회 `~WithLock~`(`findProfileWithLockByUserId`, ForUpdate·Locked 금지)
 - E2E: 테스트 클래스 `~E2eTest`(source set `e2eTest`), 공유 준비 상태 `Fixture`(Setup·Helper 금지), 남의 리소스를 확인하는 두 번째 계정 `Other`(Second·Another·Stranger 금지), REST Assured 요청 명세 `Spec`(Template·Builder 금지), prod 전환 전 최소 시나리오 `Smoke`(Sanity 금지)
 
@@ -184,12 +184,15 @@
 
 - 상점 `Shop`(Store 금지 — 앱스토어와 혼동), 탭 `ShopTab`, 인테리어 탭의 분류 칩 `ShopCategory` — 아이템 분류 `RoomItemCategory`와 다른 enum(`LIMITED`는 판매 방식이라 칩에만 있다)
 - 판매 단위 `Product`(`productId`, 단품·세트 공통) — 게임 아이템 `Item`(`itemId`)과 다른 것. 정렬 기준 `ProductSort`
+- 상품의 구성품 `ProductItem`(Component·Part 금지), 카드에 그릴 대표 구성품 `representativeItemId`(Thumbnail·Main 금지)
+- 판매 기간 `saleStartsAt`·`saleEndsAt`, 1인 구매 한도 `purchaseLimit`(담을 수 있는 최대 수량 `maxQuantity`와 다른 뜻), 최근 판매량 `salesCount`(우편 지급 개수 `Quantity`와 다른 뜻)
 - 장바구니 `Cart`, 장바구니 한 항목 `CartItem`(Basket·Bag 금지), 장바구니 결제 정보 `summary`, 담긴 상품 종류 수 `cartItemCount`·선택된 수 `selectedItemCount`
 - 1개 결제가(할인 적용) `purchasePrice`, 정가 `listPrice`, 할인된 코인 `discountPrice`(Sale 금지 — 판매 기간 `saleEndsAt`과 혼동), 기간 한정 `isLimited`
 - 담을 수 있는 최대 수량 `maxQuantity`, 선택 `isSelected`, 구매 가능 `canPurchase`, 불가 사유 `unavailableReason`
 - 보유 개수 `ownedCount` — SDUI 규격 필드라 Count를 쓴다. 우편 지급 개수 `Quantity`와 다른 뜻
 - SDUI: 화면 `pageKey`, 칸 목록 `sduiComponents`, 칸 종류 `viewType`과 내용 `content`, 꾸민 글자 `RichText`, 상품 태그 `Tag`(색 `TagTone`), 누르면 할 일 `Action`(`actionType`). `viewType`·`actionType`은 앱과 맞춘 규격 이름이라 Type을 그대로 쓴다. 상품 카드 공통 객체 `ShopItem`
-- 프로모션 `Promotion`(Event·Campaign 금지) — 신입 집사 환영·첫 구매 혜택처럼 기간·대상을 정해 상품을 묶어 파는 것. 이를 알리는 배너 `ShopBanner`(SDUI 칸 이름 `HeroBanner`와 구분), 배너 모서리 `cornerStyle`(`BannerCornerStyle`)
+- 프로모션 `Promotion`(Event·Campaign 금지) — 신입 집사 환영·첫 구매 혜택처럼 기간·대상을 정해 상품을 묶어 파는 것. 이를 알리는 배너 `ShopBanner`(SDUI 칸 이름 `HeroBanner`와 구분), 배너 모서리 `cornerStyle`(`BannerCornerStyle`), 글자색 `titleColor`·`descriptionColor`(SDUI 색 토큰 이름, TextColor·FontColor 금지)
+- 프로모션 대상 `PromotionCategory`(Target 금지 — 알림 발송 대상과 충돌) — 분류 칩 `ShopCategory`·아이템 분류 `RoomItemCategory`와 다른 enum. 할인율 `discountRate`, 진열 순서 `displayOrder`(마이룸 쌓임 순서 `ZIndex`와 구분)
 - 앱(Remote Config)이 정한 A/B 그룹 `Variant`(Test·Group·Bucket 금지). 추천 탭 배치 그룹은 헤더 `X-Shop-Layout-Variant`로 받는다
 - 상점 구매 `ItemPurchase`(`itemPurchaseId`, Order 금지) — 1개 결제가 `purchasePrice`와 다른 개념. 재시도를 알아보는 키는 헤더 `Idempotency-Key`(RequestId·Nonce 금지)
 
