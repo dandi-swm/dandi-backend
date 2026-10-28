@@ -33,6 +33,7 @@ export function AdminLayout() {
           <Link to="/icons">음식 아이콘</Link>
           <Link to="/room-items">마이룸 아이템</Link>
           <Link to="/products">상품</Link>
+          <Link to="/promotions">프로모션</Link>
         </nav>
         <div className="me">
           <span>{me.data.name}</span>

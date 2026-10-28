@@ -229,3 +229,74 @@ export const createProduct = (input: CreateProductInput) =>
 /** 이름·기간 한정·판매 기간·1인 구매 한도를 보낸 값으로 통째로 바꾼다(PUT). 판매 중지는 saleEndsAt에 지금 시각을 보낸다. */
 export const updateProduct = (productId: number, input: UpdateProductInput) =>
   request<AdminProduct>(`${PREFIX}/products/${productId}`, { method: "PUT", body: JSON.stringify(input) });
+
+export type PromotionCategory = "NEW_USER" | "FIRST_PURCHASE" | "RETURNING_USER" | "DAILY" | "GENERAL";
+
+export const PROMOTION_CATEGORY_LABELS: Record<PromotionCategory, string> = {
+  NEW_USER: "신입 집사",
+  FIRST_PURCHASE: "첫 구매",
+  RETURNING_USER: "복귀 집사",
+  DAILY: "오늘의 할인",
+  GENERAL: "모든 사용자",
+};
+
+/** 프로모션에 진열한 상품. purchasePrice는 이 프로모션의 할인율만 적용한 1개 결제가다. */
+export type AdminPromotionProduct = {
+  productId: number;
+  name: string;
+  imageUrl: string;
+  listPrice: number;
+  purchasePrice: number;
+  saleStartsAt: string;
+  saleEndsAt: string | null;
+};
+
+/** 프로모션. discountRate가 null이면 할인 없이 상품만 묶는다. category(대상)는 만든 뒤 바꿀 수 없다. */
+export type AdminPromotion = {
+  promotionId: number;
+  name: string;
+  category: PromotionCategory;
+  discountRate: number | null;
+  startsAt: string;
+  endsAt: string | null;
+  products: AdminPromotionProduct[];
+  createdAt: string;
+};
+
+export type AdminPromotions = { promotions: AdminPromotion[] };
+
+export type CreatePromotionInput = {
+  name: string;
+  category: PromotionCategory;
+  discountRate: number | null;
+  startsAt: string;
+  endsAt: string | null;
+  productIds: number[];
+};
+
+export type UpdatePromotionInput = {
+  name: string;
+  discountRate: number | null;
+  startsAt: string;
+  endsAt: string | null;
+};
+
+/** 서버 검사와 같은 값. 화면은 먼저 안내만 하고, 기준은 서버다. */
+export const PROMOTION_NAME_MAX = 100;
+export const PROMOTION_PRODUCTS_MAX = 100;
+
+export const getPromotions = () => request<AdminPromotions>(`${PREFIX}/promotions`);
+
+export const createPromotion = (input: CreatePromotionInput) =>
+  request<AdminPromotion>(`${PREFIX}/promotions`, { method: "POST", body: JSON.stringify(input) });
+
+/** 이름·할인율·기간을 보낸 값으로 통째로 바꾼다(PUT). 끝낼 때는 endsAt에 지금 시각을 보낸다. */
+export const updatePromotion = (promotionId: number, input: UpdatePromotionInput) =>
+  request<AdminPromotion>(`${PREFIX}/promotions/${promotionId}`, { method: "PUT", body: JSON.stringify(input) });
+
+/** 진열 상품을 보낸 목록으로 통째로 바꾼다. 목록 순서가 진열 순서다. */
+export const updatePromotionProducts = (promotionId: number, productIds: number[]) =>
+  request<AdminPromotion>(`${PREFIX}/promotions/${promotionId}/products`, {
+    method: "PUT",
+    body: JSON.stringify({ productIds }),
+  });
