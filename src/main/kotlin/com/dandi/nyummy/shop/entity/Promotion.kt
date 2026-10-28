@@ -1,5 +1,7 @@
 package com.dandi.nyummy.shop.entity
 
+import com.dandi.nyummy.exception.BusinessException
+import com.dandi.nyummy.exception.errorcode.CommonErrorCode
 import com.dandi.nyummy.shop.enum.PromotionCategory
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
@@ -57,4 +59,39 @@ class Promotion(
     @LastModifiedDate
     @Column(name = "updated_at", nullable = false)
     var updatedAt: Instant = Instant.now()
+
+    companion object {
+        /**
+         * 기간 [startsAt, endsAt)이 비어 있지 않은지 확인한다. [endsAt]이 null이면 종료일이 없다.
+         *
+         * @throws BusinessException [CommonErrorCode.INVALID_INPUT_VALUE] 종료 시각이 시작 시각과 같거나 앞인 경우
+         */
+        fun validatePeriod(startsAt: Instant, endsAt: Instant?) {
+            if (endsAt != null && !endsAt.isAfter(startsAt)) {
+                throw BusinessException(CommonErrorCode.INVALID_INPUT_VALUE, "프로모션 종료 시각은 시작 시각보다 뒤여야 합니다.")
+            }
+        }
+    }
+
+    fun updateName(name: String) {
+        this.name = name
+    }
+
+    /**
+     * 할인율을 바꾼다. null이면 할인 없이 상품만 묶는다. 장바구니에 담긴 상품의 결제가도 바로 바뀐다.
+     */
+    fun updateDiscountRate(discountRate: Int?) {
+        this.discountRate = discountRate
+    }
+
+    /**
+     * 기간을 바꾼다. 프로모션을 끝낼 때는 [endsAt]에 지금 시각을 넣는다.
+     *
+     * @throws BusinessException [CommonErrorCode.INVALID_INPUT_VALUE] 종료 시각이 시작 시각과 같거나 앞인 경우
+     */
+    fun updatePeriod(startsAt: Instant, endsAt: Instant?) {
+        validatePeriod(startsAt, endsAt)
+        this.startsAt = startsAt
+        this.endsAt = endsAt
+    }
 }
