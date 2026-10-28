@@ -8,6 +8,12 @@ spring:
     username: ${MYSQL_USER}
     password: ${MYSQL_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      # Hibernate는 Instant를 UTC 기준 시각 문자열로 보내고, MySQL은 그 문자열을 세션 time_zone으로 해석한다.
+      # 세션을 UTC로 고정해 DB 서버 시간대(local·dev 컨테이너는 KST, 운영 RDS는 UTC)와 무관하게 같은 순간으로 저장한다.
+      data-source-properties:
+        connectionTimeZone: UTC
+        forceConnectionTimeZoneToSession: true
 
   flyway:
     enabled: true
