@@ -28,43 +28,52 @@ class GeminiNutritionAnalysisClient(
 
         private const val PROMPT =
             """
-                이 사진이 사용자가 실제로 섭취한 음식의 사진인지 판단하고, 아래 JSON만 출력해.
-                설명이나 마크다운 코드블록 없이 JSON 객체만 반환해.
+        이 이미지에서 사용자가 먹은(또는 먹을) 음식을 알아내고, 아래 JSON만 출력해.
+        설명이나 마크다운 코드블록 없이 JSON 객체만 반환해.
 
-                [isFood 판단 기준]
-                true: 촬영자 앞에 실제로 놓인, 지금 먹으려는(또는 먹은) 실물 음식
-                false: 위에 해당하지 않는 모든 경우
+        [isFood 판단 기준]
+        이미지에서 어떤 음식인지 알 수 있으면 true로 판단해. 애매하면 true로 판단해.
+        음식과 전혀 관련이 없는 이미지일 때만 false야.
 
-                false로 판단해야 하는 예시:
-                - 그림, 일러스트, 3D 렌더링 등 실물이 아닌 음식
-                - 화면이나 인쇄물에 찍힌 음식 (메뉴판, 광고, 스마트폰 화면, 책)
-                - 영양성분표, 성분 라벨, 텍스트가 주된 사진
-                - 진열용 음식 모형, 플라스틱 샘플
-                - 반려동물 사료
-                - 음식이 남아있지 않은 빈 그릇
+        true로 판단하는 예시:
+        - 실물 음식 사진 (먹기 전, 먹는 중, 조금 남은 것 모두)
+        - 화면·인쇄물에 찍힌 음식 (스마트폰 화면, 메뉴판, 광고, 배달 앱 캡처)
+        - 과자·음료·간편식 등의 포장지, 영양성분표, 성분 라벨
+        - 음식 이름이나 먹은 내용을 적은 텍스트 (메모, 손글씨, 영수증 등)
+        - 그림이나 일러스트라도 어떤 음식인지 알 수 있는 것
 
-                [출력 형식]
-                {
-                  "isFood": boolean,
-                  "rejectReason": string | null,   // isFood가 false일 때만, 위 예시 중 어디에 해당하는지
-                  "name": string | null,            // 20자 이내 음식 이름
-                  "iconId": number | null,
-                  "calory": number | null,
-                  "carbs": number | null,
-                  "protein": number | null,
-                  "fat": number | null,
-                  "catComment": String | null,
-                }
+        false로 판단하는 예시:
+        - 음식이 전혀 보이지 않는 사람, 동물, 풍경, 사물, 실내 사진
+        - 음식과 관계없는 문서나 화면 캡처
+        - 무엇을 찍었는지 알아볼 수 없는 사진 (완전히 검거나 심하게 흔들린 사진)
 
-                isFood가 false면 name 이하 필드는 모두 null로 채워.
-                영양소 추정 시 calory ≈ carbs*4 + protein*4 + fat*9 를 만족시켜.
-                catComment에는 고양이 말투로 100자 내외의 피드백을 써.
-                1. 이 식사에서 많은 영양소와 부족한 영양소를 한 문장으로 짚어.
-                2. 부족한 영양소를 채울 다음 식사 메뉴를 하나 추천해.
-                   - 집이나 식당에서 평소에 먹는 일반 메뉴 중에서 골라.
-                   - 이번 추천은 {cuisine} 메뉴 중에서, 가능하면 {dishForm} 형태로 골라.
-                   - 닭가슴살·샐러드 같은 다이어트 식단은 이 식사에 그 영양소가 정말 부족할 때만 추천해.
-            """
+        [영양소 추정 방법]
+        - 영양성분표나 포장지에 수치가 보이면 그 값을 우선해서 써. 1회 제공량과 총 내용량이 다르면 한 번에 다 먹는 제품은 총 내용량 기준으로 계산해.
+        - 텍스트만 있으면 적힌 음식과 양을 보고 일반적인 1인분 기준으로 추정해.
+        - 사진이면 보이는 양을 기준으로 추정해.
+
+        [출력 형식]
+        {
+          "isFood": boolean,
+          "rejectReason": string | null,   // isFood가 false일 때만, 왜 음식과 관련이 없다고 봤는지
+          "name": string | null,            // 20자 이내 음식 이름
+          "iconId": number | null,
+          "calory": number | null,
+          "carbs": number | null,
+          "protein": number | null,
+          "fat": number | null,
+          "catComment": string | null
+        }
+
+        isFood가 false면 name 이하 필드는 모두 null로 채워.
+        영양소 추정 시 calory ≈ carbs*4 + protein*4 + fat*9 를 만족시켜.
+        catComment에는 고양이 말투로 100자 내외의 피드백을 써.
+        1. 이 식사에서 많은 영양소와 부족한 영양소를 한 문장으로 짚어.
+        2. 부족한 영양소를 채울 다음 식사 메뉴를 하나 추천해.
+           - 집이나 식당에서 평소에 먹는 일반 메뉴 중에서 골라.
+           - 이번 추천은 {cuisine} 메뉴 중에서, 가능하면 {dishForm} 형태로 골라.
+           - 닭가슴살·샐러드 같은 다이어트 식단은 이 식사에 그 영양소가 정말 부족할 때만 추천해.
+    """
 
         private val RESPONSE_SCHEMA = mapOf(
             "type" to "OBJECT",
