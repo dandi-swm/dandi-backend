@@ -1,5 +1,7 @@
 package com.dandi.nyummy.shop.entity
 
+import com.dandi.nyummy.exception.BusinessException
+import com.dandi.nyummy.exception.errorcode.CommonErrorCode
 import com.dandi.nyummy.room.enum.RoomItemCategory
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
@@ -74,4 +76,43 @@ class Product(
     @LastModifiedDate
     @Column(name = "updated_at", nullable = false)
     var updatedAt: Instant = Instant.now()
+
+    companion object {
+        /**
+         * 판매 기간 [saleStartsAt, saleEndsAt)이 비어 있지 않은지 확인한다. [saleEndsAt]이 null이면 종료일이 없다.
+         *
+         * @throws BusinessException [CommonErrorCode.INVALID_INPUT_VALUE] 종료 시각이 시작 시각과 같거나 앞인 경우
+         */
+        fun validateSalePeriod(saleStartsAt: Instant, saleEndsAt: Instant?) {
+            if (saleEndsAt != null && !saleEndsAt.isAfter(saleStartsAt)) {
+                throw BusinessException(CommonErrorCode.INVALID_INPUT_VALUE, "판매 종료 시각은 시작 시각보다 뒤여야 합니다.")
+            }
+        }
+    }
+
+    fun updateName(name: String) {
+        this.name = name
+    }
+
+    fun updateIsLimited(isLimited: Boolean) {
+        this.isLimited = isLimited
+    }
+
+    /**
+     * 판매 기간을 바꾼다. 판매 중지는 [saleEndsAt]에 지금 시각을 넣는다.
+     *
+     * @throws BusinessException [CommonErrorCode.INVALID_INPUT_VALUE] 종료 시각이 시작 시각과 같거나 앞인 경우
+     */
+    fun updateSalePeriod(saleStartsAt: Instant, saleEndsAt: Instant?) {
+        validateSalePeriod(saleStartsAt, saleEndsAt)
+        this.saleStartsAt = saleStartsAt
+        this.saleEndsAt = saleEndsAt
+    }
+
+    /**
+     * 1인 구매 한도를 바꾼다. null이면 무제한이다.
+     */
+    fun updatePurchaseLimit(purchaseLimit: Int?) {
+        this.purchaseLimit = purchaseLimit
+    }
 }
