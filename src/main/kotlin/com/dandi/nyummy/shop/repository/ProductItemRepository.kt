@@ -6,4 +6,6 @@ import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.stereotype.Repository
 
 @Repository
-interface ProductItemRepository : JpaRepository<ProductItem, ProductItemId>
+interface ProductItemRepository : JpaRepository<ProductItem, ProductItemId> {
+    fun findByProductIdIn(productIds: Collection<Long>): List<ProductItem>
+}
