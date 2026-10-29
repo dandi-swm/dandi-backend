@@ -1,6 +1,7 @@
 package com.dandi.nyummy.room.repository
 
 import com.dandi.nyummy.room.dto.EquippedRoomItemResult
+import com.dandi.nyummy.room.dto.OwnedRoomItemCountResult
 import com.dandi.nyummy.room.dto.OwnedRoomItemResult
 import com.dandi.nyummy.room.entity.OwnedRoomItem
 import com.dandi.nyummy.room.enum.RoomItemCategory
@@ -75,4 +76,19 @@ interface OwnedRoomItemRepository : JpaRepository<OwnedRoomItem, Long> {
     """,
     )
     fun findEquippedRoomItemsByUserId(@Param("userId") userId: Long): List<EquippedRoomItemResult>
+
+    @Query(
+        """
+            select new com.dandi.nyummy.room.dto.OwnedRoomItemCountResult(o.itemId, count(o))
+            from OwnedRoomItem as o
+            where o.userId = :userId
+                and o.itemId in :itemIds
+                and o.deletedAt is null
+            group by o.itemId
+        """,
+    )
+    fun findOwnedRoomItemCounts(
+        @Param("userId") userId: Long,
+        @Param("itemIds") itemIds: List<Long>,
+    ): List<OwnedRoomItemCountResult>
 }
