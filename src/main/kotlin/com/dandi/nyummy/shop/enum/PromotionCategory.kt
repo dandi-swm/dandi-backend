@@ -1,5 +1,8 @@
 package com.dandi.nyummy.shop.enum
 
+import java.time.Duration
+import java.time.Instant
+
 /**
  * 프로모션의 대상. 사용자가 대상인지 판정하는 기준값(가입 후 일수 등)은 설정에 둔다.
  *
@@ -20,4 +23,19 @@ enum class PromotionCategory {
 
     /** 모든 사용자 */
     GENERAL,
+    ;
+
+    /**
+     * 사용자가 이 대상에 드는지. 진행 중인지는 따로 본다.
+     *
+     * [FIRST_PURCHASE]는 구매를 아직 저장하지 않아 모든 사용자, [RETURNING_USER]는 복귀 판정 기준이 없어 아무도 들지 않는다.
+     *
+     * @param userCreatedAt 사용자의 가입 시각
+     * @param newUserTimeToLive 가입 후 이 기간 동안 [NEW_USER]다. 가입 시각 + 기간인 순간부터는 아니다
+     */
+    fun isEligible(userCreatedAt: Instant, now: Instant, newUserTimeToLive: Duration): Boolean = when (this) {
+        NEW_USER -> now.isBefore(userCreatedAt.plus(newUserTimeToLive))
+        FIRST_PURCHASE, DAILY, GENERAL -> true
+        RETURNING_USER -> false
+    }
 }
