@@ -1,5 +1,7 @@
 package com.dandi.nyummy.shop.entity
 
+import com.dandi.nyummy.exception.BusinessException
+import com.dandi.nyummy.exception.errorcode.CommonErrorCode
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.EntityListeners
@@ -71,4 +73,56 @@ class ShopBanner(
     @LastModifiedDate
     @Column(name = "updated_at", nullable = false)
     var updatedAt: Instant = Instant.now()
+
+    companion object {
+        /**
+         * 노출 기간 [startsAt, endsAt)이 비어 있지 않은지 확인한다. [endsAt]이 null이면 내릴 때까지 노출한다.
+         *
+         * @throws BusinessException [CommonErrorCode.INVALID_INPUT_VALUE] 종료 시각이 시작 시각과 같거나 앞인 경우
+         */
+        fun validatePeriod(startsAt: Instant, endsAt: Instant?) {
+            if (endsAt != null && !endsAt.isAfter(startsAt)) {
+                throw BusinessException(CommonErrorCode.INVALID_INPUT_VALUE, "배너 종료 시각은 시작 시각보다 뒤여야 합니다.")
+            }
+        }
+    }
+
+    fun updateImageKey(imageKey: String) {
+        this.imageKey = imageKey
+    }
+
+    fun updateTitle(title: String) {
+        this.title = title
+    }
+
+    fun updateDescription(description: String?) {
+        this.description = description
+    }
+
+    fun updateTitleColor(titleColor: String) {
+        this.titleColor = titleColor
+    }
+
+    fun updateDescriptionColor(descriptionColor: String?) {
+        this.descriptionColor = descriptionColor
+    }
+
+    fun updateDisplayOrder(displayOrder: Int) {
+        this.displayOrder = displayOrder
+    }
+
+    /**
+     * 노출 기간을 바꾼다. 배너를 내릴 때는 [endsAt]에 지금 시각을 넣는다.
+     *
+     * @throws BusinessException [CommonErrorCode.INVALID_INPUT_VALUE] 종료 시각이 시작 시각과 같거나 앞인 경우
+     */
+    fun updatePeriod(startsAt: Instant, endsAt: Instant?) {
+        validatePeriod(startsAt, endsAt)
+        this.startsAt = startsAt
+        this.endsAt = endsAt
+    }
+
+    fun updateAdminId(adminId: Long) {
+        this.adminId = adminId
+    }
 }
