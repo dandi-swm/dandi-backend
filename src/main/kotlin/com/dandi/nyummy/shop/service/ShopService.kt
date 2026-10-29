@@ -19,6 +19,7 @@ import com.dandi.nyummy.shop.dto.ShopPageResponse
 import com.dandi.nyummy.shop.enum.ProductSort
 import com.dandi.nyummy.shop.enum.ShopCategory
 import com.dandi.nyummy.shop.enum.ShopTab
+import com.dandi.nyummy.shop.mapper.createNavigateAction
 import com.dandi.nyummy.shop.service.ShopStubData.StubProduct
 import com.dandi.nyummy.shop.service.ShopStubData.toPromotionProducts
 import com.dandi.nyummy.shop.service.ShopStubData.toShopItemResponse
@@ -64,7 +65,7 @@ class ShopService {
                         RichTextResponse(text = "전체보기", typeScale = "labelS", color = "contentSecondary"),
                         RichTextResponse(icon = "chevronRight", color = "contentSecondary"),
                     ),
-                    action = ShopStubData.createNavigateAction("/shop/interior?sort=POPULAR"),
+                    action = createNavigateAction("/shop/interior?sort=POPULAR"),
                 ),
             ),
             products = interiorProducts.sortedByDescending { it.salesCount }.take(4),

@@ -7,10 +7,10 @@ import com.dandi.nyummy.shop.dto.HeroBannerContentResponse
 import com.dandi.nyummy.shop.dto.RichTextResponse
 import com.dandi.nyummy.shop.dto.ShopBannerResponse
 import com.dandi.nyummy.shop.dto.ShopItemResponse
-import com.dandi.nyummy.shop.dto.TagResponse
 import com.dandi.nyummy.shop.enum.BannerCornerStyle
-import com.dandi.nyummy.shop.enum.TagTone
-import java.util.Locale
+import com.dandi.nyummy.shop.mapper.createNavigateAction
+import com.dandi.nyummy.shop.mapper.createPriceText
+import com.dandi.nyummy.shop.mapper.createTag
 
 /**
  * 상점 해피케이스의 고정 데이터. 상품·장바구니 테이블을 붙이기 전까지 [ShopService]와 [CartService]가 이 값으로 응답한다.
@@ -23,8 +23,6 @@ internal object ShopStubData {
     const val MAX_QUANTITY_PER_PRODUCT = 10
     const val MAX_BACKGROUND_QUANTITY = 1
     const val MAX_CART_QUANTITY = 30
-
-    private const val LINK = "https://link.nyummy.co.kr"
 
     data class StubProduct(
         val productId: Long,
@@ -203,9 +201,6 @@ internal object ShopStubData {
         return createPriceText(listPrice, purchasePrice)
     }
 
-    fun createNavigateAction(path: String): ActionResponse =
-        ActionResponse(actionType = "navigate", navigateLink = LINK + path, message = null)
-
     fun StubProduct.toShopItemResponse(): ShopItemResponse = ShopItemResponse(
         productId = productId,
         itemId = itemId,
@@ -213,50 +208,8 @@ internal object ShopStubData {
         category = category,
         categoryName = category.description,
         price = createPriceText(listPrice, purchasePrice),
-        tag = createTag(this),
+        tag = createTag(isLimited = isLimited, isDiscounted = purchasePrice < listPrice, isNew = isNew),
         isLimited = isLimited,
         ownedCount = ownedCount,
     )
-
-    // 한정 > 할인 > 신규 순서로 하나만 붙인다
-    private fun createTag(product: StubProduct): TagResponse? = when {
-        product.isLimited -> TagResponse("한정", TagTone.PROMO)
-        product.purchasePrice < product.listPrice -> TagResponse("할인", TagTone.PROMO)
-        product.isNew -> TagResponse("신규", TagTone.PROMO)
-        else -> null
-    }
-
-    // 할인 중이면 "20% (코인) 880 1,100(취소선)", 아니면 "(코인) 650". 할인율은 내림이다(1,600 → 1,400이면 12%).
-    private fun createPriceText(listPrice: Int, purchasePrice: Int): List<RichTextResponse> {
-        val coin = RichTextResponse(icon = "coin")
-        if (purchasePrice >= listPrice) {
-            return listOf(
-                coin,
-                RichTextResponse(
-                    text = convertCoinToText(purchasePrice),
-                    typeScale = "numberS",
-                    color = "contentPrimary",
-                ),
-            )
-        }
-
-        val discountRate = (listPrice - purchasePrice) * 100 / listPrice
-        return listOf(
-            RichTextResponse(text = "$discountRate%", typeScale = "numberS", color = "contentPromo"),
-            coin,
-            RichTextResponse(
-                text = "${convertCoinToText(purchasePrice)} ",
-                typeScale = "numberS",
-                color = "contentPrimary",
-            ),
-            RichTextResponse(
-                text = convertCoinToText(listPrice),
-                typeScale = "labelS",
-                color = "contentTertiary",
-                strike = true,
-            ),
-        )
-    }
-
-    private fun convertCoinToText(amount: Int): String = String.format(Locale.KOREA, "%,d", amount)
 }
