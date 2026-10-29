@@ -2,6 +2,7 @@ package com.dandi.nyummy.cat.service
 
 import com.dandi.nyummy.cat.config.CatProperties
 import com.dandi.nyummy.cat.dto.CatAnimationResponse
+import com.dandi.nyummy.cat.dto.CreateCatRequest
 import com.dandi.nyummy.cat.entity.Cat
 import com.dandi.nyummy.cat.enum.CatWeight
 import com.dandi.nyummy.cat.repository.CatAnimationLoader
@@ -12,9 +13,11 @@ import com.dandi.nyummy.exception.errorcode.ErrorCode
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.repository.MealRepository
+import com.dandi.nyummy.user.entity.Profile
 import com.dandi.nyummy.user.repository.ProfileRepository
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.slot
 import io.mockk.verify
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -427,6 +430,32 @@ class CatServiceTest {
         assertEquals(-1, cat.weight)
         assertEquals(animations, response)
         verify { catAnimationLoader.loadCatAnimation(CatWeight.SLIM) }
+    }
+
+    // ---------------------------------------------------------------- 고양이 생성
+
+    @Test
+    fun `이름이 8자를 넘으면 고양이를 만들지 않고 거부한다`() {
+        // when & then
+        assertBusinessException(CatErrorCode.NAME_TOO_LONG) {
+            catService.createCat(userId, CreateCatRequest(name = "가나다라마바사아자"))
+        }
+        verify(exactly = 0) { catRepository.save(any()) }
+    }
+
+    @Test
+    fun `이름이 8자면 고양이를 만든다`() {
+        // given
+        val saved = slot<Cat>()
+        every { catRepository.existsByUserId(userId) } returns false
+        every { profileRepository.findProfileByUserId(userId) } returns Profile(userId = userId)
+        every { catRepository.save(capture(saved)) } answers { firstArg() }
+
+        // when
+        catService.createCat(userId, CreateCatRequest(name = "가나다라마바사아"))
+
+        // then
+        assertEquals("가나다라마바사아", saved.captured.name)
     }
 
     // ---------------------------------------------------------------- 픽스처
