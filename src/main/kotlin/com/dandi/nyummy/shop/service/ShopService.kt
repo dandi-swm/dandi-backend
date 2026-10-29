@@ -3,6 +3,13 @@ package com.dandi.nyummy.shop.service
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.CommonErrorCode
 import com.dandi.nyummy.exception.errorcode.ShopErrorCode
+import com.dandi.nyummy.exception.errorcode.UserErrorCode
+import com.dandi.nyummy.room.repository.OwnedRoomItemRepository
+import com.dandi.nyummy.shop.calculator.calculateMaxDiscountRates
+import com.dandi.nyummy.shop.calculator.calculatePurchasePrice
+import com.dandi.nyummy.shop.config.ShopProperties
+import com.dandi.nyummy.shop.dto.HeroBannerComponentResponse
+import com.dandi.nyummy.shop.dto.HeroBannerContentResponse
 import com.dandi.nyummy.shop.dto.ItemListComponentResponse
 import com.dandi.nyummy.shop.dto.PromotionProductsResponse
 import com.dandi.nyummy.shop.dto.RankingComponentResponse
@@ -16,45 +23,98 @@ import com.dandi.nyummy.shop.dto.ShopItemsContentResponse
 import com.dandi.nyummy.shop.dto.ShopItemsResponse
 import com.dandi.nyummy.shop.dto.ShopMeResponse
 import com.dandi.nyummy.shop.dto.ShopPageResponse
+import com.dandi.nyummy.shop.entity.Product
+import com.dandi.nyummy.shop.entity.Promotion
+import com.dandi.nyummy.shop.entity.PromotionProduct
+import com.dandi.nyummy.shop.entity.ShopBanner
+import com.dandi.nyummy.shop.enum.BannerCornerStyle
 import com.dandi.nyummy.shop.enum.ProductSort
+import com.dandi.nyummy.shop.enum.PromotionCategory
 import com.dandi.nyummy.shop.enum.ShopCategory
 import com.dandi.nyummy.shop.enum.ShopTab
 import com.dandi.nyummy.shop.mapper.createNavigateAction
+import com.dandi.nyummy.shop.mapper.createPriceText
+import com.dandi.nyummy.shop.mapper.toShopBannerResponse
+import com.dandi.nyummy.shop.mapper.toShopItemResponse
+import com.dandi.nyummy.shop.repository.ProductItemRepository
+import com.dandi.nyummy.shop.repository.ProductRepository
+import com.dandi.nyummy.shop.repository.PromotionProductRepository
+import com.dandi.nyummy.shop.repository.PromotionRepository
+import com.dandi.nyummy.shop.repository.ShopBannerRepository
 import com.dandi.nyummy.shop.service.ShopStubData.StubProduct
 import com.dandi.nyummy.shop.service.ShopStubData.toPromotionProducts
 import com.dandi.nyummy.shop.service.ShopStubData.toShopItemResponse
+import com.dandi.nyummy.user.repository.UserRepository
+import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
+import java.time.Clock
+import java.time.Duration
+import java.time.Instant
 
 /**
  * 상점 추천 탭·상품 목록·프로모션 상품 목록·상단 바. 지금은 [ShopStubData]의 고정 데이터로 응답한다.
  */
 @Service
-class ShopService {
+class ShopService(
+    private val clock: Clock,
+    private val userRepository: UserRepository,
+    private val promotionRepository: PromotionRepository,
+    private val shopProperties: ShopProperties,
+    private val promotionProductRepository: PromotionProductRepository,
+    private val productRepository: ProductRepository,
+    private val ownedRoomItemRepository: OwnedRoomItemRepository,
+    private val productItemRepository: ProductItemRepository,
+    private val shopBannerRepository: ShopBannerRepository,
+) {
 
     companion object {
         private const val LAYOUT_B = "B"
+        private const val DAILY_PRODUCT_COUNT = 3
+        private const val POPULAR_PRODUCT_COUNT = 4
     }
 
     /**
      * 추천 탭 SDUI 칸 목록. A는 배너 → 오늘의 할인 → 인기, B는 배너 → 인기 → 오늘의 할인 순이다.
-     * 상품이 없는 섹션은 위 제목 줄까지 같이 뺀다.
+     * 배너가 없으면 배너 칸을, 상품이 없는 섹션은 위 제목 줄까지 같이 뺀다.
+     *
+     * - 배너: 노출 중이고, 알리는 프로모션이 진행 중이며 사용자가 대상인 배너를 노출 순서대로
+     * - 오늘의 할인: 진행 중인 오늘의 할인 프로모션(여럿이면 가장 늦게 시작한 것)의 판매 중 상품을 진열 순서대로 3개
+     * - 인기: 인테리어 탭의 판매 중 상품을 판매량순으로 4개
+     *
+     * 가격은 상품이 든 프로모션 중 사용자가 대상인 것의 할인율 가장 큰 것으로 계산한다.
      *
      * @param shopLayoutVariant 앱이 Remote Config에서 받은 배치 그룹. B가 아니면 A로 본다
+     * @throws BusinessException [UserErrorCode.USER_NOT_FOUND] 사용자가 없는 경우
      */
+    @Transactional(readOnly = true)
     fun getRecommendPage(userId: Long, shopLayoutVariant: String?): ShopPageResponse {
-        val interiorProducts = ShopStubData.products.filter { it.isOnSale && ShopTab.INTERIOR.contains(it.category) }
+        val now = clock.instant()
+        val promotions = getEligiblePromotions(userId, now)
+        val promotionProducts = promotionProductRepository.findByPromotionIdInOrderByDisplayOrderAsc(
+            promotions.map { it.id },
+        )
+        val discountRates = calculateMaxDiscountRates(promotions, promotionProducts)
+        val productsById = productRepository.findOnSaleProducts(now).associateBy { it.id }
+
+        val dailyPromotion = promotions.filter { it.category == PromotionCategory.DAILY }.maxByOrNull { it.startsAt }
+        val dailyProducts = dailyPromotion
+            ?.let { getPromotionProductsInOrder(it.id, promotionProducts, productsById) }
+            .orEmpty()
+            .take(DAILY_PRODUCT_COUNT)
+        val popularProducts = productsById.values
+            .filter { ShopTab.INTERIOR.contains(it.category) }
+            .sortedWith(compareByDescending<Product> { it.salesCount }.thenByDescending { it.id })
+            .take(POPULAR_PRODUCT_COUNT)
+        val shopItems =
+            createShopItems(userId, (dailyProducts + popularProducts).distinctBy { it.id }, discountRates, now)
+
         val discountSection = createProductSection(
             header = SectionHeaderContentResponse(
                 title = listOf(RichTextResponse(text = "오늘의 할인", typeScale = "titleS", color = "contentPrimary")),
-                trailing = SectionHeaderTrailingResponse(
-                    content = listOf(
-                        RichTextResponse(icon = "clock", color = "contentTertiary"),
-                        RichTextResponse(text = "9시간 후 바뀌어요", typeScale = "labelS", color = "contentTertiary"),
-                    ),
-                    action = null,
-                ),
+                trailing = dailyPromotion?.endsAt?.let { createRemainingTimeTrailing(it, now) },
             ),
-            products = interiorProducts.filter { it.purchasePrice < it.listPrice }.take(5),
+            items = dailyProducts.map { shopItems.getValue(it.id) },
             createComponent = { ItemListComponentResponse(ShopItemsContentResponse(it)) },
         )
         val popularSection = createProductSection(
@@ -68,17 +128,20 @@ class ShopService {
                     action = createNavigateAction("/shop/interior?sort=POPULAR"),
                 ),
             ),
-            products = interiorProducts.sortedByDescending { it.salesCount }.take(4),
+            items = popularProducts.map { shopItems.getValue(it.id) },
             createComponent = { RankingComponentResponse(ShopItemsContentResponse(it)) },
+        )
+        val heroBanner = createHeroBanner(
+            shopBanners = shopBannerRepository.findActiveShopBanners(now),
+            promotions = promotions,
+            promotionProducts = promotionProducts,
+            productsById = productsById,
+            discountRates = discountRates,
         )
 
         val isLayoutB = shopLayoutVariant?.trim() == LAYOUT_B
         val sections = if (isLayoutB) popularSection + discountSection else discountSection + popularSection
-        return ShopPageResponse(
-            pageKey = "RECOMMEND",
-            sduiComponents =
-            listOf(ShopStubData.createHeroBanner()) + sections,
-        )
+        return ShopPageResponse(pageKey = "RECOMMEND", sduiComponents = heroBanner + sections)
     }
 
     /**
@@ -140,14 +203,117 @@ class ShopService {
     fun getMe(userId: Long): ShopMeResponse =
         ShopMeResponse(balance = ShopStubData.BALANCE, cartItemCount = ShopStubData.cartItems.size)
 
+    // 진행 중인 프로모션 중 사용자가 대상인 것
+    private fun getEligiblePromotions(userId: Long, now: Instant): List<Promotion> {
+        val user = userRepository.findByIdOrNull(userId) ?: throw BusinessException(UserErrorCode.USER_NOT_FOUND)
+
+        return promotionRepository.findActivePromotions(now)
+            .filter { it.category.isEligible(user.createdAt, now, shopProperties.newUserTimeToLive) }
+    }
+
+    // 프로모션의 판매 중 상품을 진열 순서대로. promotionProducts가 이미 진열 순서라 거르기만 한다.
+    private fun getPromotionProductsInOrder(
+        promotionId: Long,
+        promotionProducts: List<PromotionProduct>,
+        productsById: Map<Long, Product>,
+    ): List<Product> = promotionProducts
+        .filter { it.promotionId == promotionId }
+        .mapNotNull { productsById[it.productId] }
+
+    // 상품 카드를 productId로 찾게 만든다. 보유 개수는 단품만 세고(세트는 0), 한 번의 쿼리로 센다.
+    private fun createShopItems(
+        userId: Long,
+        products: List<Product>,
+        discountRates: Map<Long, Int>,
+        now: Instant,
+    ): Map<Long, ShopItemResponse> {
+        if (products.isEmpty()) return emptyMap()
+
+        val itemCounts = productItemRepository.findByProductIdIn(products.map { it.id })
+            .groupingBy { it.productId }
+            .eachCount()
+        val singleProducts = products.filter { itemCounts[it.id] == 1 }
+        val ownedCounts = if (singleProducts.isEmpty()) {
+            emptyMap()
+        } else {
+            ownedRoomItemRepository.findOwnedRoomItemCounts(userId, singleProducts.map { it.representativeItemId })
+                .associate { it.itemId to it.ownedCount.toInt() }
+        }
+        val newProductStartsAt = now.minus(shopProperties.newProductTimeToLive)
+
+        return products.associate { product ->
+            val ownedCount = if (itemCounts[product.id] == 1) ownedCounts[product.representativeItemId] ?: 0 else 0
+            product.id to product.toShopItemResponse(
+                purchasePrice = calculatePurchasePrice(product.price, discountRates[product.id]),
+                isNew = product.saleStartsAt.isAfter(newProductStartsAt),
+                ownedCount = ownedCount,
+            )
+        }
+    }
+
+    // 알리는 프로모션이 진행 중이고 사용자가 대상인 배너만 남긴다. 배너가 없으면 칸을 뺀다.
+    private fun createHeroBanner(
+        shopBanners: List<ShopBanner>,
+        promotions: List<Promotion>,
+        promotionProducts: List<PromotionProduct>,
+        productsById: Map<Long, Product>,
+        discountRates: Map<Long, Int>,
+    ): List<SduiComponentResponse> {
+        val promotionsById = promotions.associateBy { it.id }
+        val banners = shopBanners
+            .filter { it.promotionId in promotionsById }
+            .map { shopBanner ->
+                val promotion = promotionsById.getValue(shopBanner.promotionId)
+                val products = getPromotionProductsInOrder(promotion.id, promotionProducts, productsById)
+                shopBanner.toShopBannerResponse(
+                    imageUrl = "${shopProperties.cdnBaseUrl}/${shopBanner.imageKey}",
+                    cornerStyle = BannerCornerStyle.ROUNDED,
+                    price = createPromotionPriceText(promotion, products, discountRates),
+                    action = createNavigateAction("/shop/promotions/${promotion.id}"),
+                )
+            }
+        if (banners.isEmpty()) return emptyList()
+
+        return listOf(HeroBannerComponentResponse(HeroBannerContentResponse(banners)))
+    }
+
+    // 할인 프로모션이면 상품 전체를 묶음으로 본 가격(정가 합 → 결제가 합)을 보여준다.
+    // 할인율이 없는 프로모션(기간 한정 묶음 등)은 다른 프로모션 할인이 걸려 있어도 가격을 보여주지 않는다.
+    private fun createPromotionPriceText(
+        promotion: Promotion,
+        products: List<Product>,
+        discountRates: Map<Long, Int>,
+    ): List<RichTextResponse>? {
+        if (promotion.discountRate == null) return null
+
+        val listPrice = products.sumOf { it.price }
+        val purchasePrice = products.sumOf { calculatePurchasePrice(it.price, discountRates[it.id]) }
+        if (purchasePrice >= listPrice) return null
+
+        return createPriceText(listPrice, purchasePrice)
+    }
+
+    // "N시간 후 바뀌어요". 남은 시간은 시간 단위로 올린다(1시간 10분 → 2시간).
+    private fun createRemainingTimeTrailing(endsAt: Instant, now: Instant): SectionHeaderTrailingResponse {
+        val remainingHours = (Duration.between(now, endsAt).seconds + 3599) / 3600
+
+        return SectionHeaderTrailingResponse(
+            content = listOf(
+                RichTextResponse(icon = "clock", color = "contentTertiary"),
+                RichTextResponse(text = "${remainingHours}시간 후 바뀌어요", typeScale = "labelS", color = "contentTertiary"),
+            ),
+            action = null,
+        )
+    }
+
     // 상품이 없으면 그 위 제목 줄까지 같이 뺀다. 앱은 빈 칸을 받지 않는다.
     private fun createProductSection(
         header: SectionHeaderContentResponse,
-        products: List<StubProduct>,
+        items: List<ShopItemResponse>,
         createComponent: (List<ShopItemResponse>) -> SduiComponentResponse,
     ): List<SduiComponentResponse> {
-        if (products.isEmpty()) return emptyList()
-        return listOf(SectionHeaderComponentResponse(header), createComponent(products.map { it.toShopItemResponse() }))
+        if (items.isEmpty()) return emptyList()
+        return listOf(SectionHeaderComponentResponse(header), createComponent(items))
     }
 
     // 값이 같으면 productId 내림차순
