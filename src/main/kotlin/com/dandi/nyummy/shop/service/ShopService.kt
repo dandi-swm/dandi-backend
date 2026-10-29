@@ -42,7 +42,6 @@ import com.dandi.nyummy.shop.repository.PromotionProductRepository
 import com.dandi.nyummy.shop.repository.PromotionRepository
 import com.dandi.nyummy.shop.repository.ShopBannerRepository
 import com.dandi.nyummy.shop.service.ShopStubData.StubProduct
-import com.dandi.nyummy.shop.service.ShopStubData.toPromotionProducts
 import com.dandi.nyummy.shop.service.ShopStubData.toShopItemResponse
 import com.dandi.nyummy.user.repository.UserRepository
 import org.springframework.data.repository.findByIdOrNull
@@ -53,8 +52,8 @@ import java.time.Duration
 import java.time.Instant
 
 /**
- * 상점 추천 탭·상품 목록·프로모션 상품 목록·상단 바. 추천 탭은 DB의 상품·프로모션·배너로 응답하고,
- * 나머지는 아직 [ShopStubData]의 고정 데이터로 응답한다.
+ * 상점 추천 탭·상품 목록·프로모션 상품 목록·상단 바. 추천 탭과 프로모션 상품 목록은 DB의 상품·프로모션·배너로 응답하고,
+ * 상품 목록과 상단 바는 아직 [ShopStubData]의 고정 데이터로 응답한다.
  */
 @Service
 class ShopService(
@@ -183,20 +182,41 @@ class ShopService(
 
     /**
      * 배너를 누르면 여는 프로모션의 판매 중인 상품을 진열 순서대로 [size]개씩 조회한다.
+     * 맨 위 배너는 추천 탭과 같은 배너를 직각 모서리로, 누를 곳 없이 준다.
+     * 가격은 추천 탭과 같이 상품이 든 프로모션 중 사용자가 대상인 것의 할인율 가장 큰 것으로 계산한다.
      *
      * @param cursor 직전 묶음의 마지막 productId. null이면 처음부터 조회한다
-     * @throws BusinessException [ShopErrorCode.PROMOTION_NOT_FOUND] 진행 중인 프로모션이 아니거나 대상 사용자가 아닌 경우
+     * @throws BusinessException [ShopErrorCode.PROMOTION_NOT_FOUND] 진행 중인 프로모션이 아니거나, 대상 사용자가 아니거나,
+     * 노출 중인 배너가 없는 경우
      * @throws BusinessException [CommonErrorCode.INVALID_INPUT_VALUE] 커서 상품이 목록에 없는 경우
      */
+    @Transactional(readOnly = true)
     fun getPromotionProducts(userId: Long, promotionId: Long, cursor: Long?, size: Int): PromotionProductsResponse {
-        val promotion = ShopStubData.promotionsById[promotionId]
+        val now = clock.instant()
+        val promotions = getEligiblePromotions(userId, now)
+        val promotion = promotions.find { it.id == promotionId }
             ?: throw BusinessException(ShopErrorCode.PROMOTION_NOT_FOUND)
-        val products = promotion.toPromotionProducts()
+        // 이 화면은 배너를 눌러야 들어오므로, 노출 중인 배너가 없으면 진행 중이 아닌 프로모션과 같이 본다
+        val shopBanner = shopBannerRepository.findActiveShopBanners(now).find { it.promotionId == promotionId }
+            ?: throw BusinessException(ShopErrorCode.PROMOTION_NOT_FOUND)
 
-        val page = createPage(products, cursor, size) { it.productId }
+        val promotionProducts = promotionProductRepository.findByPromotionIdInOrderByDisplayOrderAsc(
+            promotions.map { it.id },
+        )
+        val discountRates = calculateMaxDiscountRates(promotions, promotionProducts)
+        val productsById = productRepository.findOnSaleProducts(now).associateBy { it.id }
+        val products = getPromotionProductsInOrder(promotion.id, promotionProducts, productsById)
+
+        val page = createPage(products, cursor, size) { it.id }
+        val shopItems = createShopItems(userId, page.items, discountRates, now)
         return PromotionProductsResponse(
-            banner = ShopStubData.createPromotionBanner(promotion),
-            items = page.items.map { it.toShopItemResponse() },
+            banner = shopBanner.toShopBannerResponse(
+                imageUrl = createImageUrl(shopBanner.imageKey),
+                cornerStyle = BannerCornerStyle.SQUARE,
+                price = createPromotionPriceText(promotion, products, discountRates),
+                action = null,
+            ),
+            items = page.items.map { shopItems.getValue(it.id) },
             nextCursor = page.nextCursor,
             hasNext = page.hasNext,
         )
