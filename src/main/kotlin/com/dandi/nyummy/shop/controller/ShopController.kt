@@ -57,7 +57,8 @@ class ShopController(private val shopService: ShopService) {
             "category는 인테리어 탭의 분류 칩이고, 없으면 탭 전체다. LIMITED는 분류와 관계없이 기간 한정 상품만 거른다. " +
             "방 배경 탭은 분류 칩이 없어 category를 보내면 400이다. 보유 숨기기는 앱이 거른다. " +
             "첫 요청은 cursor 없이 보내고, 다음 요청부터는 직전 응답의 nextCursor를 cursor로 보낸다. " +
-            "cursor가 목록에 없는 상품이면 400이다. 현재는 고정 상품 목록에서 거르고 정렬한 결과를 반환한다.",
+            "cursor가 목록에 없는 상품이면 400이다. 가격은 사용자가 대상인 프로모션 중 할인율이 가장 큰 것으로 계산하고, " +
+            "가격순 정렬도 이 결제가 기준이다. 신상품순은 판매 시작 시각이 늦은 순이다.",
     )
     @GetMapping("/products")
     fun getProducts(

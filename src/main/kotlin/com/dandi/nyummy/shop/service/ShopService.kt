@@ -41,8 +41,6 @@ import com.dandi.nyummy.shop.repository.ProductRepository
 import com.dandi.nyummy.shop.repository.PromotionProductRepository
 import com.dandi.nyummy.shop.repository.PromotionRepository
 import com.dandi.nyummy.shop.repository.ShopBannerRepository
-import com.dandi.nyummy.shop.service.ShopStubData.StubProduct
-import com.dandi.nyummy.shop.service.ShopStubData.toShopItemResponse
 import com.dandi.nyummy.user.repository.UserRepository
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
@@ -52,8 +50,8 @@ import java.time.Duration
 import java.time.Instant
 
 /**
- * 상점 추천 탭·상품 목록·프로모션 상품 목록·상단 바. 추천 탭과 프로모션 상품 목록은 DB의 상품·프로모션·배너로 응답하고,
- * 상품 목록과 상단 바는 아직 [ShopStubData]의 고정 데이터로 응답한다.
+ * 상점 추천 탭·상품 목록·프로모션 상품 목록·상단 바. 상단 바를 뺀 나머지는 DB의 상품·프로모션·배너로 응답하고,
+ * 상단 바는 아직 [ShopStubData]의 고정 데이터로 응답한다.
  */
 @Service
 class ShopService(
@@ -146,11 +144,13 @@ class ShopService(
 
     /**
      * 탭의 판매 중인 상품을 [sort] 순서로 [size]개씩 조회한다.
+     * 가격은 추천 탭과 같이 상품이 든 프로모션 중 사용자가 대상인 것의 할인율 가장 큰 것으로 계산하고, 가격순도 이 결제가로 정렬한다.
      *
      * @param category 인테리어 탭의 분류 칩. [ShopCategory.LIMITED]는 분류와 관계없이 기간 한정만 거른다
      * @param cursor 직전 묶음의 마지막 productId. null이면 처음부터 조회한다
      * @throws BusinessException [CommonErrorCode.INVALID_INPUT_VALUE] 방 배경 탭에 분류 칩을 보냈거나, 커서 상품이 목록에 없는 경우
      */
+    @Transactional(readOnly = true)
     fun getProducts(
         userId: Long,
         tab: ShopTab,
@@ -161,8 +161,14 @@ class ShopService(
     ): ShopItemsResponse {
         if (tab == ShopTab.BACKGROUND && category != null) throw BusinessException(CommonErrorCode.INVALID_INPUT_VALUE)
 
-        val sorted = ShopStubData.products
-            .filter { it.isOnSale && tab.contains(it.category) }
+        val now = clock.instant()
+        val promotions = getEligiblePromotions(userId, now)
+        val promotionProducts = promotionProductRepository.findByPromotionIdInOrderByDisplayOrderAsc(
+            promotions.map { it.id },
+        )
+        val discountRates = calculateMaxDiscountRates(promotions, promotionProducts)
+        val sorted = productRepository.findOnSaleProducts(now)
+            .filter { tab.contains(it.category) }
             .filter { product ->
                 when (category) {
                     null -> true
@@ -170,11 +176,12 @@ class ShopService(
                     else -> product.category == category.roomItemCategory
                 }
             }
-            .sortedWith(createComparator(sort))
+            .sortedWith(createComparator(sort, discountRates))
 
-        val page = createPage(sorted, cursor, size) { it.productId }
+        val page = createPage(sorted, cursor, size) { it.id }
+        val shopItems = createShopItems(userId, page.items, discountRates, now)
         return ShopItemsResponse(
-            items = page.items.map { it.toShopItemResponse() },
+            items = page.items.map { shopItems.getValue(it.id) },
             nextCursor = page.nextCursor,
             hasNext = page.hasNext,
         )
@@ -344,17 +351,15 @@ class ShopService(
         return listOf(SectionHeaderComponentResponse(header), createComponent(items))
     }
 
-    // 값이 같으면 productId 내림차순
-    private fun createComparator(sort: ProductSort): Comparator<StubProduct> = when (sort) {
-        ProductSort.NEW -> compareByDescending { it.productId }
-
-        ProductSort.POPULAR -> compareByDescending<StubProduct> { it.salesCount }.thenByDescending { it.productId }
-
-        ProductSort.PRICE_ASC -> compareBy<StubProduct> { it.purchasePrice }.thenByDescending { it.productId }
-
-        ProductSort.PRICE_DESC -> compareByDescending<StubProduct> {
-            it.purchasePrice
-        }.thenByDescending { it.productId }
+    // 값이 같으면 productId 내림차순. 가격순은 이 사용자의 결제가(할인 중이면 할인가)로 정렬한다.
+    private fun createComparator(sort: ProductSort, discountRates: Map<Long, Int>): Comparator<Product> {
+        val comparator: Comparator<Product> = when (sort) {
+            ProductSort.NEW -> compareByDescending { it.saleStartsAt }
+            ProductSort.POPULAR -> compareByDescending { it.salesCount }
+            ProductSort.PRICE_ASC -> compareBy { calculatePurchasePrice(it.price, discountRates[it.id]) }
+            ProductSort.PRICE_DESC -> compareByDescending { calculatePurchasePrice(it.price, discountRates[it.id]) }
+        }
+        return comparator.thenByDescending { it.id }
     }
 
     private data class ProductPageResult<T>(val items: List<T>, val nextCursor: Long?, val hasNext: Boolean)
