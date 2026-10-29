@@ -300,3 +300,77 @@ export const updatePromotionProducts = (promotionId: number, productIds: number[
     method: "PUT",
     body: JSON.stringify({ productIds }),
   });
+
+/** 앱 RichText가 아는 색 토큰. 서버도 이 값만 받는다. */
+export type SduiColor = "contentPrimary" | "contentSecondary" | "contentTertiary" | "contentPromo" | "contentOnInverse";
+
+export const SDUI_COLOR_LABELS: Record<SduiColor, string> = {
+  contentPrimary: "기본 (진한 글자)",
+  contentSecondary: "보조 (회색 글자)",
+  contentTertiary: "흐린 글자",
+  contentPromo: "강조 (프로모션 색)",
+  contentOnInverse: "어두운 그림 위 (흰 글자)",
+};
+
+/**
+ * 추천 탭 배너. 프로모션 하나를 알린다. imageUrl은 CDN 주소 + 저장한 이미지 키다.
+ * description이 null이면 descriptionColor도 null이다. endsAt이 null이면 내릴 때까지 노출한다.
+ */
+export type AdminShopBanner = {
+  bannerId: number;
+  promotionId: number;
+  promotionName: string;
+  imageUrl: string;
+  title: string;
+  description: string | null;
+  titleColor: SduiColor;
+  descriptionColor: SduiColor | null;
+  displayOrder: number;
+  startsAt: string;
+  endsAt: string | null;
+  adminId: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AdminShopBanners = { shopBanners: AdminShopBanner[] };
+
+export type UpdateShopBannerInput = {
+  title: string;
+  description: string | null;
+  titleColor: SduiColor;
+  descriptionColor: SduiColor | null;
+  displayOrder: number;
+  startsAt: string;
+  endsAt: string | null;
+};
+
+export type CreateShopBannerInput = UpdateShopBannerInput & { promotionId: number; image: File };
+
+/** 서버 검사와 같은 값. 화면은 먼저 안내만 하고, 기준은 서버다. */
+export const SHOP_BANNER_TITLE_MAX = 100;
+export const SHOP_BANNER_DESCRIPTION_MAX = 255;
+export const SHOP_BANNER_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+
+export const getShopBanners = () => request<AdminShopBanners>(`${PREFIX}/shop-banners`);
+
+/** 글자 값은 JSON 칸(request), 이미지는 파일 칸(image)으로 보낸다. */
+export function createShopBanner({ image, ...input }: CreateShopBannerInput) {
+  const body = new FormData();
+  body.append("request", new Blob([JSON.stringify(input)], { type: "application/json" }));
+  body.append("image", image);
+
+  return request<AdminShopBanner>(`${PREFIX}/shop-banners`, { method: "POST", body });
+}
+
+/** 제목·설명·글자색·노출 순서·기간을 보낸 값으로 통째로 바꾼다(PUT). 내릴 때는 endsAt에 지금 시각을 보낸다. */
+export const updateShopBanner = (bannerId: number, input: UpdateShopBannerInput) =>
+  request<AdminShopBanner>(`${PREFIX}/shop-banners/${bannerId}`, { method: "PUT", body: JSON.stringify(input) });
+
+/** 새 키에 올리므로 imageUrl이 바뀌고 CDN 반영을 기다리지 않는다. */
+export function updateShopBannerImage(bannerId: number, image: File) {
+  const body = new FormData();
+  body.append("image", image);
+
+  return request<AdminShopBanner>(`${PREFIX}/shop-banners/${bannerId}/image`, { method: "PUT", body });
+}

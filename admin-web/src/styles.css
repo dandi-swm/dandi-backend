@@ -572,3 +572,12 @@ button.secondary:disabled {
   border-color: var(--primary);
   box-shadow: 0 0 0 1px var(--primary);
 }
+
+/* 상점 배너는 가로로 긴 그림이라 카드 폭에 맞춰 보여 준다. */
+.banner-image {
+  width: 100%;
+  max-width: 480px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+}
