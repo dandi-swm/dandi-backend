@@ -6,13 +6,16 @@ import io.restassured.module.kotlin.extensions.Extract
 import io.restassured.module.kotlin.extensions.Given
 import io.restassured.module.kotlin.extensions.Then
 import io.restassured.module.kotlin.extensions.When
+import io.restassured.response.ValidatableResponse
 import org.hamcrest.Matchers.empty
+import org.hamcrest.Matchers.equalTo
 import org.hamcrest.Matchers.equalToIgnoringCase
 import org.hamcrest.Matchers.hasItems
 import org.hamcrest.Matchers.not
 import org.hamcrest.Matchers.oneOf
 import org.hamcrest.Matchers.startsWith
 import org.junit.jupiter.api.Test
+import kotlin.test.assertEquals
 
 class CatE2eTest {
     @Test
@@ -71,5 +74,41 @@ class CatE2eTest {
             statusCode(200)
             contentType(startsWith("image/"))
         }
+    }
+
+    // 고정 계정은 이미 고양이가 있어 생성 성공은 볼 수 없다. 이름 길이를 먼저 검사하므로
+    // 9자는 nameTooLong, 8자는 길이 검사를 통과해 alreadyExists가 된다. 어느 쪽도 저장하지 않는다.
+    @Test
+    fun `고양이 이름이 8자를 넘으면 거부하고 8자는 길이 검사를 통과한다`() {
+        val name = getCatName()
+
+        createCat("가나다라마바사아자").validateError(400, "api.cat.nameTooLong")
+        createCat("가나다라마바사아").validateError(409, "api.cat.alreadyExists")
+
+        assertEquals(name, getCatName(), "거부된 요청이 고양이 이름을 바꿨습니다")
+    }
+
+    private fun getCatName(): String = Given {
+        spec(RequestSpecs.createAuthorizedSpec())
+    } When {
+        get("/api/v1/cats")
+    } Then {
+        statusCode(200)
+    } Extract {
+        path("name")
+    }
+
+    private fun createCat(name: String): ValidatableResponse = Given {
+        spec(RequestSpecs.createAuthorizedSpec())
+        body(mapOf("name" to name))
+    } When {
+        post("/api/v1/cats")
+    } Then {
+        // 응답 검증은 호출하는 쪽에서 한다
+    }
+
+    private fun ValidatableResponse.validateError(status: Int, code: String) {
+        statusCode(status)
+        body("code", equalTo(code))
     }
 }
