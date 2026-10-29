@@ -42,7 +42,6 @@ import com.dandi.nyummy.shop.repository.PromotionProductRepository
 import com.dandi.nyummy.shop.repository.PromotionRepository
 import com.dandi.nyummy.shop.repository.ShopBannerRepository
 import com.dandi.nyummy.shop.service.ShopStubData.StubProduct
-import com.dandi.nyummy.shop.service.ShopStubData.toPromotionProducts
 import com.dandi.nyummy.shop.service.ShopStubData.toShopItemResponse
 import com.dandi.nyummy.user.repository.UserRepository
 import org.springframework.data.repository.findByIdOrNull
@@ -53,8 +52,8 @@ import java.time.Duration
 import java.time.Instant
 
 /**
- * 상점 추천 탭·상품 목록·프로모션 상품 목록·상단 바. 추천 탭은 DB의 상품·프로모션·배너로 응답하고,
- * 나머지는 아직 [ShopStubData]의 고정 데이터로 응답한다.
+ * 상점 추천 탭·상품 목록·프로모션 상품 목록·상단 바. 추천 탭과 프로모션 상품 목록은 DB의 상품·프로모션·배너로 응답하고,
+ * 상품 목록과 상단 바는 아직 [ShopStubData]의 고정 데이터로 응답한다.
  */
 @Service
 class ShopService(
@@ -173,26 +172,51 @@ class ShopService(
             }
             .sortedWith(createComparator(sort))
 
-        val page = createPage(sorted, cursor, size)
-        return ShopItemsResponse(items = page.items, nextCursor = page.nextCursor, hasNext = page.hasNext)
+        val page = createPage(sorted, cursor, size) { it.productId }
+        return ShopItemsResponse(
+            items = page.items.map { it.toShopItemResponse() },
+            nextCursor = page.nextCursor,
+            hasNext = page.hasNext,
+        )
     }
 
     /**
      * 배너를 누르면 여는 프로모션의 판매 중인 상품을 진열 순서대로 [size]개씩 조회한다.
+     * 맨 위 배너는 추천 탭과 같은 배너를 직각 모서리로, 누를 곳 없이 준다.
+     * 가격은 추천 탭과 같이 상품이 든 프로모션 중 사용자가 대상인 것의 할인율 가장 큰 것으로 계산한다.
      *
      * @param cursor 직전 묶음의 마지막 productId. null이면 처음부터 조회한다
-     * @throws BusinessException [ShopErrorCode.PROMOTION_NOT_FOUND] 진행 중인 프로모션이 아니거나 대상 사용자가 아닌 경우
+     * @throws BusinessException [ShopErrorCode.PROMOTION_NOT_FOUND] 진행 중인 프로모션이 아니거나, 대상 사용자가 아니거나,
+     * 노출 중인 배너가 없는 경우
      * @throws BusinessException [CommonErrorCode.INVALID_INPUT_VALUE] 커서 상품이 목록에 없는 경우
      */
+    @Transactional(readOnly = true)
     fun getPromotionProducts(userId: Long, promotionId: Long, cursor: Long?, size: Int): PromotionProductsResponse {
-        val promotion = ShopStubData.promotionsById[promotionId]
+        val now = clock.instant()
+        val promotions = getEligiblePromotions(userId, now)
+        val promotion = promotions.find { it.id == promotionId }
             ?: throw BusinessException(ShopErrorCode.PROMOTION_NOT_FOUND)
-        val products = promotion.toPromotionProducts()
+        // 이 화면은 배너를 눌러야 들어오므로, 노출 중인 배너가 없으면 진행 중이 아닌 프로모션과 같이 본다
+        val shopBanner = shopBannerRepository.findActiveShopBanners(now).find { it.promotionId == promotionId }
+            ?: throw BusinessException(ShopErrorCode.PROMOTION_NOT_FOUND)
 
-        val page = createPage(products, cursor, size)
+        val promotionProducts = promotionProductRepository.findByPromotionIdInOrderByDisplayOrderAsc(
+            promotions.map { it.id },
+        )
+        val discountRates = calculateMaxDiscountRates(promotions, promotionProducts)
+        val productsById = productRepository.findOnSaleProducts(now).associateBy { it.id }
+        val products = getPromotionProductsInOrder(promotion.id, promotionProducts, productsById)
+
+        val page = createPage(products, cursor, size) { it.id }
+        val shopItems = createShopItems(userId, page.items, discountRates, now)
         return PromotionProductsResponse(
-            banner = ShopStubData.createPromotionBanner(promotion),
-            items = page.items,
+            banner = shopBanner.toShopBannerResponse(
+                imageUrl = createImageUrl(shopBanner.imageKey),
+                cornerStyle = BannerCornerStyle.SQUARE,
+                price = createPromotionPriceText(promotion, products, discountRates),
+                action = null,
+            ),
+            items = page.items.map { shopItems.getValue(it.id) },
             nextCursor = page.nextCursor,
             hasNext = page.hasNext,
         )
@@ -267,7 +291,7 @@ class ShopService(
                 val promotion = promotionsById.getValue(shopBanner.promotionId)
                 val products = getPromotionProductsInOrder(promotion.id, promotionProducts, productsById)
                 shopBanner.toShopBannerResponse(
-                    imageUrl = "${shopProperties.cdnBaseUrl}/${shopBanner.imageKey}",
+                    imageUrl = createImageUrl(shopBanner.imageKey),
                     cornerStyle = BannerCornerStyle.ROUNDED,
                     price = createPromotionPriceText(promotion, products, discountRates),
                     action = createNavigateAction("/shop/promotions/${promotion.id}"),
@@ -293,6 +317,9 @@ class ShopService(
 
         return createPriceText(listPrice, purchasePrice)
     }
+
+    // CDN 주소 + S3 키
+    private fun createImageUrl(imageKey: String): String = "${shopProperties.cdnBaseUrl}/$imageKey"
 
     // "N시간 후 바뀌어요". 남은 시간은 시간 단위로 올린다(1시간 10분 → 2시간).
     private fun createRemainingTimeTrailing(endsAt: Instant, now: Instant): SectionHeaderTrailingResponse {
@@ -330,12 +357,17 @@ class ShopService(
         }.thenByDescending { it.productId }
     }
 
-    private data class ProductPageResult(val items: List<ShopItemResponse>, val nextCursor: Long?, val hasNext: Boolean)
+    private data class ProductPageResult<T>(val items: List<T>, val nextCursor: Long?, val hasNext: Boolean)
 
     // 정렬된 목록에서 커서 상품 다음부터 size개를 자른다. 커서 상품이 목록에 없으면 처음부터 주지 않고 거부한다.
-    private fun createPage(products: List<StubProduct>, cursor: Long?, size: Int): ProductPageResult {
+    private fun <T> createPage(
+        products: List<T>,
+        cursor: Long?,
+        size: Int,
+        getProductId: (T) -> Long,
+    ): ProductPageResult<T> {
         val startIndex = cursor?.let { cursorId ->
-            val index = products.indexOfFirst { it.productId == cursorId }
+            val index = products.indexOfFirst { getProductId(it) == cursorId }
             if (index < 0) throw BusinessException(CommonErrorCode.INVALID_INPUT_VALUE)
             index + 1
         } ?: 0
@@ -343,8 +375,8 @@ class ShopService(
         val hasNext = products.size > startIndex + size
 
         return ProductPageResult(
-            items = page.map { it.toShopItemResponse() },
-            nextCursor = if (hasNext) page.last().productId else null,
+            items = page,
+            nextCursor = if (hasNext) getProductId(page.last()) else null,
             hasNext = hasNext,
         )
     }

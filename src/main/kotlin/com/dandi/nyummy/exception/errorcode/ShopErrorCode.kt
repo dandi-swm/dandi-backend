@@ -9,7 +9,7 @@ enum class ShopErrorCode(override val status: HttpStatus, override val code: Str
     PROMOTION_NOT_FOUND(
         HttpStatus.NOT_FOUND,
         "api.shop.promotionNotFound",
-        "요청한 promotionId가 진행 중인 프로모션에 없거나 대상이 아닙니다.",
+        "요청한 promotionId가 진행 중인 프로모션에 없거나, 대상이 아니거나, 노출 중인 배너가 없습니다.",
     ),
     ALREADY_OWNED(HttpStatus.CONFLICT, "api.shop.alreadyOwned", "이미 가진 방 배경입니다."),
     CART_ITEM_NOT_FOUND(HttpStatus.NOT_FOUND, "api.shop.cartItemNotFound", "장바구니에 없는 상품입니다."),
