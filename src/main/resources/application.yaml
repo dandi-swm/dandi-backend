@@ -142,6 +142,10 @@ app:
         y: 0.0
         z-index: 0
         scale: 1.0
+  shop:
+    cdn-base-url: https://cdn.nyummy.co.kr
+    new-user-time-to-live: 7d
+    new-product-time-to-live: 7d
   meal:
     max-daily-count: 10
     # 영양 분석 평가 요청을 띄울 식사 비율(%). 0이면 아무에게도 안 뜨고, 100이면 모든 식사에 뜬다.
