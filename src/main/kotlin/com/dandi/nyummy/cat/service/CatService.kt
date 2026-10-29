@@ -53,11 +53,16 @@ class CatService(
      * 때문이다. 더블탭이나 네트워크 재시도로 동시에 들어오면 양쪽 다 검사를 통과하고 두 번째 insert가
      * 유니크 제약을 때린다. 그 경우도 사용자에게 알릴 결과는 "이미 있다"와 같다.
      *
+     * 이름 길이는 이미 고양이가 있는지보다 먼저 검사한다. 입력 오류를 먼저 알린다.
+     *
+     * @throws BusinessException [CatErrorCode.NAME_TOO_LONG] 이름이 [Cat.NAME_MAX_LENGTH]자를 넘는 경우
      * @throws BusinessException [CatErrorCode.CAT_ALREADY_EXISTS] 이미 고양이가 있거나 동시 생성에서 밀린 경우
      * @throws BusinessException [UserErrorCode.PROFILE_NOT_FOUND] 프로필이 없는 경우
      */
     @Transactional
     fun createCat(userId: Long, request: CreateCatRequest) {
+        if (request.name.length > Cat.NAME_MAX_LENGTH) throw BusinessException(CatErrorCode.NAME_TOO_LONG)
+
         if (catRepository.existsByUserId(userId)) {
             logger.warn("이미 존재하는 고양이입니다: $userId")
             throw BusinessException(CatErrorCode.CAT_ALREADY_EXISTS)

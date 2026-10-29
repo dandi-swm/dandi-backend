@@ -3,6 +3,7 @@ package com.dandi.nyummy.cat.controller
 import com.dandi.nyummy.cat.dto.CatAnimationResponse
 import com.dandi.nyummy.cat.dto.CatResponse
 import com.dandi.nyummy.cat.dto.CreateCatRequest
+import com.dandi.nyummy.cat.entity.Cat
 import com.dandi.nyummy.cat.service.CatService
 import com.dandi.nyummy.config.openapi.ApiErrorCodes
 import com.dandi.nyummy.exception.errorcode.CatErrorCode
@@ -30,10 +31,14 @@ class CatController(private val catService: CatService) {
 
     @Operation(
         summary = "고양이 생성",
-        description = "고양이를 만들고 온보딩에서 받은 끼니 시각을 프로필에 저장한다. 사용자당 한 마리만 생성할 수 있다.",
+        description = "고양이를 만들고 온보딩에서 받은 끼니 시각을 프로필에 저장한다. 사용자당 한 마리만 생성할 수 있다. " +
+            "이름은 ${Cat.NAME_MAX_LENGTH}자 이하이고(String 길이, 이모지는 2자 이상), 넘으면 api.cat.nameTooLong이다.",
     )
     @ApiResponse(responseCode = "201", description = "고양이 생성 성공")
-    @ApiErrorCodes(cat = [CatErrorCode.CAT_ALREADY_EXISTS], user = [UserErrorCode.PROFILE_NOT_FOUND])
+    @ApiErrorCodes(
+        cat = [CatErrorCode.NAME_TOO_LONG, CatErrorCode.CAT_ALREADY_EXISTS],
+        user = [UserErrorCode.PROFILE_NOT_FOUND],
+    )
     @PostMapping
     fun createCat(@CurrentUser user: AuthUser, @Valid @RequestBody request: CreateCatRequest): ResponseEntity<Void> {
         catService.createCat(user.userId, request)

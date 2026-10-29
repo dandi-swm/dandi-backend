@@ -50,6 +50,12 @@ class Cat(
     @Column(name = "updated_at")
     var updatedAt: Instant = Instant.now()
 
+    companion object {
+        // String.length(UTF-16) 기준이라 이모지는 2자 이상으로 센다.
+        // 컬럼은 100자 그대로다. 이미 저장된 긴 이름이 있을 수 있어 생성 API에서만 막는다.
+        const val NAME_MAX_LENGTH = 8
+    }
+
     fun updateLastMealAt(lastMealAt: Instant) {
         this.lastMealAt = lastMealAt
     }

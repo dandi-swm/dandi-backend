@@ -6,11 +6,10 @@ import jakarta.validation.constraints.AssertTrue
 import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
 import jakarta.validation.constraints.NotBlank
-import jakarta.validation.constraints.Size
 
 data class CreateCatRequest(
+    // 길이는 앱이 구분할 수 있게 서비스에서 검사한다(api.cat.nameTooLong). @Size는 api.common.invalidInputValue로 나간다.
     @field:NotBlank(message = "고양이 이름은 필수입니다.")
-    @field:Size(max = 20, message = "고양이 이름은 20자 이하여야 합니다.")
     val name: String,
 
     @field:Min(value = 0, message = "식사 시간은 0시 이상이어야 합니다.")
