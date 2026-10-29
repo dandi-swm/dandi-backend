@@ -2,13 +2,10 @@ package com.dandi.nyummy.shop.service
 
 import com.dandi.nyummy.room.enum.RoomItemCategory
 import com.dandi.nyummy.shop.dto.ActionResponse
-import com.dandi.nyummy.shop.dto.HeroBannerComponentResponse
-import com.dandi.nyummy.shop.dto.HeroBannerContentResponse
 import com.dandi.nyummy.shop.dto.RichTextResponse
 import com.dandi.nyummy.shop.dto.ShopBannerResponse
 import com.dandi.nyummy.shop.dto.ShopItemResponse
 import com.dandi.nyummy.shop.enum.BannerCornerStyle
-import com.dandi.nyummy.shop.mapper.createNavigateAction
 import com.dandi.nyummy.shop.mapper.createPriceText
 import com.dandi.nyummy.shop.mapper.createTag
 
@@ -158,19 +155,6 @@ internal object ShopStubData {
             promotionProduct.purchasePrice?.let { product.copy(purchasePrice = it) } ?: product
         }
         .filter { it.isOnSale }
-
-    // 추천 탭 배너는 둥근 모서리이고, 누르면 그 프로모션 화면을 연다
-    fun createHeroBanner(): HeroBannerComponentResponse = HeroBannerComponentResponse(
-        HeroBannerContentResponse(
-            banners = promotions.map { promotion ->
-                createBanner(
-                    promotion = promotion,
-                    cornerStyle = BannerCornerStyle.ROUNDED,
-                    action = createNavigateAction("/shop/promotions/${promotion.promotionId}"),
-                )
-            },
-        ),
-    )
 
     // 프로모션 화면 맨 위 배너는 직각 모서리이고, 이미 그 화면이라 누를 곳이 없다
     fun createPromotionBanner(promotion: StubPromotion): ShopBannerResponse =

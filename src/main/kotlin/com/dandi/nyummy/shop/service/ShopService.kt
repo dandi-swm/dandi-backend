@@ -53,7 +53,8 @@ import java.time.Duration
 import java.time.Instant
 
 /**
- * 상점 추천 탭·상품 목록·프로모션 상품 목록·상단 바. 지금은 [ShopStubData]의 고정 데이터로 응답한다.
+ * 상점 추천 탭·상품 목록·프로모션 상품 목록·상단 바. 추천 탭은 DB의 상품·프로모션·배너로 응답하고,
+ * 나머지는 아직 [ShopStubData]의 고정 데이터로 응답한다.
  */
 @Service
 class ShopService(

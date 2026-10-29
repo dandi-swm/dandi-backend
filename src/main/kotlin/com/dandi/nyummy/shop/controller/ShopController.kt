@@ -39,7 +39,9 @@ class ShopController(private val shopService: ShopService) {
             "앱은 모르는 viewType이나 필수 필드가 빠진 칸만 빼고 그린다. 상품이 없는 칸은 위 SectionHeader까지 같이 빠진다. " +
             "A/B 그룹은 앱이 Remote Config에서 받은 값을 X-Shop-Layout-Variant 헤더(A 또는 B)로 보낸다. " +
             "헤더가 없거나 모르는 값이면 A다. A는 배너 → 오늘의 할인 → 인기 순, B는 배너 → 인기 → 오늘의 할인 순이다. " +
-            "현재는 고정 응답을 반환한다.",
+            "배너는 진행 중이고 대상인 프로모션의 노출 중 배너이고, 할인율이 있는 프로모션만 묶음 가격(price)을 준다. " +
+            "오늘의 할인은 진행 중인 오늘의 할인 프로모션의 판매 중 상품 3개, 인기는 인테리어 상품 판매량순 4개다. " +
+            "상품 가격은 대상인 프로모션 중 할인율이 가장 큰 것으로 계산한다.",
     )
     @GetMapping("/pages/recommend")
     fun getRecommendPage(
