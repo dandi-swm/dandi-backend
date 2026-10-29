@@ -160,7 +160,8 @@ class ShopE2eTest {
     } Then {
         statusCode(200)
         body("pageKey", equalTo("RECOMMEND"))
-        body("sduiComponents[0].keySet()", hasItems("viewType", "content"))
+        // 상품·배너가 없으면 칸이 하나도 없다. 칸이 있으면 모두 viewType과 content를 가진다.
+        body("sduiComponents.every { it.containsKey('viewType') && it.containsKey('content') }", equalTo(true))
     } Extract {
         path("sduiComponents.viewType")
     }
