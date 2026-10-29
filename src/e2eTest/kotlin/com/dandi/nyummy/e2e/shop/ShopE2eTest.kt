@@ -36,7 +36,7 @@ class ShopE2eTest {
     @Smoke
     @Test
     fun `인테리어 탭 상품 목록을 조회한다`() {
-        Given {
+        val items: List<Map<String, Any?>> = Given {
             spec(RequestSpecs.createAuthorizedSpec())
             queryParams(mapOf("tab" to "INTERIOR", "sort" to "POPULAR"))
         } When {
@@ -45,20 +45,24 @@ class ShopE2eTest {
             statusCode(200)
             body("keySet()", hasItems("items", "nextCursor", "hasNext"))
             body("items.category", everyItem(not(equalTo("BACKGROUND"))))
-            body(
-                "items[0].keySet()",
-                hasItems(
-                    "productId",
-                    "itemId",
-                    "name",
-                    "category",
-                    "categoryName",
-                    "price",
-                    "tag",
-                    "isLimited",
-                    "ownedCount",
-                ),
-            )
+        } Extract {
+            path("items")
+        }
+
+        // 상품이 없는 환경에서는 items가 비어 있다. 상품이 있으면 모두 카드 필드를 가진다.
+        val cardKeys = listOf(
+            "productId",
+            "itemId",
+            "name",
+            "category",
+            "categoryName",
+            "price",
+            "tag",
+            "isLimited",
+            "ownedCount",
+        )
+        items.forEach { item ->
+            assertTrue(item.keys.containsAll(cardKeys), "상품 카드 필드가 빠졌습니다: ${item.keys}")
         }
     }
 
