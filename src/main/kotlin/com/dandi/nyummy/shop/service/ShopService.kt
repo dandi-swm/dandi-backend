@@ -173,8 +173,12 @@ class ShopService(
             }
             .sortedWith(createComparator(sort))
 
-        val page = createPage(sorted, cursor, size)
-        return ShopItemsResponse(items = page.items, nextCursor = page.nextCursor, hasNext = page.hasNext)
+        val page = createPage(sorted, cursor, size) { it.productId }
+        return ShopItemsResponse(
+            items = page.items.map { it.toShopItemResponse() },
+            nextCursor = page.nextCursor,
+            hasNext = page.hasNext,
+        )
     }
 
     /**
@@ -189,10 +193,10 @@ class ShopService(
             ?: throw BusinessException(ShopErrorCode.PROMOTION_NOT_FOUND)
         val products = promotion.toPromotionProducts()
 
-        val page = createPage(products, cursor, size)
+        val page = createPage(products, cursor, size) { it.productId }
         return PromotionProductsResponse(
             banner = ShopStubData.createPromotionBanner(promotion),
-            items = page.items,
+            items = page.items.map { it.toShopItemResponse() },
             nextCursor = page.nextCursor,
             hasNext = page.hasNext,
         )
@@ -267,7 +271,7 @@ class ShopService(
                 val promotion = promotionsById.getValue(shopBanner.promotionId)
                 val products = getPromotionProductsInOrder(promotion.id, promotionProducts, productsById)
                 shopBanner.toShopBannerResponse(
-                    imageUrl = "${shopProperties.cdnBaseUrl}/${shopBanner.imageKey}",
+                    imageUrl = createImageUrl(shopBanner.imageKey),
                     cornerStyle = BannerCornerStyle.ROUNDED,
                     price = createPromotionPriceText(promotion, products, discountRates),
                     action = createNavigateAction("/shop/promotions/${promotion.id}"),
@@ -293,6 +297,9 @@ class ShopService(
 
         return createPriceText(listPrice, purchasePrice)
     }
+
+    // CDN 주소 + S3 키
+    private fun createImageUrl(imageKey: String): String = "${shopProperties.cdnBaseUrl}/$imageKey"
 
     // "N시간 후 바뀌어요". 남은 시간은 시간 단위로 올린다(1시간 10분 → 2시간).
     private fun createRemainingTimeTrailing(endsAt: Instant, now: Instant): SectionHeaderTrailingResponse {
@@ -330,12 +337,17 @@ class ShopService(
         }.thenByDescending { it.productId }
     }
 
-    private data class ProductPageResult(val items: List<ShopItemResponse>, val nextCursor: Long?, val hasNext: Boolean)
+    private data class ProductPageResult<T>(val items: List<T>, val nextCursor: Long?, val hasNext: Boolean)
 
     // 정렬된 목록에서 커서 상품 다음부터 size개를 자른다. 커서 상품이 목록에 없으면 처음부터 주지 않고 거부한다.
-    private fun createPage(products: List<StubProduct>, cursor: Long?, size: Int): ProductPageResult {
+    private fun <T> createPage(
+        products: List<T>,
+        cursor: Long?,
+        size: Int,
+        getProductId: (T) -> Long,
+    ): ProductPageResult<T> {
         val startIndex = cursor?.let { cursorId ->
-            val index = products.indexOfFirst { it.productId == cursorId }
+            val index = products.indexOfFirst { getProductId(it) == cursorId }
             if (index < 0) throw BusinessException(CommonErrorCode.INVALID_INPUT_VALUE)
             index + 1
         } ?: 0
@@ -343,8 +355,8 @@ class ShopService(
         val hasNext = products.size > startIndex + size
 
         return ProductPageResult(
-            items = page.map { it.toShopItemResponse() },
-            nextCursor = if (hasNext) page.last().productId else null,
+            items = page,
+            nextCursor = if (hasNext) getProductId(page.last()) else null,
             hasNext = hasNext,
         )
     }
