@@ -1,6 +1,7 @@
 package com.dandi.nyummy.meal.service
 
 import com.dandi.nyummy.exception.BusinessException
+import com.dandi.nyummy.exception.errorcode.AuthErrorCode
 import com.dandi.nyummy.exception.errorcode.ErrorCode
 import com.dandi.nyummy.exception.errorcode.MealErrorCode
 import com.dandi.nyummy.exception.errorcode.UserErrorCode
@@ -37,7 +38,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
 /**
- * createMeal의 검사·확정 순서와 mealAt 결정, createTutorialMeal의 완료 기록과 보상 상자 우편을 다룬다.
+ * createMeal의 검사·확정 순서와 mealAt 결정, createTutorialMeal의 완료 기록과 보상 상자 우편,
+ * getMealStatus의 조회·소유권 검증을 다룬다.
  * 하루 정책 자체는 MealAttemptServiceTest가 맡는다.
  */
 class MealServiceTest {
@@ -254,5 +256,36 @@ class MealServiceTest {
 
         verify(exactly = 0) { mealRepository.save(any()) }
         verify(exactly = 0) { mealTransactionService.createMeal(any(), any(), any()) }
+    }
+
+    // getMealStatus
+
+    private val mealId = 10L
+
+    @Test
+    fun `분석 상태를 조회하면 식사 id와 상태를 돌려준다`() {
+        val meal = Meal(status = MealStatus.ANALYZING, imageKey = imageKey, mealAt = now, userId = userId)
+        every { mealRepository.findMealByIdAndDeletedAtIsNull(mealId) } returns meal
+
+        val response = mealService.getMealStatus(userId, mealId)
+
+        assertEquals(meal.id, response.id)
+        assertEquals(MealStatus.ANALYZING, response.status)
+    }
+
+    @Test
+    fun `식사가 없거나 삭제됐으면 MEAL_NOT_FOUND 예외를 던진다`() {
+        every { mealRepository.findMealByIdAndDeletedAtIsNull(mealId) } returns null
+
+        assertBusinessException(MealErrorCode.MEAL_NOT_FOUND) { mealService.getMealStatus(userId, mealId) }
+    }
+
+    @Test
+    fun `다른 사용자의 식사면 FORBIDDEN 예외를 던진다`() {
+        val otherUserId = 2L
+        val meal = Meal(status = MealStatus.ANALYZING, imageKey = imageKey, mealAt = now, userId = otherUserId)
+        every { mealRepository.findMealByIdAndDeletedAtIsNull(mealId) } returns meal
+
+        assertBusinessException(AuthErrorCode.FORBIDDEN) { mealService.getMealStatus(userId, mealId) }
     }
 }
