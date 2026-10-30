@@ -136,6 +136,7 @@
 - 칼로리 `calory`(calories 금지), 탄수화물 `carbs`(carbohydrate 금지), 단백질 `protein`, 지방 `fat` — 단수형
 - 하루 평가 `DailyNutritionEvaluation`, 권장 섭취량 `RecommendedDailyIntake`(전용 클래스 없이 `calculateRecommendedDailyIntake()`가 `Nutrition` 반환)
 - 하루 섭취 합계 `Current`와 목표 섭취량 `Target` — 응답에서 쌍으로 쓴다
+- Worker가 가져갈 영양 분석 작업 한 건 `MealAnalysisJob`(테이블 `meal_analysis_jobs`, Task 금지 — ECS task와 혼동)
 
 ### 스트릭
 
