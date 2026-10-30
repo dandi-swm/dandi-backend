@@ -3,17 +3,11 @@ package com.dandi.nyummy.meal.service
 import com.dandi.nyummy.cat.repository.CatRepository
 import com.dandi.nyummy.cat.service.CatService
 import com.dandi.nyummy.config.AppLinkProperties
-import com.dandi.nyummy.exception.BusinessException
-import com.dandi.nyummy.exception.errorcode.AuthErrorCode
-import com.dandi.nyummy.exception.errorcode.MealErrorCode
 import com.dandi.nyummy.infra.ai.nutrition.NutritionAnalysisClient
 import com.dandi.nyummy.infra.push.dto.PushMessage
 import com.dandi.nyummy.infra.push.dto.PushType
-import com.dandi.nyummy.meal.dto.MealStatusResponse
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.enum.MealStatus
-import com.dandi.nyummy.meal.mapper.toMealStatusResponse
-import com.dandi.nyummy.meal.repository.MealRepository
 import com.dandi.nyummy.notification.NotificationId
 import com.dandi.nyummy.notification.service.NotificationService
 import org.slf4j.LoggerFactory
@@ -24,7 +18,6 @@ import java.time.Instant
 @Service
 class AnalysisService(
     private val mealTransactionService: MealTransactionService,
-    private val mealRepository: MealRepository,
     private val nutritionAnalysisClient: NutritionAnalysisClient,
     private val catRepository: CatRepository,
     private val catService: CatService,
@@ -126,29 +119,4 @@ class AnalysisService(
                 appLink = appLinkProperties.createMealDetailLink(meal.id),
             )
         }
-
-    /**
-     * FAILED 상태의 식사에 대해 영양 분석을 재시도한다.
-     *
-     * @param userId 재시도를 요청한 사용자 ID (소유권 검증에 사용)
-     * @param mealId 재시도할 [Meal]의 ID
-     * @return 재시도 결과의 분석 상태를 담은 [MealStatusResponse]
-     * @throws BusinessException [MealErrorCode.MEAL_NOT_FOUND] mealId에 해당하는 식사가 없거나, 삭제된 경우
-     * @throws BusinessException [AuthErrorCode.FORBIDDEN] userId가 소유자가 아닌 경우
-     * @throws BusinessException [MealErrorCode.ANALYSIS_NOT_RETRYABLE] 식사가 FAILED 상태가 아닌 경우
-     */
-    fun retryNutritionAnalysis(userId: Long, mealId: Long): MealStatusResponse {
-        val meal = mealRepository.findMealByIdAndDeletedAtIsNull(mealId)
-            ?: throw BusinessException(MealErrorCode.MEAL_NOT_FOUND)
-
-        meal.validateOwnership(userId)
-
-        if (meal.status != MealStatus.FAILED) {
-            throw BusinessException(MealErrorCode.ANALYSIS_NOT_RETRYABLE)
-        }
-
-        analyzeNutrition(meal)
-
-        return meal.toMealStatusResponse()
-    }
 }

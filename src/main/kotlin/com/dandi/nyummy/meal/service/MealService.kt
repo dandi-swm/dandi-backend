@@ -325,6 +325,31 @@ class MealService(
     }
 
     /**
+     * FAILED 상태의 식사에 대해 영양 분석을 재시도한다.
+     *
+     * @param userId 재시도를 요청한 사용자 ID (소유권 검증에 사용)
+     * @param mealId 재시도할 [Meal]의 ID
+     * @return 재시도 결과의 분석 상태를 담은 [MealStatusResponse]
+     * @throws BusinessException [MealErrorCode.MEAL_NOT_FOUND] mealId에 해당하는 식사가 없거나, 삭제된 경우
+     * @throws BusinessException [AuthErrorCode.FORBIDDEN] userId가 소유자가 아닌 경우
+     * @throws BusinessException [MealErrorCode.ANALYSIS_NOT_RETRYABLE] 식사가 FAILED 상태가 아닌 경우
+     */
+    fun retryNutritionAnalysis(userId: Long, mealId: Long): MealStatusResponse {
+        val meal = mealRepository.findMealByIdAndDeletedAtIsNull(mealId)
+            ?: throw BusinessException(MealErrorCode.MEAL_NOT_FOUND)
+
+        meal.validateOwnership(userId)
+
+        if (meal.status != MealStatus.FAILED) {
+            throw BusinessException(MealErrorCode.ANALYSIS_NOT_RETRYABLE)
+        }
+
+        analysisService.analyzeNutrition(meal)
+
+        return meal.toMealStatusResponse()
+    }
+
+    /**
      * 식사 이름을 수정한다.
      *
      * @param userId 수정하는 사용자 ID
