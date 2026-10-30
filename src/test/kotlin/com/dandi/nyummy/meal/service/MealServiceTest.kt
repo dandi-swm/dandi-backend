@@ -39,7 +39,7 @@ import kotlin.test.assertFailsWith
 
 /**
  * createMeal의 검사·확정 순서와 mealAt 결정, createTutorialMeal의 완료 기록과 보상 상자 우편,
- * getMealStatus의 조회·소유권 검증을 다룬다.
+ * getMealStatus의 조회·소유권 검증, retryNutritionAnalysis의 재시도 가능 여부 검사를 다룬다.
  * 하루 정책 자체는 MealAttemptServiceTest가 맡는다.
  */
 class MealServiceTest {
@@ -287,5 +287,56 @@ class MealServiceTest {
         every { mealRepository.findMealByIdAndDeletedAtIsNull(mealId) } returns meal
 
         assertBusinessException(AuthErrorCode.FORBIDDEN) { mealService.getMealStatus(userId, mealId) }
+    }
+
+    // retryNutritionAnalysis
+
+    @Test
+    fun `FAILED인 식사를 재시도하면 분석하고 분석 뒤의 상태를 돌려준다`() {
+        val meal = Meal(status = MealStatus.FAILED, imageKey = imageKey, mealAt = now, userId = userId)
+        every { mealRepository.findMealByIdAndDeletedAtIsNull(mealId) } returns meal
+        every { analysisService.analyzeNutrition(meal) } answers { meal.updateStatus(MealStatus.COMPLETED) }
+
+        val response = mealService.retryNutritionAnalysis(userId, mealId)
+
+        verify(exactly = 1) { analysisService.analyzeNutrition(meal) }
+        assertEquals(meal.id, response.id)
+        assertEquals(MealStatus.COMPLETED, response.status)
+    }
+
+    @Test
+    fun `재시도할 식사가 없거나 삭제됐으면 MEAL_NOT_FOUND 예외를 던지고 분석하지 않는다`() {
+        every { mealRepository.findMealByIdAndDeletedAtIsNull(mealId) } returns null
+
+        assertBusinessException(MealErrorCode.MEAL_NOT_FOUND) { mealService.retryNutritionAnalysis(userId, mealId) }
+
+        verify(exactly = 0) { analysisService.analyzeNutrition(any()) }
+    }
+
+    @Test
+    fun `다른 사용자의 식사를 재시도하면 FORBIDDEN 예외를 던지고 분석하지 않는다`() {
+        val otherUserId = 2L
+        val meal = Meal(status = MealStatus.FAILED, imageKey = imageKey, mealAt = now, userId = otherUserId)
+        every { mealRepository.findMealByIdAndDeletedAtIsNull(mealId) } returns meal
+
+        assertBusinessException(AuthErrorCode.FORBIDDEN) { mealService.retryNutritionAnalysis(userId, mealId) }
+
+        verify(exactly = 0) { analysisService.analyzeNutrition(any()) }
+    }
+
+    @Test
+    fun `FAILED가 아닌 식사를 재시도하면 ANALYSIS_NOT_RETRYABLE 예외를 던지고 분석하지 않는다`() {
+        val notRetryableStatuses = MealStatus.entries - MealStatus.FAILED
+
+        notRetryableStatuses.forEach { status ->
+            val meal = Meal(status = status, imageKey = imageKey, mealAt = now, userId = userId)
+            every { mealRepository.findMealByIdAndDeletedAtIsNull(mealId) } returns meal
+
+            assertBusinessException(MealErrorCode.ANALYSIS_NOT_RETRYABLE) {
+                mealService.retryNutritionAnalysis(userId, mealId)
+            }
+        }
+
+        verify(exactly = 0) { analysisService.analyzeNutrition(any()) }
     }
 }
