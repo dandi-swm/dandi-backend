@@ -18,7 +18,6 @@ import com.dandi.nyummy.notification.NotificationId
 import com.dandi.nyummy.notification.service.NotificationService
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
-import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
 import java.time.Instant
 
@@ -38,30 +37,11 @@ class AnalysisService(
     }
 
     /**
-     * 식사의 영양 분석 상태를 조회한다.
-     *
-     * @param userId 조회를 요청한 사용자 ID (소유권 검증에 사용)
-     * @param mealId 조회할 [Meal]의 ID
-     * @return 분석 상태를 담은 [MealStatusResponse]
-     * @throws BusinessException [MealErrorCode.MEAL_NOT_FOUND] mealId에 해당하는 식사가 없거나, 삭제된 경우
-     * @throws BusinessException [AuthErrorCode.FORBIDDEN] userId가 소유자가 아닌 경우
-     */
-    @Transactional(readOnly = true)
-    fun getMealStatus(userId: Long, mealId: Long): MealStatusResponse {
-        val meal = mealRepository.findMealByIdAndDeletedAtIsNull(mealId)
-            ?: throw BusinessException(MealErrorCode.MEAL_NOT_FOUND, "Meal Not Found")
-
-        meal.validateOwnership(userId)
-
-        return meal.toMealStatusResponse()
-    }
-
-    /**
      * 식사 이미지를 분석해 이름·아이콘·영양을 저장하고,
      * 분석 상태 전이(WAITING/FAILED → ANALYZING → COMPLETED/FAILED)를 전담한다.
      *
      * 상태 변경은 [MealTransactionService]를 통해 각각 독립 트랜잭션으로 즉시 커밋되므로,
-     * 분석이 진행되는 동안에도 [getMealStatus] 폴링이 ANALYZING 상태를 조회할 수 있다.
+     * 분석이 진행되는 동안에도 [MealService.getMealStatus] 폴링이 ANALYZING 상태를 조회할 수 있다.
      * 분석 실패는 예외로 전파하지 않고 FAILED 상태로 기록한다.
      * 소유권 검증은 호출자가 보장한다.
      *
