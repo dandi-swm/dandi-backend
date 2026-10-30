@@ -134,7 +134,8 @@ class CatService(
 
     /**
      * 체형을 최신으로 갱신하고 그 고양이를 돌려준다. 마지막 평가 이후 지난 구간을 **모두** 평가해,
-     * 구간마다 한 단계씩 누적 적용한다. 3일 굶으면 한 단계, 6일이면 두 단계 내려간다.
+     * 구간마다 한 단계씩 누적 적용한다. 구간은 하루라 어제 기록으로 오늘 체형이 정해지고,
+     * 이틀 동안 기록이 없으면 두 단계 내려간다.
      *
      * 체형을 읽는 모든 경로가 이걸 거친다. 그래서 `/cats`와 `/cats/animations`를 어떤 순서로
      * 부르든, 병렬로 부르든 같은 체형을 본다.
@@ -146,8 +147,14 @@ class CatService(
      * 구간은 시간 순서대로 하나씩 적용한다. 합산 후 한 번만 clamp하면 바닥(LEAN)에 닿은 뒤의
      * 굶주림이 나중 구간의 과식으로 상쇄돼 되살아난다.
      *
-     * 기록이 없거나 분석에 실패한 구간은 섭취량 0으로 취급되어 체형이 한 단계 내려간다.
+     * 기록이 없는 구간은 한 단계 내려간다. 분석에 실패한 식사만 있는 구간은 기록이 있는 것으로 보고
+     * 보통냥 쪽으로 움직인다([calculateWeightStep]). 섭취량은 분석이 완료된 식사만 합산한다.
      * 목표 섭취량은 모든 구간에 현재 프로필 기준값을 쓴다 — 과거 구간의 나이·체중을 되살리지 않는다.
+     *
+     * 마지막 구간(어제)에 분석이 끝나지 않은 식사([MealStatus.IN_PROGRESS_STATUSES])가 있으면 그 구간은
+     * 평가하지 않고 다음 조회로 미룬다. 자정 직전에 시작한 분석이 끝나기 전에 조회하면 그 식사의 칼로리가
+     * 빠진 채로 확정되기 때문이다. 마지막 구간만 미루므로 ANALYZING에 멈춘 식사가 있어도 하루 뒤에는 평가된다.
+     * 평가가 끝난 뒤의 분석 재시도·식사 삭제는 반영하지 않는다.
      *
      * 동시성 제어는 하지 않는다. `/cats`와 `/cats/animations`가 병렬로 들어오면 두 번 적용될 수
      * 있다. 낙관적 락은 별도로 검토한다.
@@ -179,26 +186,47 @@ class CatService(
         val windowStartDate = windowEndDate.minusDays(intervalCount.toLong() * intervalDays)
 
         val caloryByInterval = IntArray(intervalCount)
+        val hasMealByInterval = BooleanArray(intervalCount)
+        val hasInProgressMealByInterval = BooleanArray(intervalCount)
         mealRepository
             .findMealsByUserIdAndPeriod(
                 userId,
                 windowStartDate.atStartOfDay(zone).toInstant(),
                 windowEndDate.atStartOfDay(zone).toInstant(),
             )
-            .filter { it.status == MealStatus.COMPLETED }
             .forEach { meal ->
                 val mealDate = meal.mealAt.atZone(zone).toLocalDate()
                 val index = (ChronoUnit.DAYS.between(windowStartDate, mealDate) / intervalDays).toInt()
 
-                caloryByInterval[index] += meal.calory ?: 0
+                hasMealByInterval[index] = true
+
+                if (meal.status in MealStatus.IN_PROGRESS_STATUSES) {
+                    hasInProgressMealByInterval[index] = true
+                }
+
+                if (meal.status == MealStatus.COMPLETED) {
+                    caloryByInterval[index] += meal.calory ?: 0
+                }
             }
 
         val profile = profileRepository.findProfileByUserId(userId)
         val targetCalory = calculateRecommendedDailyIntake(profile, today).calory * intervalDays
 
         for (index in 0 until intervalCount) {
+            // 평가 시각이 이 구간의 시작에 남으므로 다음 조회 때 이 구간부터 다시 평가한다.
+            if (index == intervalCount - 1 && hasInProgressMealByInterval[index]) {
+                logger.info(
+                    "분석 중인 식사가 있어 고양이 체형 평가를 미룸: userId = {}, interval = {}/{}",
+                    userId,
+                    index + 1,
+                    intervalCount,
+                )
+                break
+            }
+
             // cat.weight를 루프 안에서 읽는다. 앞 구간의 결과가 반영된 값이어야 한 칸씩 수렴한다.
             val step = calculateWeightStep(
+                hasMealByInterval[index],
                 caloryByInterval[index],
                 targetCalory,
                 catProperties.weightUpdateTolerance,

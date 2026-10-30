@@ -11,5 +11,6 @@ enum class MealStatus {
 
     companion object {
         val ANALYZABLE_STATUSES = setOf(WAITING, FAILED)
+        val IN_PROGRESS_STATUSES = setOf(WAITING, ANALYZING)
     }
 }
