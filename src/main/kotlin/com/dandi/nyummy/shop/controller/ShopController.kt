@@ -57,7 +57,8 @@ class ShopController(private val shopService: ShopService) {
             "category는 인테리어 탭의 분류 칩이고, 없으면 탭 전체다. LIMITED는 분류와 관계없이 기간 한정 상품만 거른다. " +
             "방 배경 탭은 분류 칩이 없어 category를 보내면 400이다. 보유 숨기기는 앱이 거른다. " +
             "첫 요청은 cursor 없이 보내고, 다음 요청부터는 직전 응답의 nextCursor를 cursor로 보낸다. " +
-            "cursor가 목록에 없는 상품이면 400이다. 현재는 고정 상품 목록에서 거르고 정렬한 결과를 반환한다.",
+            "cursor가 목록에 없는 상품이면 400이다. 가격은 사용자가 대상인 프로모션 중 할인율이 가장 큰 것으로 계산하고, " +
+            "가격순 정렬도 이 결제가 기준이다. 신상품순은 판매 시작 시각이 늦은 순이다.",
     )
     @GetMapping("/products")
     fun getProducts(
@@ -77,8 +78,8 @@ class ShopController(private val shopService: ShopService) {
         summary = "프로모션 상품 목록 조회",
         description = "추천 탭 배너를 누르면 여는 프로모션(신입 집사 환영, 첫 구매 혜택 등)의 화면을 조회한다. " +
             "맨 위에 그 프로모션 배너(cornerStyle SQUARE, action null)를, 아래에 판매 중인 상품을 진열 순서대로 내린다. " +
-            "무한 스크롤용 cursor 방식이다. 진행 중이 아니거나 대상 사용자가 아닌 프로모션이면 404다. " +
-            "현재는 고정 프로모션 목록에서 찾아 반환한다.",
+            "무한 스크롤용 cursor 방식이다. 진행 중이 아니거나, 대상 사용자가 아니거나, 노출 중인 배너가 없는 프로모션이면 404다. " +
+            "가격은 추천 탭과 같이 사용자가 대상인 프로모션 중 할인율이 가장 큰 것으로 계산한다.",
     )
     @ApiErrorCodes(shop = [ShopErrorCode.PROMOTION_NOT_FOUND])
     @GetMapping("/promotions/{promotionId}/products")

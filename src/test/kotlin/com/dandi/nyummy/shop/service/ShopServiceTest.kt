@@ -1,6 +1,10 @@
 package com.dandi.nyummy.shop.service
 
 import com.dandi.nyummy.auth.enum.AuthProvider
+import com.dandi.nyummy.exception.BusinessException
+import com.dandi.nyummy.exception.errorcode.CommonErrorCode
+import com.dandi.nyummy.exception.errorcode.ErrorCode
+import com.dandi.nyummy.exception.errorcode.ShopErrorCode
 import com.dandi.nyummy.room.dto.OwnedRoomItemCountResult
 import com.dandi.nyummy.room.enum.RoomItemCategory
 import com.dandi.nyummy.room.repository.OwnedRoomItemRepository
@@ -16,7 +20,10 @@ import com.dandi.nyummy.shop.entity.Promotion
 import com.dandi.nyummy.shop.entity.PromotionProduct
 import com.dandi.nyummy.shop.entity.ShopBanner
 import com.dandi.nyummy.shop.enum.BannerCornerStyle
+import com.dandi.nyummy.shop.enum.ProductSort
 import com.dandi.nyummy.shop.enum.PromotionCategory
+import com.dandi.nyummy.shop.enum.ShopCategory
+import com.dandi.nyummy.shop.enum.ShopTab
 import com.dandi.nyummy.shop.repository.ProductItemRepository
 import com.dandi.nyummy.shop.repository.ProductRepository
 import com.dandi.nyummy.shop.repository.PromotionProductRepository
@@ -26,6 +33,7 @@ import com.dandi.nyummy.user.entity.User
 import com.dandi.nyummy.user.repository.UserRepository
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.test.util.ReflectionTestUtils
 import java.time.Clock
@@ -34,6 +42,8 @@ import java.time.Instant
 import java.time.ZoneOffset
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -95,12 +105,13 @@ class ShopServiceTest {
         category: RoomItemCategory = RoomItemCategory.BED,
         salesCount: Int = 0,
         saleStartsAt: Instant = now.minus(Duration.ofDays(30)),
+        isLimited: Boolean = false,
     ) = Product(
         category = category,
         name = "상품 $id",
         representativeItemId = id * 10,
         price = price,
-        isLimited = false,
+        isLimited = isLimited,
         saleStartsAt = saleStartsAt,
     ).also {
         ReflectionTestUtils.setField(it, "id", id)
@@ -136,6 +147,20 @@ class ShopServiceTest {
         shopService.getRecommendPage(userId, shopLayoutVariant)
 
     private inline fun <reified T> ShopPageResponse.componentOf(): T = sduiComponents.filterIsInstance<T>().single()
+
+    private fun getPromotionProducts(promotionId: Long, cursor: Long? = null, size: Int = 20) =
+        shopService.getPromotionProducts(userId, promotionId, cursor, size)
+
+    private fun getProductIds(
+        tab: ShopTab = ShopTab.INTERIOR,
+        category: ShopCategory? = null,
+        sort: ProductSort = ProductSort.NEW,
+    ) = shopService.getProducts(userId, tab, category, sort, cursor = null, size = 20).items.map { it.productId }
+
+    private fun assertBusinessException(expected: ErrorCode, block: () -> Unit) {
+        val exception = assertFailsWith<BusinessException>(block = block)
+        assertEquals(expected, exception.errorCode)
+    }
 
     @Test
     fun `배너도 상품도 없으면 빈 칸 목록을 준다`() {
@@ -291,5 +316,134 @@ class ShopServiceTest {
 
         assertEquals(listOf("SectionHeader", "ItemList", "SectionHeader", "Ranking"), viewTypesA)
         assertEquals(listOf("SectionHeader", "Ranking", "SectionHeader", "ItemList"), viewTypesB)
+    }
+
+    @Test
+    fun `대상이 아닌 프로모션의 상품 목록은 거부한다`() {
+        // 가입한 지 30일이라 신입 집사 프로모션 대상이 아니다
+        promotions = listOf(promotion(1, PromotionCategory.NEW_USER))
+        shopBanners = listOf(shopBanner(11, promotionId = 1))
+
+        assertBusinessException(ShopErrorCode.PROMOTION_NOT_FOUND) { getPromotionProducts(1) }
+    }
+
+    @Test
+    fun `노출 중인 배너가 없는 프로모션의 상품 목록은 거부한다`() {
+        promotions = listOf(promotion(2))
+
+        assertBusinessException(ShopErrorCode.PROMOTION_NOT_FOUND) { getPromotionProducts(2) }
+    }
+
+    @Test
+    fun `프로모션 화면은 배너를 직각 모서리로 주고 판매 중인 상품만 진열 순서대로 준다`() {
+        val bed = product(101, price = 1000)
+        val rug = product(102, price = 500, category = RoomItemCategory.RUG)
+        // 103은 판매가 끝나 판매 중 상품에 없다
+        products = listOf(bed, rug)
+        productItems = products.map { single(it) }
+        promotions = listOf(promotion(2, discountRate = 30))
+        promotionProducts =
+            listOf(PromotionProduct(2, 102, 0), PromotionProduct(2, 103, 1), PromotionProduct(2, 101, 2))
+        shopBanners = listOf(shopBanner(12, promotionId = 2))
+
+        val response = getPromotionProducts(2)
+
+        assertEquals(12, response.banner.bannerId)
+        assertEquals(BannerCornerStyle.SQUARE, response.banner.cornerStyle)
+        assertNull(response.banner.action)
+        // 정가 1,500 → 결제가 700 + 350 = 1,050
+        assertEquals(listOf("30%", null, "1,050 ", "1,500"), response.banner.price?.map { it.text })
+        assertEquals(listOf(102L, 101L), response.items.map { it.productId })
+        assertNull(response.nextCursor)
+        assertFalse(response.hasNext)
+    }
+
+    @Test
+    fun `커서 다음 상품부터 size개씩 주고 마지막 묶음이면 다음 커서를 비운다`() {
+        products = (101L..103L).map { product(it) }
+        productItems = products.map { single(it) }
+        promotions = listOf(promotion(2))
+        promotionProducts = products.mapIndexed { index, product -> PromotionProduct(2, product.id, index) }
+        shopBanners = listOf(shopBanner(12, promotionId = 2))
+
+        val first = getPromotionProducts(2, size = 2)
+        val second = getPromotionProducts(2, cursor = first.nextCursor, size = 2)
+
+        assertEquals(listOf(101L, 102L), first.items.map { it.productId })
+        assertEquals(102L, first.nextCursor)
+        assertTrue(first.hasNext)
+        assertEquals(listOf(103L), second.items.map { it.productId })
+        assertNull(second.nextCursor)
+        assertFalse(second.hasNext)
+    }
+
+    @Test
+    fun `커서 상품이 프로모션 목록에 없으면 거부한다`() {
+        products = listOf(product(101))
+        productItems = products.map { single(it) }
+        promotions = listOf(promotion(2))
+        promotionProducts = listOf(PromotionProduct(2, 101, 0))
+        shopBanners = listOf(shopBanner(12, promotionId = 2))
+
+        assertBusinessException(CommonErrorCode.INVALID_INPUT_VALUE) { getPromotionProducts(2, cursor = 999) }
+    }
+
+    @Test
+    fun `방 배경 탭에 분류 칩을 보내면 상품을 조회하지 않고 거부한다`() {
+        assertBusinessException(CommonErrorCode.INVALID_INPUT_VALUE) {
+            getProductIds(tab = ShopTab.BACKGROUND, category = ShopCategory.BED)
+        }
+        verify(exactly = 0) { productRepository.findOnSaleProducts(any()) }
+    }
+
+    @Test
+    fun `인테리어 탭은 방 배경을 빼고 방 배경 탭은 방 배경만 준다`() {
+        products = listOf(
+            product(101, category = RoomItemCategory.BED),
+            product(102, category = RoomItemCategory.BACKGROUND),
+            product(103, category = RoomItemCategory.RUG),
+        )
+        productItems = products.map { single(it) }
+
+        assertEquals(listOf(103L, 101L), getProductIds(tab = ShopTab.INTERIOR))
+        assertEquals(listOf(102L), getProductIds(tab = ShopTab.BACKGROUND))
+    }
+
+    @Test
+    fun `기간 한정 칩은 분류와 관계없이 기간 한정만 주고 기간 한정 상품은 분류 칩에도 나온다`() {
+        products = listOf(
+            product(101, category = RoomItemCategory.BED, isLimited = true),
+            product(102, category = RoomItemCategory.BED),
+            product(103, category = RoomItemCategory.RUG, isLimited = true),
+        )
+        productItems = products.map { single(it) }
+
+        assertEquals(listOf(103L, 101L), getProductIds(category = ShopCategory.LIMITED))
+        assertEquals(listOf(102L, 101L), getProductIds(category = ShopCategory.BED))
+    }
+
+    @Test
+    fun `신상품순은 판매 시작이 늦은 순이고 같으면 최신 상품이 앞이다`() {
+        // 103은 id가 가장 크지만 판매를 가장 먼저 시작했다
+        products = listOf(
+            product(101, saleStartsAt = now.minus(Duration.ofDays(1))),
+            product(102, saleStartsAt = now.minus(Duration.ofDays(1))),
+            product(103, saleStartsAt = now.minus(Duration.ofDays(3))),
+        )
+        productItems = products.map { single(it) }
+
+        assertEquals(listOf(102L, 101L, 103L), getProductIds(sort = ProductSort.NEW))
+    }
+
+    @Test
+    fun `가격순은 이 사용자의 할인가로 정렬하고 같으면 최신 상품이 앞이다`() {
+        products = listOf(product(101, price = 1000), product(102, price = 700), product(103, price = 700))
+        productItems = products.map { single(it) }
+        promotions = listOf(promotion(2, discountRate = 50))
+        promotionProducts = listOf(PromotionProduct(2, 101, 0))
+
+        // 101은 정가가 가장 비싸지만 50% 할인으로 500이라 가장 싸다. 102·103은 700으로 같다
+        assertEquals(listOf(101L, 103L, 102L), getProductIds(sort = ProductSort.PRICE_ASC))
+        assertEquals(listOf(103L, 102L, 101L), getProductIds(sort = ProductSort.PRICE_DESC))
     }
 }
