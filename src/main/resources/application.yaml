@@ -14,6 +14,9 @@ spring:
       data-source-properties:
         connectionTimeZone: UTC
         forceConnectionTimeZoneToSession: true
+        # 행 잠금을 기다리는 시간. 기본 50초면 그동안 커넥션을 붙잡고 앱 요청도 먼저 끊긴다.
+        # JPA 힌트(jakarta.persistence.lock.timeout)는 MySQL에서 무시되어 세션 변수로 건다.
+        sessionVariables: innodb_lock_wait_timeout=3
 
   flyway:
     enabled: true
