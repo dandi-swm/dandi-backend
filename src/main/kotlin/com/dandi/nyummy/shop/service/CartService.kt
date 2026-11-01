@@ -1,28 +1,63 @@
 package com.dandi.nyummy.shop.service
 
+import com.dandi.nyummy.coin.service.CoinService
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.ShopErrorCode
+import com.dandi.nyummy.room.enum.RoomItemCategory
+import com.dandi.nyummy.shop.calculator.calculateMaxDiscountRates
+import com.dandi.nyummy.shop.calculator.calculatePurchasePrice
+import com.dandi.nyummy.shop.config.ShopProperties
 import com.dandi.nyummy.shop.dto.CartItemResponse
 import com.dandi.nyummy.shop.dto.CartResponse
 import com.dandi.nyummy.shop.dto.CartSummaryResponse
 import com.dandi.nyummy.shop.dto.CreateCartItemRequest
 import com.dandi.nyummy.shop.dto.CreatedCartItemResponse
+import com.dandi.nyummy.shop.dto.ShopItemResponse
 import com.dandi.nyummy.shop.dto.UpdateCartItemQuantityRequest
 import com.dandi.nyummy.shop.dto.UpdateCartSelectionRequest
+import com.dandi.nyummy.shop.entity.CartItem
+import com.dandi.nyummy.shop.entity.Product
+import com.dandi.nyummy.shop.repository.CartItemRepository
+import com.dandi.nyummy.shop.repository.ProductRepository
+import com.dandi.nyummy.shop.repository.PromotionProductRepository
 import com.dandi.nyummy.shop.service.ShopStubData.StubCartItem
 import com.dandi.nyummy.shop.service.ShopStubData.StubProduct
 import com.dandi.nyummy.shop.service.ShopStubData.toShopItemResponse
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
+import java.time.Clock
+import java.time.Instant
 
 /**
- * 장바구니. 지금은 저장하지 않고, 요청마다 [ShopStubData]의 고정 장바구니에 그 요청을 반영한 결과만 돌려준다.
+ * 장바구니. 가격은 저장하지 않고, 조회할 때마다 그 시점의 결제가와 구매 가능 여부를 다시 계산한다.
  *
- * 결제 정보와 담을 수 있는 수량은 실제 규칙(선택·구매 가능 항목만 합산, 상품당 10개·방 배경 1개, 장바구니 전체 30개)으로 계산한다.
+ * 결제 정보는 선택됐고 구매 가능한 항목만 합친다. 담을 수 있는 수량은 상품당 [ShopProperties.maxQuantityPerProduct]개
+ * (방 배경은 1개)와 장바구니 전체 [ShopProperties.maxCartQuantity]개 중 남은 수량이다.
+ *
+ * 지금은 조회만 DB에서 하고, 담기·수량·선택·빼기는 아직 저장하지 않고 [ShopStubData]의 고정 장바구니에 반영한 결과만 돌려준다.
  */
 @Service
-class CartService {
+class CartService(
+    private val clock: Clock,
+    private val shopItemService: ShopItemService,
+    private val coinService: CoinService,
+    private val shopProperties: ShopProperties,
+    private val cartItemRepository: CartItemRepository,
+    private val productRepository: ProductRepository,
+    private val promotionProductRepository: PromotionProductRepository,
+) {
 
-    fun getCart(userId: Long): CartResponse = createCart(ShopStubData.cartItems)
+    companion object {
+        // 같은 방 배경은 하나만 가질 수 있다
+        private const val MAX_BACKGROUND_QUANTITY = 1
+    }
+
+    @Transactional(readOnly = true)
+    fun getCart(userId: Long): CartResponse {
+        val cartItems = cartItemRepository.findByUserIdOrderByCreatedAtDescIdDesc(userId)
+
+        return createCart(getPricedCartItems(userId, cartItems, clock.instant()), coinService.getBalance(userId))
+    }
 
     /**
      * 상품을 [CreateCartItemRequest.quantity]개 더 담는다. 이미 담긴 상품이면 기존 수량에 더하고, 담은 상품은 선택 상태가 된다.
@@ -42,7 +77,7 @@ class CartService {
         val cartItems = ShopStubData.cartItems
         val existingQuantity = cartItems.find { it.productId == request.productId }?.quantity ?: 0
         val newQuantity = existingQuantity + request.quantity
-        validateQuantity(product, newQuantity, otherQuantity = cartItems.sumOf { it.quantity } - existingQuantity)
+        validateStubQuantity(product, newQuantity, otherQuantity = cartItems.sumOf { it.quantity } - existingQuantity)
 
         return CreatedCartItemResponse(
             productId = request.productId,
@@ -64,30 +99,129 @@ class CartService {
             ?: throw BusinessException(ShopErrorCode.CART_ITEM_NOT_FOUND)
         val product = ShopStubData.productsById.getValue(productId)
         if (!product.canPurchase) throw BusinessException(ShopErrorCode.CART_QUANTITY_EXCEEDED)
-        validateQuantity(product, request.quantity, otherQuantity = cartItems.sumOf { it.quantity } - cartItem.quantity)
+        validateStubQuantity(
+            product,
+            request.quantity,
+            otherQuantity =
+            cartItems.sumOf { it.quantity } - cartItem.quantity,
+        )
 
-        return createCart(cartItems.map { if (it.productId == productId) it.copy(quantity = request.quantity) else it })
+        return createStubCart(
+            cartItems.map {
+                if (it.productId ==
+                    productId
+                ) {
+                    it.copy(quantity = request.quantity)
+                } else {
+                    it
+                }
+            },
+        )
     }
 
     /**
      * 선택된 상품 목록을 요청 목록으로 맞추고 장바구니 전체를 반환한다. 장바구니에 없거나 구매 불가인 id는 무시한다.
      */
     fun updateCartSelection(userId: Long, request: UpdateCartSelectionRequest): CartResponse =
-        createCart(ShopStubData.cartItems.map { it.copy(isSelected = it.productId in request.productIds) })
+        createStubCart(ShopStubData.cartItems.map { it.copy(isSelected = it.productId in request.productIds) })
 
     /**
      * 상품을 장바구니에서 빼고 장바구니 전체를 반환한다. 장바구니에 없는 id는 무시한다.
      */
     fun deleteCartItems(userId: Long, productIds: List<Long>): CartResponse =
-        createCart(ShopStubData.cartItems.filterNot { it.productId in productIds })
+        createStubCart(ShopStubData.cartItems.filterNot { it.productId in productIds })
 
-    private fun validateQuantity(product: StubProduct, quantity: Int, otherQuantity: Int) {
+    private fun getMaxQuantityPerProduct(product: Product): Int = when (product.category) {
+        RoomItemCategory.BACKGROUND -> MAX_BACKGROUND_QUANTITY
+        else -> shopProperties.maxQuantityPerProduct
+    }
+
+    // 장바구니 화면에 보일 구매 불가 문구
+    private fun createUnavailableReason(errorCode: ShopErrorCode?): String? = when (errorCode) {
+        null -> null
+        ShopErrorCode.PRODUCT_NOT_FOR_SALE -> "판매가 끝났어요"
+        ShopErrorCode.ALREADY_OWNED -> "이미 가진 방 배경이에요"
+        else -> error("장바구니 구매 불가 사유가 아닌 에러 코드입니다: $errorCode")
+    }
+
+    // 장바구니 항목마다 상품·카드·결제가·구매 불가 사유를 붙인다. 상품은 지우지 않으므로 판매가 끝난 상품도 찾는다.
+    private fun getPricedCartItems(userId: Long, cartItems: List<CartItem>, now: Instant): List<PricedCartItemResult> {
+        if (cartItems.isEmpty()) return emptyList()
+
+        val productsById = productRepository.findAllById(cartItems.map { it.productId }).associateBy { it.id }
+        val promotions = shopItemService.getEligiblePromotions(userId, now)
+        val promotionProducts = promotionProductRepository.findByPromotionIdInOrderByDisplayOrderAsc(
+            promotions.map { it.id },
+        )
+        val discountRates = calculateMaxDiscountRates(promotions, promotionProducts)
+        val shopItems = shopItemService.createShopItems(userId, productsById.values.toList(), discountRates, now)
+
+        return cartItems.map { cartItem ->
+            val product = productsById.getValue(cartItem.productId)
+            val shopItem = shopItems.getValue(product.id)
+            val isOwnedBackground = product.category == RoomItemCategory.BACKGROUND && shopItem.ownedCount > 0
+            PricedCartItemResult(
+                cartItem = cartItem,
+                product = product,
+                shopItem = shopItem,
+                purchasePrice = calculatePurchasePrice(product.price, discountRates[product.id]),
+                unavailableErrorCode = when {
+                    !product.isOnSale(now) -> ShopErrorCode.PRODUCT_NOT_FOR_SALE
+                    isOwnedBackground -> ShopErrorCode.ALREADY_OWNED
+                    else -> null
+                },
+            )
+        }
+    }
+
+    // 결제 정보는 선택됐고 구매 가능한 항목만 합친다
+    private fun createCart(pricedCartItems: List<PricedCartItemResult>, balance: Int): CartResponse {
+        val totalQuantity = pricedCartItems.sumOf { it.cartItem.quantity }
+        val cartItemResponses = pricedCartItems.map {
+            val maxQuantity = if (it.canPurchase) {
+                minOf(
+                    getMaxQuantityPerProduct(it.product),
+                    shopProperties.maxCartQuantity - (totalQuantity - it.cartItem.quantity),
+                )
+            } else {
+                0
+            }
+            CartItemResponse(
+                shopItem = it.shopItem,
+                quantity = it.cartItem.quantity,
+                maxQuantity = maxQuantity,
+                isSelected = it.cartItem.isSelected && it.canPurchase,
+                canPurchase = it.canPurchase,
+                purchasePrice = it.purchasePrice,
+                unavailableReason = createUnavailableReason(it.unavailableErrorCode),
+            )
+        }
+
+        val selectedItems = pricedCartItems.filter { it.cartItem.isSelected && it.canPurchase }
+        val listPrice = selectedItems.sumOf { it.product.price * it.cartItem.quantity }
+        val purchasePrice = selectedItems.sumOf { it.purchasePrice * it.cartItem.quantity }
+
+        return CartResponse(
+            cartItems = cartItemResponses,
+            selectedItemCount = selectedItems.size,
+            summary = CartSummaryResponse(
+                quantity = selectedItems.sumOf { it.cartItem.quantity },
+                listPrice = listPrice,
+                discountPrice = listPrice - purchasePrice,
+                purchasePrice = purchasePrice,
+                balance = balance,
+                balanceAfter = balance - purchasePrice,
+            ),
+        )
+    }
+
+    private fun validateStubQuantity(product: StubProduct, quantity: Int, otherQuantity: Int) {
         if (quantity > product.maxQuantityPerProduct) throw BusinessException(ShopErrorCode.CART_QUANTITY_EXCEEDED)
         if (otherQuantity + quantity > ShopStubData.MAX_CART_QUANTITY) throw BusinessException(ShopErrorCode.CART_FULL)
     }
 
-    // 결제 정보는 선택됐고 구매 가능한 항목만 합친다
-    private fun createCart(cartItems: List<StubCartItem>): CartResponse {
+    // 담기·수량·선택·빼기를 DB로 옮기기 전까지 쓰는 고정 장바구니 응답. 모두 옮기면 지운다.
+    private fun createStubCart(cartItems: List<StubCartItem>): CartResponse {
         val totalQuantity = cartItems.sumOf { it.quantity }
         val cartItemResponses = cartItems.map { cartItem ->
             val product = ShopStubData.productsById.getValue(cartItem.productId)
@@ -106,7 +240,7 @@ class CartService {
                 isSelected = cartItem.isSelected && product.canPurchase,
                 canPurchase = product.canPurchase,
                 purchasePrice = product.purchasePrice,
-                unavailableReason = createUnavailableReason(product),
+                unavailableReason = createStubUnavailableReason(product),
             )
         }
 
@@ -130,9 +264,26 @@ class CartService {
         )
     }
 
-    private fun createUnavailableReason(product: StubProduct): String? = when {
+    private fun createStubUnavailableReason(product: StubProduct): String? = when {
         !product.isOnSale -> "판매가 끝났어요"
         product.isOwnedBackground -> "이미 가진 방 배경이에요"
         else -> null
+    }
+
+    /**
+     * 장바구니 항목 하나를 그리고 합산하는 데 필요한 값. 조회할 때마다 계산한다.
+     *
+     * @property purchasePrice 지금 결제할 1개 가격(할인 적용)
+     * @property unavailableErrorCode 구매 불가 사유. 수량 변경을 거절할 때 이 코드로 응답하고, 화면 문구도 이 코드로 정한다.
+     *   null이면 구매 가능하다
+     */
+    private data class PricedCartItemResult(
+        val cartItem: CartItem,
+        val product: Product,
+        val shopItem: ShopItemResponse,
+        val purchasePrice: Int,
+        val unavailableErrorCode: ShopErrorCode?,
+    ) {
+        val canPurchase: Boolean get() = unavailableErrorCode == null
     }
 }

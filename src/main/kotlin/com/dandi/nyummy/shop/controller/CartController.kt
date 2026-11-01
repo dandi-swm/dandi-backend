@@ -38,7 +38,8 @@ class CartController(private val cartService: CartService) {
         summary = "장바구니 조회",
         description = "장바구니 항목과 결제 정보를 조회한다. 항목은 담은 시각 최신순이다. " +
             "summary는 선택됐고 구매 가능한 항목만 합친다. maxQuantity는 상품당 10개(방 배경 1개)와 " +
-            "장바구니 전체 30개 중 남은 수량으로 정해지고, 구매 불가 항목은 0이다. 현재는 고정 응답을 반환한다.",
+            "장바구니 전체 30개 중 남은 수량으로 정해지고, 구매 불가 항목은 0이다. " +
+            "가격은 저장하지 않고 조회할 때마다 그 시점의 결제가로 계산한다.",
     )
     @GetMapping
     fun getCart(@CurrentUser user: AuthUser): CartResponse = cartService.getCart(user.userId)
