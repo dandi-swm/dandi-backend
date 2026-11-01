@@ -60,16 +60,21 @@ class ShopServiceTest {
     private val ownedRoomItemRepository = mockk<OwnedRoomItemRepository>()
     private val userRepository = mockk<UserRepository>()
 
+    private val shopProperties = ShopProperties(cdnBaseUrl = "https://cdn.test.com")
+
     private val shopService = ShopService(
-        productRepository = productRepository,
-        productItemRepository = productItemRepository,
-        promotionRepository = promotionRepository,
-        promotionProductRepository = promotionProductRepository,
-        shopBannerRepository = shopBannerRepository,
-        ownedRoomItemRepository = ownedRoomItemRepository,
-        userRepository = userRepository,
-        shopProperties = ShopProperties(cdnBaseUrl = "https://cdn.test.com"),
         clock = Clock.fixed(now, ZoneOffset.UTC),
+        shopItemService = ShopItemService(
+            userRepository = userRepository,
+            promotionRepository = promotionRepository,
+            productItemRepository = productItemRepository,
+            ownedRoomItemRepository = ownedRoomItemRepository,
+            shopProperties = shopProperties,
+        ),
+        shopProperties = shopProperties,
+        promotionProductRepository = promotionProductRepository,
+        productRepository = productRepository,
+        shopBannerRepository = shopBannerRepository,
     )
 
     // 테스트마다 채우는 DB 상태
