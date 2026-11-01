@@ -1,14 +1,19 @@
 package com.dandi.nyummy.shop.service
 
 import com.dandi.nyummy.exception.BusinessException
+import com.dandi.nyummy.exception.errorcode.ShopErrorCode
 import com.dandi.nyummy.exception.errorcode.UserErrorCode
+import com.dandi.nyummy.mail.repository.MailItemRepository
+import com.dandi.nyummy.room.enum.RoomItemCategory
 import com.dandi.nyummy.room.repository.OwnedRoomItemRepository
 import com.dandi.nyummy.shop.calculator.calculatePurchasePrice
 import com.dandi.nyummy.shop.config.ShopProperties
+import com.dandi.nyummy.shop.dto.ProductAvailabilityResult
 import com.dandi.nyummy.shop.dto.ShopItemResponse
 import com.dandi.nyummy.shop.entity.Product
 import com.dandi.nyummy.shop.entity.Promotion
 import com.dandi.nyummy.shop.mapper.toShopItemResponse
+import com.dandi.nyummy.shop.repository.ItemPurchaseProductRepository
 import com.dandi.nyummy.shop.repository.ItemPurchaseRepository
 import com.dandi.nyummy.shop.repository.ProductItemRepository
 import com.dandi.nyummy.shop.repository.PromotionRepository
@@ -31,6 +36,8 @@ class ShopItemService(
     private val productItemRepository: ProductItemRepository,
     private val ownedRoomItemRepository: OwnedRoomItemRepository,
     private val itemPurchaseRepository: ItemPurchaseRepository,
+    private val itemPurchaseProductRepository: ItemPurchaseProductRepository,
+    private val mailItemRepository: MailItemRepository,
     private val shopProperties: ShopProperties,
 ) {
 
@@ -45,6 +52,58 @@ class ShopItemService(
 
         return promotionRepository.findActivePromotions(now)
             .filter { it.category.isEligible(user.createdAt, hasPurchased, now, shopProperties.newUserTimeToLive) }
+    }
+
+    /**
+     * 사용자가 상품을 지금 살 수 있는지 productId로 찾게 만든다. 장바구니와 구매가 같은 기준으로 막도록 여기서만 판정한다.
+     *
+     * 사유가 여럿이면 판매 기간 → 보유한 방 배경 → 1인 구매 한도 순서로 하나만 준다.
+     * 방 배경이나 한도가 있는 상품이 없으면 그 쿼리는 나가지 않는다.
+     */
+    fun getProductAvailabilities(
+        userId: Long,
+        products: List<Product>,
+        now: Instant,
+    ): Map<Long, ProductAvailabilityResult> {
+        val ownedBackgroundItemIds = getOwnedBackgroundItemIds(
+            userId,
+            products.filter { it.category == RoomItemCategory.BACKGROUND },
+        )
+        val purchasedCounts = getPurchasedCounts(userId, products.filter { it.purchaseLimit != null })
+
+        return products.associate { product ->
+            val remainingPurchaseLimit = product.purchaseLimit?.let { it - (purchasedCounts[product.id] ?: 0) }
+            product.id to ProductAvailabilityResult(
+                unavailableErrorCode = when {
+                    !product.isOnSale(now) -> ShopErrorCode.PRODUCT_NOT_FOR_SALE
+
+                    product.category == RoomItemCategory.BACKGROUND &&
+                        product.representativeItemId in ownedBackgroundItemIds -> ShopErrorCode.ALREADY_OWNED
+
+                    remainingPurchaseLimit != null && remainingPurchaseLimit <= 0 ->
+                        ShopErrorCode.PURCHASE_LIMIT_EXCEEDED
+
+                    else -> null
+                },
+                remainingPurchaseLimit = remainingPurchaseLimit,
+            )
+        }
+    }
+
+    // 방 배경은 단품이라 대표 아이템으로 본다. 사서 우편을 아직 안 받았어도 가진 것이다. 지운 아이템은 가진 것으로 보지 않는다.
+    private fun getOwnedBackgroundItemIds(userId: Long, backgrounds: List<Product>): Set<Long> {
+        if (backgrounds.isEmpty()) return emptySet()
+
+        val itemIds = backgrounds.map { it.representativeItemId }
+        return ownedRoomItemRepository.findOwnedRoomItemCounts(userId, itemIds).map { it.itemId }.toSet() +
+            mailItemRepository.findUnclaimedPurchasedItemIds(userId, itemIds)
+    }
+
+    private fun getPurchasedCounts(userId: Long, limitedProducts: List<Product>): Map<Long, Int> {
+        if (limitedProducts.isEmpty()) return emptyMap()
+
+        return itemPurchaseProductRepository.findPurchasedProductCounts(userId, limitedProducts.map { it.id })
+            .associate { it.productId to it.purchasedCount.toInt() }
     }
 
     /**

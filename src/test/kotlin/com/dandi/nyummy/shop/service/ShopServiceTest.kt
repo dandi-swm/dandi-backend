@@ -76,6 +76,8 @@ class ShopServiceTest {
             productItemRepository = productItemRepository,
             ownedRoomItemRepository = ownedRoomItemRepository,
             itemPurchaseRepository = itemPurchaseRepository,
+            itemPurchaseProductRepository = mockk(),
+            mailItemRepository = mockk(),
             shopProperties = shopProperties,
         ),
         shopProperties = shopProperties,

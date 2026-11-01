@@ -4,7 +4,6 @@ import com.dandi.nyummy.coin.service.CoinService
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.ShopErrorCode
 import com.dandi.nyummy.room.enum.RoomItemCategory
-import com.dandi.nyummy.room.repository.OwnedRoomItemRepository
 import com.dandi.nyummy.shop.calculator.calculateMaxDiscountRates
 import com.dandi.nyummy.shop.calculator.calculatePurchasePrice
 import com.dandi.nyummy.shop.config.ShopProperties
@@ -31,7 +30,7 @@ import java.time.Instant
  * 장바구니. 가격은 저장하지 않고, 조회·변경할 때마다 그 시점의 결제가와 구매 가능 여부를 다시 계산한다.
  *
  * 결제 정보는 선택됐고 구매 가능한 항목만 합친다. 담을 수 있는 수량은 상품당 [ShopProperties.maxQuantityPerProduct]개
- * (방 배경은 1개)와 장바구니 전체 [ShopProperties.maxCartQuantity]개 중 남은 수량이다.
+ * (방 배경은 1개), 1인 구매 한도까지 남은 개수, 장바구니 전체 [ShopProperties.maxCartQuantity]개 중 남은 수량 가운데 가장 작은 값이다.
  *
  * 장바구니를 바꾸는 메서드는 먼저 사용자의 코인 행을 잠가 같은 사용자의 장바구니 변경·구매를 하나씩 처리한다.
  * 그래서 "담기"를 연달아 눌러도 같은 상품이 두 행으로 들어가지 않고(uk_cart_items_user_id_product_id), 전체 상한도 넘지 않는다.
@@ -46,7 +45,6 @@ class CartService(
     private val cartItemRepository: CartItemRepository,
     private val productRepository: ProductRepository,
     private val promotionProductRepository: PromotionProductRepository,
-    private val ownedRoomItemRepository: OwnedRoomItemRepository,
 ) {
 
     companion object {
@@ -67,25 +65,29 @@ class CartService(
      * @throws BusinessException [ShopErrorCode.PRODUCT_NOT_FOUND] 없는 상품인 경우
      * @throws BusinessException [ShopErrorCode.PRODUCT_NOT_FOR_SALE] 판매 기간이 아닌 경우
      * @throws BusinessException [ShopErrorCode.ALREADY_OWNED] 이미 가진 방 배경인 경우
-     * @throws BusinessException [ShopErrorCode.CART_QUANTITY_EXCEEDED] 상품당 상한을 넘는 경우
+     * @throws BusinessException [ShopErrorCode.PURCHASE_LIMIT_EXCEEDED] 1인 구매 한도까지 이미 산 경우
+     * @throws BusinessException [ShopErrorCode.CART_QUANTITY_EXCEEDED] 상품당 상한이나 1인 구매 한도를 넘는 경우
      * @throws BusinessException [ShopErrorCode.CART_FULL] 장바구니 전체 상한을 넘는 경우
      */
     @Transactional
     fun createCartItem(userId: Long, request: CreateCartItemRequest): CreatedCartItemResponse {
         coinService.lockCoin(userId)
-        val now = clock.instant()
         val product = productRepository.findByIdOrNull(request.productId)
             ?: throw BusinessException(ShopErrorCode.PRODUCT_NOT_FOUND)
-        if (!product.isOnSale(now)) throw BusinessException(ShopErrorCode.PRODUCT_NOT_FOR_SALE)
-        if (product.category == RoomItemCategory.BACKGROUND && existsOwnedRoomItem(userId, product)) {
-            throw BusinessException(ShopErrorCode.ALREADY_OWNED)
-        }
+        val availability = shopItemService.getProductAvailabilities(userId, listOf(product), clock.instant())
+            .getValue(product.id)
+        availability.unavailableErrorCode?.let { throw BusinessException(it) }
 
         val cartItems = cartItemRepository.findByUserIdOrderByCreatedAtDescIdDesc(userId)
         val cartItem = cartItems.find { it.productId == product.id }
         val existingQuantity = cartItem?.quantity ?: 0
         val quantity = existingQuantity + request.quantity
-        validateQuantity(product, quantity, otherQuantity = cartItems.sumOf { it.quantity } - existingQuantity)
+        validateQuantity(
+            product,
+            availability.remainingPurchaseLimit,
+            quantity,
+            otherQuantity = cartItems.sumOf { it.quantity } - existingQuantity,
+        )
 
         if (cartItem == null) {
             cartItemRepository.save(CartItem(userId = userId, productId = product.id, quantity = quantity))
@@ -107,7 +109,8 @@ class CartService(
      * @throws BusinessException [ShopErrorCode.CART_ITEM_NOT_FOUND] 장바구니에 없는 상품인 경우
      * @throws BusinessException [ShopErrorCode.PRODUCT_NOT_FOR_SALE] 판매 기간이 끝난 상품인 경우
      * @throws BusinessException [ShopErrorCode.ALREADY_OWNED] 이미 가진 방 배경인 경우
-     * @throws BusinessException [ShopErrorCode.CART_QUANTITY_EXCEEDED] 상품당 상한을 넘는 경우
+     * @throws BusinessException [ShopErrorCode.PURCHASE_LIMIT_EXCEEDED] 1인 구매 한도까지 이미 산 경우
+     * @throws BusinessException [ShopErrorCode.CART_QUANTITY_EXCEEDED] 상품당 상한이나 1인 구매 한도를 넘는 경우
      * @throws BusinessException [ShopErrorCode.CART_FULL] 장바구니 전체 상한을 넘는 경우
      */
     @Transactional
@@ -121,6 +124,7 @@ class CartService(
         target.unavailableErrorCode?.let { throw BusinessException(it) }
         validateQuantity(
             target.product,
+            target.remainingPurchaseLimit,
             request.quantity,
             otherQuantity = cartItems.sumOf { it.quantity } - target.cartItem.quantity,
         )
@@ -160,18 +164,19 @@ class CartService(
         return createCart(getPricedCartItems(userId, cartItems, clock.instant()), coin.balance)
     }
 
-    // 방 배경은 단품이라 대표 아이템을 하나라도 가지면 이미 가진 것이다
-    private fun existsOwnedRoomItem(userId: Long, product: Product): Boolean =
-        ownedRoomItemRepository.findOwnedRoomItemCounts(userId, listOf(product.representativeItemId)).isNotEmpty()
-
-    private fun validateQuantity(product: Product, quantity: Int, otherQuantity: Int) {
-        if (quantity > getMaxQuantityPerProduct(product)) throw BusinessException(ShopErrorCode.CART_QUANTITY_EXCEEDED)
+    private fun validateQuantity(product: Product, remainingPurchaseLimit: Int?, quantity: Int, otherQuantity: Int) {
+        if (quantity > getMaxQuantityPerProduct(product, remainingPurchaseLimit)) {
+            throw BusinessException(ShopErrorCode.CART_QUANTITY_EXCEEDED)
+        }
         if (otherQuantity + quantity > shopProperties.maxCartQuantity) throw BusinessException(ShopErrorCode.CART_FULL)
     }
 
-    private fun getMaxQuantityPerProduct(product: Product): Int = when (product.category) {
-        RoomItemCategory.BACKGROUND -> MAX_BACKGROUND_QUANTITY
-        else -> shopProperties.maxQuantityPerProduct
+    private fun getMaxQuantityPerProduct(product: Product, remainingPurchaseLimit: Int?): Int {
+        val maxQuantity = when (product.category) {
+            RoomItemCategory.BACKGROUND -> MAX_BACKGROUND_QUANTITY
+            else -> shopProperties.maxQuantityPerProduct
+        }
+        return minOf(maxQuantity, remainingPurchaseLimit ?: maxQuantity)
     }
 
     // 장바구니 화면에 보일 구매 불가 문구
@@ -179,6 +184,7 @@ class CartService(
         null -> null
         ShopErrorCode.PRODUCT_NOT_FOR_SALE -> "판매가 끝났어요"
         ShopErrorCode.ALREADY_OWNED -> "이미 가진 방 배경이에요"
+        ShopErrorCode.PURCHASE_LIMIT_EXCEEDED -> "구매 한도를 넘었어요"
         else -> error("장바구니 구매 불가 사유가 아닌 에러 코드입니다: $errorCode")
     }
 
@@ -192,22 +198,20 @@ class CartService(
             promotions.map { it.id },
         )
         val discountRates = calculateMaxDiscountRates(promotions, promotionProducts)
-        val shopItems = shopItemService.createShopItems(userId, productsById.values.toList(), discountRates, now)
+        val products = productsById.values.toList()
+        val shopItems = shopItemService.createShopItems(userId, products, discountRates, now)
+        val availabilities = shopItemService.getProductAvailabilities(userId, products, now)
 
         return cartItems.map { cartItem ->
             val product = productsById.getValue(cartItem.productId)
-            val shopItem = shopItems.getValue(product.id)
-            val isOwnedBackground = product.category == RoomItemCategory.BACKGROUND && shopItem.ownedCount > 0
+            val availability = availabilities.getValue(product.id)
             PricedCartItemResult(
                 cartItem = cartItem,
                 product = product,
-                shopItem = shopItem,
+                shopItem = shopItems.getValue(product.id),
                 purchasePrice = calculatePurchasePrice(product.price, discountRates[product.id]),
-                unavailableErrorCode = when {
-                    !product.isOnSale(now) -> ShopErrorCode.PRODUCT_NOT_FOR_SALE
-                    isOwnedBackground -> ShopErrorCode.ALREADY_OWNED
-                    else -> null
-                },
+                unavailableErrorCode = availability.getUnavailableErrorCode(cartItem.quantity),
+                remainingPurchaseLimit = availability.remainingPurchaseLimit,
             )
         }
     }
@@ -218,7 +222,7 @@ class CartService(
         val cartItemResponses = pricedCartItems.map {
             val maxQuantity = if (it.canPurchase) {
                 minOf(
-                    getMaxQuantityPerProduct(it.product),
+                    getMaxQuantityPerProduct(it.product, it.remainingPurchaseLimit),
                     shopProperties.maxCartQuantity - (totalQuantity - it.cartItem.quantity),
                 )
             } else {
@@ -257,8 +261,9 @@ class CartService(
      * 장바구니 항목 하나를 그리고 합산하는 데 필요한 값. 조회할 때마다 계산한다.
      *
      * @property purchasePrice 지금 결제할 1개 가격(할인 적용)
-     * @property unavailableErrorCode 구매 불가 사유. 수량 변경을 거절할 때 이 코드로 응답하고, 화면 문구도 이 코드로 정한다.
+     * @property unavailableErrorCode 담긴 수량을 살 수 없는 사유. 수량 변경을 거절할 때 이 코드로 응답하고, 화면 문구도 이 코드로 정한다.
      *   null이면 구매 가능하다
+     * @property remainingPurchaseLimit 1인 구매 한도까지 더 살 수 있는 개수. null이면 한도가 없다
      */
     private data class PricedCartItemResult(
         val cartItem: CartItem,
@@ -266,6 +271,7 @@ class CartService(
         val shopItem: ShopItemResponse,
         val purchasePrice: Int,
         val unavailableErrorCode: ShopErrorCode?,
+        val remainingPurchaseLimit: Int?,
     ) {
         val canPurchase: Boolean get() = unavailableErrorCode == null
     }
