@@ -98,7 +98,7 @@ class ShopController(private val shopService: ShopService) {
 
     @Operation(
         summary = "상단 바 조회",
-        description = "상점 상단 바의 코인 잔액과 장바구니에 담긴 상품 종류 수를 조회한다. 현재는 고정 응답을 반환한다.",
+        description = "상점 상단 바의 코인 잔액과 장바구니에 담긴 상품 종류 수를 조회한다.",
     )
     @GetMapping("/me")
     fun getMe(@CurrentUser user: AuthUser): ShopMeResponse = shopService.getMe(user.userId)

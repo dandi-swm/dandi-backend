@@ -1,5 +1,6 @@
 package com.dandi.nyummy.shop.service
 
+import com.dandi.nyummy.coin.service.CoinService
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.CommonErrorCode
 import com.dandi.nyummy.exception.errorcode.ShopErrorCode
@@ -33,6 +34,7 @@ import com.dandi.nyummy.shop.enum.ShopTab
 import com.dandi.nyummy.shop.mapper.createNavigateAction
 import com.dandi.nyummy.shop.mapper.createPriceText
 import com.dandi.nyummy.shop.mapper.toShopBannerResponse
+import com.dandi.nyummy.shop.repository.CartItemRepository
 import com.dandi.nyummy.shop.repository.ProductRepository
 import com.dandi.nyummy.shop.repository.PromotionProductRepository
 import com.dandi.nyummy.shop.repository.ShopBannerRepository
@@ -43,17 +45,18 @@ import java.time.Duration
 import java.time.Instant
 
 /**
- * 상점 추천 탭·상품 목록·프로모션 상품 목록·상단 바. 상단 바를 뺀 나머지는 DB의 상품·프로모션·배너로 응답하고,
- * 상단 바는 아직 [ShopStubData]의 고정 데이터로 응답한다.
+ * 상점 추천 탭·상품 목록·프로모션 상품 목록·상단 바.
  */
 @Service
 class ShopService(
     private val clock: Clock,
     private val shopItemService: ShopItemService,
+    private val coinService: CoinService,
     private val shopProperties: ShopProperties,
     private val promotionProductRepository: PromotionProductRepository,
     private val productRepository: ProductRepository,
     private val shopBannerRepository: ShopBannerRepository,
+    private val cartItemRepository: CartItemRepository,
 ) {
 
     companion object {
@@ -222,8 +225,11 @@ class ShopService(
     /**
      * 상단 바의 코인 잔액과 장바구니에 담긴 상품 종류 수.
      */
-    fun getMe(userId: Long): ShopMeResponse =
-        ShopMeResponse(balance = ShopStubData.BALANCE, cartItemCount = ShopStubData.cartItems.size)
+    @Transactional(readOnly = true)
+    fun getMe(userId: Long): ShopMeResponse = ShopMeResponse(
+        balance = coinService.getBalance(userId),
+        cartItemCount = cartItemRepository.countByUserId(userId).toInt(),
+    )
 
     // 프로모션의 판매 중 상품을 진열 순서대로. promotionProducts가 이미 진열 순서라 거르기만 한다.
     private fun getPromotionProductsInOrder(

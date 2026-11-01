@@ -6,7 +6,7 @@ import com.dandi.nyummy.shop.mapper.createPriceText
 import com.dandi.nyummy.shop.mapper.createTag
 
 /**
- * 상점 해피케이스의 고정 데이터. 상품·장바구니 테이블을 붙이기 전까지 [ShopService]와 [CartService]가 이 값으로 응답한다.
+ * 상점 해피케이스의 고정 데이터. 장바구니·구매를 붙이기 전까지 [CartService]와 [ItemPurchaseService]가 이 값으로 응답한다.
  *
  * 테이블을 붙이면 이 파일을 지우고 서비스만 고친다. 컨트롤러와 응답 DTO는 그대로 둔다.
  */
