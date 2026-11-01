@@ -28,14 +28,17 @@ enum class PromotionCategory {
     /**
      * 사용자가 이 대상에 드는지. 진행 중인지는 따로 본다.
      *
-     * [FIRST_PURCHASE]는 구매를 아직 저장하지 않아 모든 사용자, [RETURNING_USER]는 복귀 판정 기준이 없어 아무도 들지 않는다.
+     * [RETURNING_USER]는 복귀 판정 기준이 없어 아무도 들지 않는다.
      *
      * @param userCreatedAt 사용자의 가입 시각
+     * @param hasPurchased 한 번이라도 샀는지. 환불해도 샀던 것으로 봐서, 환불한 뒤 첫 구매 혜택을 다시 받지 못한다
      * @param newUserTimeToLive 가입 후 이 기간 동안 [NEW_USER]다. 가입 시각 + 기간인 순간부터는 아니다
      */
-    fun isEligible(userCreatedAt: Instant, now: Instant, newUserTimeToLive: Duration): Boolean = when (this) {
-        NEW_USER -> now.isBefore(userCreatedAt.plus(newUserTimeToLive))
-        FIRST_PURCHASE, DAILY, GENERAL -> true
-        RETURNING_USER -> false
-    }
+    fun isEligible(userCreatedAt: Instant, hasPurchased: Boolean, now: Instant, newUserTimeToLive: Duration): Boolean =
+        when (this) {
+            NEW_USER -> now.isBefore(userCreatedAt.plus(newUserTimeToLive))
+            FIRST_PURCHASE -> !hasPurchased
+            DAILY, GENERAL -> true
+            RETURNING_USER -> false
+        }
 }

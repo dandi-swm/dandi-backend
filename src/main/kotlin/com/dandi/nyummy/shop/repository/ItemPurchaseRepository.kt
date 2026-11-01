@@ -7,4 +7,6 @@ import org.springframework.stereotype.Repository
 @Repository
 interface ItemPurchaseRepository : JpaRepository<ItemPurchase, Long> {
     fun findByUserIdAndIdempotencyKey(userId: Long, idempotencyKey: String): ItemPurchase?
+
+    fun existsByUserId(userId: Long): Boolean
 }

@@ -9,6 +9,7 @@ import com.dandi.nyummy.shop.dto.ShopItemResponse
 import com.dandi.nyummy.shop.entity.Product
 import com.dandi.nyummy.shop.entity.Promotion
 import com.dandi.nyummy.shop.mapper.toShopItemResponse
+import com.dandi.nyummy.shop.repository.ItemPurchaseRepository
 import com.dandi.nyummy.shop.repository.ProductItemRepository
 import com.dandi.nyummy.shop.repository.PromotionRepository
 import com.dandi.nyummy.user.repository.UserRepository
@@ -29,6 +30,7 @@ class ShopItemService(
     private val promotionRepository: PromotionRepository,
     private val productItemRepository: ProductItemRepository,
     private val ownedRoomItemRepository: OwnedRoomItemRepository,
+    private val itemPurchaseRepository: ItemPurchaseRepository,
     private val shopProperties: ShopProperties,
 ) {
 
@@ -39,9 +41,10 @@ class ShopItemService(
      */
     fun getEligiblePromotions(userId: Long, now: Instant): List<Promotion> {
         val user = userRepository.findByIdOrNull(userId) ?: throw BusinessException(UserErrorCode.USER_NOT_FOUND)
+        val hasPurchased = itemPurchaseRepository.existsByUserId(userId)
 
         return promotionRepository.findActivePromotions(now)
-            .filter { it.category.isEligible(user.createdAt, now, shopProperties.newUserTimeToLive) }
+            .filter { it.category.isEligible(user.createdAt, hasPurchased, now, shopProperties.newUserTimeToLive) }
     }
 
     /**

@@ -21,6 +21,7 @@ import com.dandi.nyummy.shop.entity.Promotion
 import com.dandi.nyummy.shop.entity.PromotionProduct
 import com.dandi.nyummy.shop.enum.PromotionCategory
 import com.dandi.nyummy.shop.repository.CartItemRepository
+import com.dandi.nyummy.shop.repository.ItemPurchaseRepository
 import com.dandi.nyummy.shop.repository.ProductItemRepository
 import com.dandi.nyummy.shop.repository.ProductRepository
 import com.dandi.nyummy.shop.repository.PromotionProductRepository
@@ -57,6 +58,7 @@ class CartServiceTest {
     private val productRepository = mockk<ProductRepository>()
     private val productItemRepository = mockk<ProductItemRepository>()
     private val ownedRoomItemRepository = mockk<OwnedRoomItemRepository>()
+    private val itemPurchaseRepository = mockk<ItemPurchaseRepository>()
     private val coinService = mockk<CoinService>()
     private val cartItemRepository = mockk<CartItemRepository>()
 
@@ -70,6 +72,7 @@ class CartServiceTest {
             promotionRepository = promotionRepository,
             productItemRepository = productItemRepository,
             ownedRoomItemRepository = ownedRoomItemRepository,
+            itemPurchaseRepository = itemPurchaseRepository,
             shopProperties = shopProperties,
         ),
         coinService = coinService,
@@ -115,6 +118,7 @@ class CartServiceTest {
         }
         every { coinService.lockCoin(userId) } returns Coin(userId).also { it.balance = 1000 }
         every { coinService.getBalance(userId) } returns 1000
+        every { itemPurchaseRepository.existsByUserId(userId) } returns false
         every { cartItemRepository.findByUserIdOrderByCreatedAtDescIdDesc(userId) } answers { cartItems }
         every { cartItemRepository.save(any<CartItem>()) } answers { firstArg() }
         every { cartItemRepository.deleteAll(any<Iterable<CartItem>>()) } just Runs

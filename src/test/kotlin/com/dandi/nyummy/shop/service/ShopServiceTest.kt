@@ -26,6 +26,7 @@ import com.dandi.nyummy.shop.enum.PromotionCategory
 import com.dandi.nyummy.shop.enum.ShopCategory
 import com.dandi.nyummy.shop.enum.ShopTab
 import com.dandi.nyummy.shop.repository.CartItemRepository
+import com.dandi.nyummy.shop.repository.ItemPurchaseRepository
 import com.dandi.nyummy.shop.repository.ProductItemRepository
 import com.dandi.nyummy.shop.repository.ProductRepository
 import com.dandi.nyummy.shop.repository.PromotionProductRepository
@@ -60,6 +61,7 @@ class ShopServiceTest {
     private val promotionProductRepository = mockk<PromotionProductRepository>()
     private val shopBannerRepository = mockk<ShopBannerRepository>()
     private val ownedRoomItemRepository = mockk<OwnedRoomItemRepository>()
+    private val itemPurchaseRepository = mockk<ItemPurchaseRepository>()
     private val userRepository = mockk<UserRepository>()
     private val coinService = mockk<CoinService>()
     private val cartItemRepository = mockk<CartItemRepository>()
@@ -73,6 +75,7 @@ class ShopServiceTest {
             promotionRepository = promotionRepository,
             productItemRepository = productItemRepository,
             ownedRoomItemRepository = ownedRoomItemRepository,
+            itemPurchaseRepository = itemPurchaseRepository,
             shopProperties = shopProperties,
         ),
         shopProperties = shopProperties,
@@ -95,6 +98,7 @@ class ShopServiceTest {
         val user = User(provider = AuthProvider.EMAIL, email = "cat@test.com")
             .also { it.createdAt = now.minus(Duration.ofDays(30)) }
         every { userRepository.findByIdOrNull(userId) } returns user
+        every { itemPurchaseRepository.existsByUserId(userId) } returns false
         every { productRepository.findOnSaleProducts(now) } answers { products }
         every { productItemRepository.findByProductIdIn(any()) } answers {
             val productIds = firstArg<Collection<Long>>()
@@ -194,6 +198,18 @@ class ShopServiceTest {
         assertEquals("https://cdn.test.com/shop-banners/12.png", banner.imageUrl)
         assertEquals(BannerCornerStyle.ROUNDED, banner.cornerStyle)
         assertEquals("https://link.nyummy.co.kr/shop/promotions/2", banner.action?.navigateLink)
+    }
+
+    @Test
+    fun `한 번이라도 샀으면 첫 구매 프로모션의 배너를 빼고 안 샀으면 준다`() {
+        promotions = listOf(promotion(1, PromotionCategory.FIRST_PURCHASE))
+        shopBanners = listOf(shopBanner(11, promotionId = 1))
+
+        assertEquals(1, getRecommendPage().componentOf<HeroBannerComponentResponse>().content.banners.size)
+
+        every { itemPurchaseRepository.existsByUserId(userId) } returns true
+
+        assertTrue(getRecommendPage().sduiComponents.none { it is HeroBannerComponentResponse })
     }
 
     @Test

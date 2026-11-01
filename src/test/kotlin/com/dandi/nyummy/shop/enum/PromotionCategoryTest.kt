@@ -11,7 +11,8 @@ class PromotionCategoryTest {
     private val userCreatedAt = Instant.parse("2026-11-01T00:00:00Z")
     private val newUserTimeToLive = Duration.ofDays(7)
 
-    private fun PromotionCategory.isEligibleAt(now: Instant) = isEligible(userCreatedAt, now, newUserTimeToLive)
+    private fun PromotionCategory.isEligibleAt(now: Instant, hasPurchased: Boolean = false) =
+        isEligible(userCreatedAt, hasPurchased, now, newUserTimeToLive)
 
     @Test
     fun `신입 집사는 가입 후 7일 동안만 대상이다`() {
@@ -23,12 +24,19 @@ class PromotionCategoryTest {
     }
 
     @Test
-    fun `모든 사용자·오늘의 할인·첫 구매는 언제나 대상이다`() {
+    fun `모든 사용자·오늘의 할인은 샀든 안 샀든 언제나 대상이다`() {
         val longAfter = userCreatedAt.plus(Duration.ofDays(365))
 
-        assertTrue(PromotionCategory.GENERAL.isEligibleAt(longAfter))
-        assertTrue(PromotionCategory.DAILY.isEligibleAt(longAfter))
-        assertTrue(PromotionCategory.FIRST_PURCHASE.isEligibleAt(longAfter))
+        assertTrue(PromotionCategory.GENERAL.isEligibleAt(longAfter, hasPurchased = true))
+        assertTrue(PromotionCategory.DAILY.isEligibleAt(longAfter, hasPurchased = true))
+    }
+
+    @Test
+    fun `첫 구매 혜택은 한 번도 사지 않은 사용자만 대상이다`() {
+        val longAfter = userCreatedAt.plus(Duration.ofDays(365))
+
+        assertTrue(PromotionCategory.FIRST_PURCHASE.isEligibleAt(longAfter, hasPurchased = false))
+        assertFalse(PromotionCategory.FIRST_PURCHASE.isEligibleAt(longAfter, hasPurchased = true))
     }
 
     @Test
