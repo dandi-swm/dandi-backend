@@ -175,7 +175,7 @@ app:
       item-ids: [2, 3]
       coin-quantity: 100
   cat:
-    weight-update-interval-days: 3
+    weight-update-interval-days: 1
     weight-update-tolerance: 0.2
   ai:
     api-key: ${GEMINI_API_KEY}
