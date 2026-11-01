@@ -4,7 +4,7 @@ package com.dandi.nyummy.shop.enum
  * 상품 목록 정렬 기준. 값이 같으면 productId 내림차순이다.
  */
 enum class ProductSort {
-    /** 신상품순 */
+    /** 신상품순. 판매 시작 시각이 늦은 순 */
     NEW,
 
     /** 판매량순 */
