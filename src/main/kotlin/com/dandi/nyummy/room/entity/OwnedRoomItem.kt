@@ -18,6 +18,9 @@ import java.time.Instant
  * 보유 아이템. 같은 아이템을 여러 개 사면 한 개마다 따로 존재하며 좌표·장착 여부를 따로 가진다.
  *
  * [id]가 API의 ownedRoomItemId다. 상품은 [itemId]로 가리킨다.
+ *
+ * @property itemPurchaseLineId 구매한 구성품이면 그 id. 보상이면 null이다
+ * @property firstEquippedAt 처음 장착한 시각. 환불 정책의 미착용 판단 기준이라 해제해도 지우지 않는다
  */
 @Entity
 @EntityListeners(AuditingEntityListener::class)
@@ -28,6 +31,9 @@ class OwnedRoomItem(
 
     @Column(name = "item_id", nullable = false)
     val itemId: Long,
+
+    @Column(name = "item_purchase_line_id")
+    val itemPurchaseLineId: Long? = null,
 ) {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -49,6 +55,9 @@ class OwnedRoomItem(
     @Column(name = "scale", nullable = false)
     var scale: Float = 1f
 
+    @Column(name = "first_equipped_at")
+    var firstEquippedAt: Instant? = null
+
     @CreatedDate
     @Column(name = "created_at", nullable = false)
     var createdAt: Instant = Instant.now()
@@ -62,9 +71,11 @@ class OwnedRoomItem(
 
     /**
      * 장착하고 마이룸에서의 위치·크기를 바꾼다. 이미 장착한 아이템이면 위치·크기만 바뀐다.
+     * 처음 장착하는 것이면 [now]를 처음 장착한 시각으로 남긴다.
      */
-    fun equip(x: Float, y: Float, zIndex: Int, scale: Float) {
+    fun equip(x: Float, y: Float, zIndex: Int, scale: Float, now: Instant) {
         this.isEquipped = true
+        this.firstEquippedAt = this.firstEquippedAt ?: now
         this.x = x
         this.y = y
         this.zIndex = zIndex

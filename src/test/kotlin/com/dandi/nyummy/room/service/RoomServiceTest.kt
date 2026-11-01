@@ -9,6 +9,7 @@ import com.dandi.nyummy.room.config.DefaultRoomItemProperties
 import com.dandi.nyummy.room.config.RoomProperties
 import com.dandi.nyummy.room.dto.EquippedRoomItemRequest
 import com.dandi.nyummy.room.dto.EquippedRoomItemResult
+import com.dandi.nyummy.room.dto.GrantedRoomItem
 import com.dandi.nyummy.room.dto.OwnedRoomItemResult
 import com.dandi.nyummy.room.dto.UpdateEquippedRoomItemsRequest
 import com.dandi.nyummy.room.entity.OwnedRoomItem
@@ -105,10 +106,14 @@ class RoomServiceTest {
         val savedItems = slot<List<OwnedRoomItem>>()
         every { ownedRoomItemRepository.saveAll(capture(savedItems)) } answers { firstArg() }
 
-        roomService.createOwnedRoomItems(userId, listOf(2L, 2L, 3L))
+        roomService.createOwnedRoomItems(
+            userId,
+            listOf(GrantedRoomItem(2L), GrantedRoomItem(2L), GrantedRoomItem(3L, itemPurchaseLineId = 7L)),
+        )
 
         val items = savedItems.captured
         assertEquals(listOf(2L, 2L, 3L), items.map { it.itemId })
+        assertEquals(listOf(null, null, 7L), items.map { it.itemPurchaseLineId })
         assertTrue(items.all { it.userId == userId && !it.isEquipped })
     }
 
@@ -214,6 +219,16 @@ class RoomServiceTest {
     }
 
     // updateEquippedRoomItems
+
+    @Test
+    fun `장착하면 현재 시각을 처음 장착한 시각으로 남긴다`() {
+        val item = ownedRoomItem(id = 5L, isEquipped = false)
+        every { ownedRoomItemRepository.findOwnedRoomItemsByUserIdAndDeletedAtIsNull(userId) } returns listOf(item)
+
+        roomService.updateEquippedRoomItems(userId, UpdateEquippedRoomItemsRequest(listOf(equippedRoomItemRequest(5L))))
+
+        assertEquals(now, item.firstEquippedAt)
+    }
 
     @Test
     fun `요청한 보유 아이템은 장착하고 위치와 크기를 바꾼다`() {

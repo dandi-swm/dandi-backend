@@ -19,6 +19,7 @@ import com.dandi.nyummy.mail.mapper.toRewardResponse
 import com.dandi.nyummy.mail.mapper.toTotalRewardResponse
 import com.dandi.nyummy.mail.repository.MailItemRepository
 import com.dandi.nyummy.mail.repository.MailRepository
+import com.dandi.nyummy.room.dto.GrantedRoomItem
 import com.dandi.nyummy.room.service.RoomService
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.repository.findByIdOrNull
@@ -221,6 +222,9 @@ class MailService(
         if (mailItems.isEmpty()) {
             return
         }
-        roomService.createOwnedRoomItems(userId, mailItems.flatMap { item -> List(item.quantity) { item.itemId } })
+        roomService.createOwnedRoomItems(
+            userId,
+            mailItems.flatMap { item -> List(item.quantity) { GrantedRoomItem(item.itemId, item.itemPurchaseLineId) } },
+        )
     }
 }

@@ -15,7 +15,7 @@ interface MailItemRepository : JpaRepository<MailItem, Long> {
      */
     @Query(
         """
-        select new com.dandi.nyummy.mail.dto.MailItemResult(mi.mailId, mi.itemId, i.name, mi.quantity)
+        select new com.dandi.nyummy.mail.dto.MailItemResult(mi.mailId, mi.itemId, i.name, mi.quantity, mi.itemPurchaseLineId)
         from MailItem as mi
             join Item as i on i.id = mi.itemId
         where mi.mailId in :mailIds

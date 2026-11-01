@@ -6,6 +6,7 @@ import com.dandi.nyummy.exception.errorcode.CommonErrorCode
 import com.dandi.nyummy.exception.errorcode.RoomErrorCode
 import com.dandi.nyummy.room.config.RoomProperties
 import com.dandi.nyummy.room.dto.EquippedRoomItemResponse
+import com.dandi.nyummy.room.dto.GrantedRoomItem
 import com.dandi.nyummy.room.dto.OwnedRoomItemsResponse
 import com.dandi.nyummy.room.dto.RoomItemCategoryResponse
 import com.dandi.nyummy.room.dto.RoomResponse
@@ -42,14 +43,18 @@ class RoomService(
     }
 
     /**
-     * [itemIds]마다 보유 아이템을 하나씩 장착하지 않은 채로 만든다. 같은 아이템을 여러 개 주려면 그 수만큼 넣는다.
+     * [items]마다 보유 아이템을 하나씩 장착하지 않은 채로 만든다. 같은 아이템을 여러 개 주려면 그 수만큼 넣는다.
      * 우편 받기처럼 보상을 지급하는 쪽의 트랜잭션 안에서 호출한다.
      *
      * 마이룸 아이템(room_items)이 아닌 id가 있으면 외래 키 제약에 걸려 실패한다.
      */
     @Transactional
-    fun createOwnedRoomItems(userId: Long, itemIds: List<Long>) {
-        ownedRoomItemRepository.saveAll(itemIds.map { OwnedRoomItem(userId = userId, itemId = it) })
+    fun createOwnedRoomItems(userId: Long, items: List<GrantedRoomItem>) {
+        ownedRoomItemRepository.saveAll(
+            items.map {
+                OwnedRoomItem(userId = userId, itemId = it.itemId, itemPurchaseLineId = it.itemPurchaseLineId)
+            },
+        )
     }
 
     /**
@@ -138,10 +143,11 @@ class RoomService(
         val ownedRoomItems = ownedRoomItemRepository.findOwnedRoomItemsByUserIdAndDeletedAtIsNull(userId)
         validateMissingOwnedRoomItems(userId, requestItems.keys - ownedRoomItems.map { it.id }.toSet())
 
+        val now = Instant.now(clock)
         ownedRoomItems.forEach { ownedRoomItem ->
             val requestItem = requestItems[ownedRoomItem.id]
             if (requestItem != null) {
-                ownedRoomItem.equip(requestItem.x, requestItem.y, requestItem.zIndex, requestItem.scale)
+                ownedRoomItem.equip(requestItem.x, requestItem.y, requestItem.zIndex, requestItem.scale, now)
             } else {
                 ownedRoomItem.unequip()
             }
