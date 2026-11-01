@@ -23,9 +23,6 @@ import com.dandi.nyummy.shop.entity.Product
 import com.dandi.nyummy.shop.repository.CartItemRepository
 import com.dandi.nyummy.shop.repository.ProductRepository
 import com.dandi.nyummy.shop.repository.PromotionProductRepository
-import com.dandi.nyummy.shop.service.ShopStubData.StubCartItem
-import com.dandi.nyummy.shop.service.ShopStubData.StubProduct
-import com.dandi.nyummy.shop.service.ShopStubData.toShopItemResponse
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -41,8 +38,6 @@ import java.time.Instant
  * 장바구니를 바꾸는 메서드는 먼저 사용자의 코인 행을 잠가 같은 사용자의 장바구니 변경·구매를 하나씩 처리한다.
  * 그래서 "담기"를 연달아 눌러도 같은 상품이 두 행으로 들어가지 않고(uk_cart_items_user_id_product_id), 전체 상한도 넘지 않는다.
  * 잠금이 트랜잭션의 첫 문장이어야 그 뒤의 조회가 잠금을 얻은 뒤의 데이터를 본다.
- *
- * 수량·선택·빼기는 아직 저장하지 않고 [ShopStubData]의 고정 장바구니에 반영한 결과만 돌려준다.
  */
 @Service
 class CartService(
@@ -113,46 +108,60 @@ class CartService(
      * 장바구니에 담긴 상품의 수량을 [UpdateCartItemQuantityRequest.quantity]로 맞추고 장바구니 전체를 반환한다.
      *
      * @throws BusinessException [ShopErrorCode.CART_ITEM_NOT_FOUND] 장바구니에 없는 상품인 경우
-     * @throws BusinessException [ShopErrorCode.CART_QUANTITY_EXCEEDED] 구매 불가 상품이거나 상품당 상한을 넘는 경우
+     * @throws BusinessException [ShopErrorCode.PRODUCT_NOT_FOR_SALE] 판매 기간이 끝난 상품인 경우
+     * @throws BusinessException [ShopErrorCode.ALREADY_OWNED] 이미 가진 방 배경인 경우
+     * @throws BusinessException [ShopErrorCode.CART_QUANTITY_EXCEEDED] 상품당 상한을 넘는 경우
      * @throws BusinessException [ShopErrorCode.CART_FULL] 장바구니 전체 상한을 넘는 경우
      */
+    @Transactional
     fun updateCartItemQuantity(userId: Long, productId: Long, request: UpdateCartItemQuantityRequest): CartResponse {
-        val cartItems = ShopStubData.cartItems
-        val cartItem = cartItems.find { it.productId == productId }
+        val coin = lockCoin(userId)
+        val cartItems = cartItemRepository.findByUserIdOrderByCreatedAtDescIdDesc(userId)
+        val pricedCartItems = getPricedCartItems(userId, cartItems, clock.instant())
+        val target = pricedCartItems.find { it.cartItem.productId == productId }
             ?: throw BusinessException(ShopErrorCode.CART_ITEM_NOT_FOUND)
-        val product = ShopStubData.productsById.getValue(productId)
-        if (!product.canPurchase) throw BusinessException(ShopErrorCode.CART_QUANTITY_EXCEEDED)
-        validateStubQuantity(
-            product,
+        // 구매할 수 없는 항목은 수량을 바꿀 수 없고, 그 이유를 그대로 돌려준다
+        target.unavailableErrorCode?.let { throw BusinessException(it) }
+        validateQuantity(
+            target.product,
             request.quantity,
-            otherQuantity =
-            cartItems.sumOf { it.quantity } - cartItem.quantity,
+            otherQuantity = cartItems.sumOf { it.quantity } - target.cartItem.quantity,
         )
 
-        return createStubCart(
-            cartItems.map {
-                if (it.productId ==
-                    productId
-                ) {
-                    it.copy(quantity = request.quantity)
-                } else {
-                    it
-                }
-            },
-        )
+        target.cartItem.updateQuantity(request.quantity)
+
+        return createCart(pricedCartItems, coin.balance)
     }
 
     /**
-     * 선택된 상품 목록을 요청 목록으로 맞추고 장바구니 전체를 반환한다. 장바구니에 없거나 구매 불가인 id는 무시한다.
+     * 선택된 상품 목록을 요청 목록으로 맞추고 장바구니 전체를 반환한다. 장바구니에 없는 id는 무시하고, 구매 불가 항목은 선택을 푼다.
      */
-    fun updateCartSelection(userId: Long, request: UpdateCartSelectionRequest): CartResponse =
-        createStubCart(ShopStubData.cartItems.map { it.copy(isSelected = it.productId in request.productIds) })
+    @Transactional
+    fun updateCartSelection(userId: Long, request: UpdateCartSelectionRequest): CartResponse {
+        val coin = lockCoin(userId)
+        val cartItems = cartItemRepository.findByUserIdOrderByCreatedAtDescIdDesc(userId)
+        val pricedCartItems = getPricedCartItems(userId, cartItems, clock.instant())
+
+        pricedCartItems.forEach {
+            it.cartItem.updateIsSelected(it.canPurchase && it.cartItem.productId in request.productIds)
+        }
+
+        return createCart(pricedCartItems, coin.balance)
+    }
 
     /**
      * 상품을 장바구니에서 빼고 장바구니 전체를 반환한다. 장바구니에 없는 id는 무시한다.
      */
-    fun deleteCartItems(userId: Long, productIds: List<Long>): CartResponse =
-        createStubCart(ShopStubData.cartItems.filterNot { it.productId in productIds })
+    @Transactional
+    fun deleteCartItems(userId: Long, productIds: List<Long>): CartResponse {
+        val coin = lockCoin(userId)
+        val (deletedCartItems, cartItems) = cartItemRepository.findByUserIdOrderByCreatedAtDescIdDesc(userId)
+            .partition { it.productId in productIds }
+
+        cartItemRepository.deleteAll(deletedCartItems)
+
+        return createCart(getPricedCartItems(userId, cartItems, clock.instant()), coin.balance)
+    }
 
     // SELECT … FOR UPDATE. 장바구니를 바꾸는 트랜잭션의 첫 문장으로 부른다.
     private fun lockCoin(userId: Long): Coin = coinRepository.findCoinWithLockByUserId(userId)
@@ -249,61 +258,6 @@ class CartService(
                 balanceAfter = balance - purchasePrice,
             ),
         )
-    }
-
-    private fun validateStubQuantity(product: StubProduct, quantity: Int, otherQuantity: Int) {
-        if (quantity > product.maxQuantityPerProduct) throw BusinessException(ShopErrorCode.CART_QUANTITY_EXCEEDED)
-        if (otherQuantity + quantity > ShopStubData.MAX_CART_QUANTITY) throw BusinessException(ShopErrorCode.CART_FULL)
-    }
-
-    // 담기·수량·선택·빼기를 DB로 옮기기 전까지 쓰는 고정 장바구니 응답. 모두 옮기면 지운다.
-    private fun createStubCart(cartItems: List<StubCartItem>): CartResponse {
-        val totalQuantity = cartItems.sumOf { it.quantity }
-        val cartItemResponses = cartItems.map { cartItem ->
-            val product = ShopStubData.productsById.getValue(cartItem.productId)
-            val maxQuantity = if (product.canPurchase) {
-                minOf(
-                    product.maxQuantityPerProduct,
-                    ShopStubData.MAX_CART_QUANTITY - (totalQuantity - cartItem.quantity),
-                )
-            } else {
-                0
-            }
-            CartItemResponse(
-                shopItem = product.toShopItemResponse(),
-                quantity = cartItem.quantity,
-                maxQuantity = maxQuantity,
-                isSelected = cartItem.isSelected && product.canPurchase,
-                canPurchase = product.canPurchase,
-                purchasePrice = product.purchasePrice,
-                unavailableReason = createStubUnavailableReason(product),
-            )
-        }
-
-        val selectedItems = cartItemResponses.filter { it.isSelected }
-        val listPrice = selectedItems.sumOf {
-            ShopStubData.productsById.getValue(it.shopItem.productId).listPrice * it.quantity
-        }
-        val purchasePrice = selectedItems.sumOf { it.purchasePrice * it.quantity }
-
-        return CartResponse(
-            cartItems = cartItemResponses,
-            selectedItemCount = selectedItems.size,
-            summary = CartSummaryResponse(
-                quantity = selectedItems.sumOf { it.quantity },
-                listPrice = listPrice,
-                discountPrice = listPrice - purchasePrice,
-                purchasePrice = purchasePrice,
-                balance = ShopStubData.BALANCE,
-                balanceAfter = ShopStubData.BALANCE - purchasePrice,
-            ),
-        )
-    }
-
-    private fun createStubUnavailableReason(product: StubProduct): String? = when {
-        !product.isOnSale -> "판매가 끝났어요"
-        product.isOwnedBackground -> "이미 가진 방 배경이에요"
-        else -> null
     }
 
     /**

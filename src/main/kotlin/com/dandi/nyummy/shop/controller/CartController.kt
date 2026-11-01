@@ -30,10 +30,6 @@ import org.springframework.web.bind.annotation.RestController
 @RequestMapping("/api/v1/shop/cart")
 class CartController(private val cartService: CartService) {
 
-    companion object {
-        private const val STUB_NOTICE = "현재는 저장하지 않고, 고정 장바구니에 요청을 반영한 결과만 반환한다."
-    }
-
     @Operation(
         summary = "장바구니 조회",
         description = "장바구니 항목과 결제 정보를 조회한다. 항목은 담은 시각 최신순이다. " +
@@ -68,10 +64,16 @@ class CartController(private val cartService: CartService) {
         summary = "장바구니 수량 변경",
         description = "장바구니 화면의 −/+로 상품 수량을 이 값으로 맞추고 장바구니 전체를 반환한다. " +
             "누를 때마다 보내며, 응답이 보낸 순서대로 오지 않을 수 있으니 앱은 마지막으로 보낸 요청의 응답만 반영한다. " +
-            "빼려면 장바구니 빼기 API를 쓴다. " + STUB_NOTICE,
+            "빼려면 장바구니 빼기 API를 쓴다. 구매할 수 없는 항목(판매 종료, 이미 가진 방 배경)은 그 사유의 에러로 거절한다.",
     )
     @ApiErrorCodes(
-        shop = [ShopErrorCode.CART_ITEM_NOT_FOUND, ShopErrorCode.CART_QUANTITY_EXCEEDED, ShopErrorCode.CART_FULL],
+        shop = [
+            ShopErrorCode.CART_ITEM_NOT_FOUND,
+            ShopErrorCode.PRODUCT_NOT_FOR_SALE,
+            ShopErrorCode.ALREADY_OWNED,
+            ShopErrorCode.CART_QUANTITY_EXCEEDED,
+            ShopErrorCode.CART_FULL,
+        ],
     )
     @PutMapping("/items/{productId}")
     fun updateCartItemQuantity(
@@ -83,7 +85,7 @@ class CartController(private val cartService: CartService) {
     @Operation(
         summary = "장바구니 선택 변경",
         description = "선택된 상품 목록을 요청 목록으로 맞추고 장바구니 전체를 반환한다. 전체 선택은 구매 가능한 모든 id, " +
-            "전체 해제는 빈 목록이다. 장바구니에 없거나 구매 불가인 id는 무시한다. " + STUB_NOTICE,
+            "전체 해제는 빈 목록이다. 장바구니에 없는 id는 무시하고, 구매 불가 항목은 선택되지 않는다.",
     )
     @PutMapping("/selection")
     fun updateCartSelection(
@@ -95,7 +97,7 @@ class CartController(private val cartService: CartService) {
         summary = "장바구니 빼기",
         description = "상품을 장바구니에서 빼고 장바구니 전체를 반환한다. 전체 삭제는 앱이 모든 id를 보낸다. " +
             "productIds는 쉼표 구분(117,121)과 반복(productIds=117&productIds=121) 모두 받는다. " +
-            "장바구니에 없는 id는 무시한다. " + STUB_NOTICE,
+            "장바구니에 없는 id는 무시한다.",
     )
     @DeleteMapping("/items")
     fun deleteCartItems(

@@ -13,9 +13,6 @@ import com.dandi.nyummy.shop.mapper.createTag
 internal object ShopStubData {
 
     const val BALANCE = 2480
-    const val MAX_QUANTITY_PER_PRODUCT = 10
-    const val MAX_BACKGROUND_QUANTITY = 1
-    const val MAX_CART_QUANTITY = 30
 
     data class StubProduct(
         val productId: Long,
@@ -31,9 +28,6 @@ internal object ShopStubData {
         val salesCount: Int = 0,
     ) {
         val isOwnedBackground: Boolean get() = category == RoomItemCategory.BACKGROUND && ownedCount > 0
-        val canPurchase: Boolean get() = isOnSale && !isOwnedBackground
-        val maxQuantityPerProduct: Int
-            get() = if (category == RoomItemCategory.BACKGROUND) MAX_BACKGROUND_QUANTITY else MAX_QUANTITY_PER_PRODUCT
     }
 
     data class StubCartItem(val productId: Long, val quantity: Int, val isSelected: Boolean)
