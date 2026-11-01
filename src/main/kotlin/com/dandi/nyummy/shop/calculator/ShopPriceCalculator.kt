@@ -24,17 +24,29 @@ fun calculatePurchasePrice(listPrice: Int, discountRate: Int?): Int {
  * @param promotionProducts [promotions]의 진열 상품. 다른 프로모션의 행은 무시한다
  * @return productId → 할인율
  */
-fun calculateMaxDiscountRates(promotions: List<Promotion>, promotionProducts: List<PromotionProduct>): Map<Long, Int> {
-    val discountRates = promotions.mapNotNull { promotion ->
-        promotion.discountRate?.let { promotion.id to it }
-    }.toMap()
+fun calculateMaxDiscountRates(promotions: List<Promotion>, promotionProducts: List<PromotionProduct>): Map<Long, Int> =
+    pickMaxDiscountPromotions(promotions, promotionProducts).mapValues { (_, promotion) ->
+        requireNotNull(promotion.discountRate)
+    }
+
+/**
+ * 상품마다 적용할 프로모션을 고른다. 상품이 든 프로모션 중 할인율이 가장 큰 것 하나이고, 같으면 [promotionProducts]에서 먼저 나온 것이다.
+ * 할인율이 없는 프로모션에만 든 상품과 어느 프로모션에도 없는 상품은 결과에 없다(할인 없음).
+ *
+ * @param promotions 진행 중이고 사용자가 대상인 프로모션
+ * @param promotionProducts [promotions]의 진열 상품. 다른 프로모션의 행은 무시한다
+ * @return productId → 프로모션
+ */
+fun pickMaxDiscountPromotions(
+    promotions: List<Promotion>,
+    promotionProducts: List<PromotionProduct>,
+): Map<Long, Promotion> {
+    val discountPromotions = promotions.filter { it.discountRate != null }.associateBy { it.id }
 
     return promotionProducts
         .mapNotNull { promotionProduct ->
-            discountRates[promotionProduct.promotionId]?.let {
-                promotionProduct.productId to it
-            }
+            discountPromotions[promotionProduct.promotionId]?.let { promotionProduct.productId to it }
         }
         .groupBy({ it.first }, { it.second })
-        .mapValues { (_, rates) -> rates.max() }
+        .mapValues { (_, candidates) -> candidates.maxBy { requireNotNull(it.discountRate) } }
 }

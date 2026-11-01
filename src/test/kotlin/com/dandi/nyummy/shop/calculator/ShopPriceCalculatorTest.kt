@@ -56,4 +56,19 @@ class ShopPriceCalculatorTest {
 
         assertEquals(emptyMap(), calculateMaxDiscountRates(listOf(promotion(1, 30)), promotionProducts))
     }
+
+    @Test
+    fun `상품마다 할인율이 가장 큰 프로모션을 고르고 같으면 먼저 나온 것을 고른다`() {
+        val promotions = listOf(promotion(1, 30), promotion(2, 40), promotion(3, 40), promotion(4, null))
+        val promotionProducts = listOf(
+            PromotionProduct(1, 101, 0),
+            PromotionProduct(2, 101, 1),
+            PromotionProduct(3, 101, 2),
+            PromotionProduct(4, 102, 0),
+        )
+
+        val picked = pickMaxDiscountPromotions(promotions, promotionProducts)
+
+        assertEquals(mapOf(101L to 2L), picked.mapValues { (_, promotion) -> promotion.id })
+    }
 }
