@@ -106,8 +106,22 @@ class ShopItemService(
             .associate { it.productId to it.purchasedCount.toInt() }
     }
 
+    // 아이템마다 보유 개수 + 우편함에서 아직 받지 않은 구매분
+    private fun getOwnedCounts(userId: Long, itemIds: List<Long>): Map<Long, Int> {
+        if (itemIds.isEmpty()) return emptyMap()
+
+        val ownedCounts = ownedRoomItemRepository.findOwnedRoomItemCounts(userId, itemIds)
+            .associate { it.itemId to it.ownedCount.toInt() }
+        val unclaimedCounts = mailItemRepository.findUnclaimedPurchasedItemIds(userId, itemIds)
+            .groupingBy { it }
+            .eachCount()
+
+        return itemIds.associateWith { (ownedCounts[it] ?: 0) + (unclaimedCounts[it] ?: 0) }
+    }
+
     /**
-     * 상품 카드를 productId로 찾게 만든다. 보유 개수는 단품만 세고(세트는 0), 한 번의 쿼리로 센다.
+     * 상품 카드를 productId로 찾게 만든다. 보유 개수는 단품만 세고(세트는 0), 우편함에서 아직 받지 않은 구매분도 더한다.
+     * 보유 아이템과 안 받은 구매분을 각각 한 번의 쿼리로 센다.
      *
      * @param discountRates productId별 적용할 할인율. 없는 상품은 정가다
      */
@@ -123,12 +137,7 @@ class ShopItemService(
             .groupingBy { it.productId }
             .eachCount()
         val singleProducts = products.filter { itemCounts[it.id] == 1 }
-        val ownedCounts = if (singleProducts.isEmpty()) {
-            emptyMap()
-        } else {
-            ownedRoomItemRepository.findOwnedRoomItemCounts(userId, singleProducts.map { it.representativeItemId })
-                .associate { it.itemId to it.ownedCount.toInt() }
-        }
+        val ownedCounts = getOwnedCounts(userId, singleProducts.map { it.representativeItemId })
         val newProductStartsAt = now.minus(shopProperties.newProductTimeToLive)
 
         return products.associate { product ->

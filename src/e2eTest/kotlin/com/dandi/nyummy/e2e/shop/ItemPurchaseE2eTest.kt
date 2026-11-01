@@ -26,6 +26,7 @@ class ItemPurchaseE2eTest {
 
         try {
             val balanceBefore = getBalance()
+            val ownedCountBefore = getOwnedCount(product.productId)
             if (product.purchasePrice > balanceBefore) {
                 abort<Unit>("고정 계정의 코인이 ${product.purchasePrice}보다 적어 건너뜁니다: $balanceBefore")
             }
@@ -37,6 +38,7 @@ class ItemPurchaseE2eTest {
             assertEquals(balanceBefore - product.purchasePrice, itemPurchase["balance"])
             assertEquals(balanceBefore - product.purchasePrice, getBalance(), "구매 뒤 잔액")
             assertNull(getCart().findCartItem(product.productId), "산 상품이 장바구니에 남아 있습니다")
+            assertEquals(ownedCountBefore + 1, getOwnedCount(product.productId), "우편을 받기 전 상품 카드의 보유 개수")
 
             // 2. 같은 키 재시도: 코인이 더 빠지지 않고 같은 구매를 받는다
             val retried = createItemPurchase(idempotencyKey, product.toRequestProducts())
@@ -60,6 +62,8 @@ class ItemPurchaseE2eTest {
                 body("items[0].imageId", equalTo(product.itemId.toInt()))
                 body("coin", equalTo(null))
             }
+
+            assertEquals(ownedCountBefore + 1, getOwnedCount(product.productId), "우편을 받은 뒤 상품 카드의 보유 개수")
 
             // 5. 정리: 코인과 구매 이력은 되돌릴 수 없어 남고, 보유 아이템과 우편만 지운다
             deleteLatestOwnedRoomItem(product)
@@ -225,6 +229,24 @@ class ItemPurchaseE2eTest {
 
         abort<Unit>("살 수 있는 판매 중 인테리어 상품이 없어 건너뜁니다")
         error("abort는 항상 예외를 던진다")
+    }
+
+    private fun getOwnedCount(productId: Long): Int {
+        val products: List<Map<String, Any?>> = Given {
+            spec(RequestSpecs.createAuthorizedSpec())
+            queryParams(mapOf("tab" to "INTERIOR", "sort" to "PRICE_ASC", "size" to 50))
+        } When {
+            get("/api/v1/shop/products")
+        } Then {
+            statusCode(200)
+        } Extract {
+            path("items")
+        }
+        val product = assertNotNull(
+            products.firstOrNull { (it.getValue("productId") as Number).toLong() == productId },
+            "상품 목록에 상품이 없습니다: $productId",
+        )
+        return product.getValue("ownedCount") as Int
     }
 
     // 다른 테스트의 우편과 겹치지 않게 상품 이름으로 찾는다

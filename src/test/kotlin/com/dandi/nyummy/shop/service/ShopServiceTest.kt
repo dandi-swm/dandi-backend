@@ -6,6 +6,7 @@ import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.CommonErrorCode
 import com.dandi.nyummy.exception.errorcode.ErrorCode
 import com.dandi.nyummy.exception.errorcode.ShopErrorCode
+import com.dandi.nyummy.mail.repository.MailItemRepository
 import com.dandi.nyummy.room.dto.OwnedRoomItemCountResult
 import com.dandi.nyummy.room.enum.RoomItemCategory
 import com.dandi.nyummy.room.repository.OwnedRoomItemRepository
@@ -62,6 +63,7 @@ class ShopServiceTest {
     private val shopBannerRepository = mockk<ShopBannerRepository>()
     private val ownedRoomItemRepository = mockk<OwnedRoomItemRepository>()
     private val itemPurchaseRepository = mockk<ItemPurchaseRepository>()
+    private val mailItemRepository = mockk<MailItemRepository>()
     private val userRepository = mockk<UserRepository>()
     private val coinService = mockk<CoinService>()
     private val cartItemRepository = mockk<CartItemRepository>()
@@ -77,7 +79,7 @@ class ShopServiceTest {
             ownedRoomItemRepository = ownedRoomItemRepository,
             itemPurchaseRepository = itemPurchaseRepository,
             itemPurchaseProductRepository = mockk(),
-            mailItemRepository = mockk(),
+            mailItemRepository = mailItemRepository,
             shopProperties = shopProperties,
         ),
         shopProperties = shopProperties,
@@ -95,6 +97,7 @@ class ShopServiceTest {
     private var promotionProducts = listOf<PromotionProduct>()
     private var shopBanners = listOf<ShopBanner>()
     private var ownedCounts = listOf<OwnedRoomItemCountResult>()
+    private var unclaimedPurchasedItemIds = listOf<Long>()
 
     init {
         val user = User(provider = AuthProvider.EMAIL, email = "cat@test.com")
@@ -113,6 +116,7 @@ class ShopServiceTest {
         }
         every { shopBannerRepository.findActiveShopBanners(now) } answers { shopBanners }
         every { ownedRoomItemRepository.findOwnedRoomItemCounts(userId, any()) } answers { ownedCounts }
+        every { mailItemRepository.findUnclaimedPurchasedItemIds(userId, any()) } answers { unclaimedPurchasedItemIds }
     }
 
     // 단품이면 구성품이 대표 아이템 하나다
@@ -309,16 +313,17 @@ class ShopServiceTest {
     }
 
     @Test
-    fun `단품은 대표 아이템 보유 개수를, 세트는 0을 준다`() {
+    fun `단품은 대표 아이템 보유 개수에 안 받은 구매분을 더하고, 세트는 0을 준다`() {
         val bed = product(101)
         val set = product(102, salesCount = 1)
         products = listOf(bed, set)
         productItems = listOf(single(bed), ProductItem(102, 1020, 600), ProductItem(102, 1021, 600))
         ownedCounts = listOf(OwnedRoomItemCountResult(itemId = 1010, ownedCount = 2))
+        unclaimedPurchasedItemIds = listOf(1010, 1010, 1020)
 
         val items = getRecommendPage().componentOf<RankingComponentResponse>().content.items
 
-        assertEquals(mapOf(101L to 2, 102L to 0), items.associate { it.productId to it.ownedCount })
+        assertEquals(mapOf(101L to 4, 102L to 0), items.associate { it.productId to it.ownedCount })
     }
 
     @Test

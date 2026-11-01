@@ -16,7 +16,7 @@ private const val LINK = "https://link.nyummy.co.kr"
 /**
  * @param purchasePrice 이 사용자의 1개 결제가
  * @param isNew 판매를 시작한 지 얼마 안 된 상품인지
- * @param ownedCount 단품은 대표 아이템 보유 개수, 세트는 0
+ * @param ownedCount 단품은 대표 아이템 보유 개수 + 우편함에서 아직 받지 않은 구매분, 세트는 0
  */
 fun Product.toShopItemResponse(purchasePrice: Int, isNew: Boolean, ownedCount: Int): ShopItemResponse =
     ShopItemResponse(

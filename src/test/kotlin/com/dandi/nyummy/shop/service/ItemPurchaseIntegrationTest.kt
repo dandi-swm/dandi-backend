@@ -320,6 +320,20 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
     }
 
     @Test
+    fun `상품 카드의 보유 개수는 우편을 받기 전이나 받은 뒤나 산 만큼 늘어 있다`() {
+        val userId = createUser()
+        val product = createProduct(price = 1000)
+        assertEquals(0, getOwnedCount(userId, product))
+        createCartItem(userId, product, quantity = 2)
+
+        purchase(userId, listOf(product to 2))
+        assertEquals(2, getOwnedCount(userId, product))
+
+        mailService.claimMails(userId)
+        assertEquals(2, getOwnedCount(userId, product))
+    }
+
+    @Test
     fun `1인 구매 한도까지 산 개수를 세어 넘게 담거나 다시 담지 못한다`() {
         val userId = createUser()
         val limited = createProduct(price = 1000, purchaseLimit = 2)
@@ -425,6 +439,9 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
         ),
         "1.0.0",
     )
+
+    private fun getOwnedCount(userId: Long, product: Product): Int =
+        shopItemService.createShopItems(userId, listOf(product), emptyMap(), now()).getValue(product.id).ownedCount
 
     private fun getBalance(userId: Long): Int = assertNotNull(coinRepository.findByUserId(userId)).balance
 
