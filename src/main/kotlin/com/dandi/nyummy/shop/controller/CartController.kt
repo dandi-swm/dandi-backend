@@ -47,7 +47,7 @@ class CartController(private val cartService: CartService) {
     @Operation(
         summary = "장바구니 담기",
         description = "상품 상세 시트에서 상품을 quantity개 더 담는다. 이미 담긴 상품이면 기존 수량에 더하고, 담은 상품은 선택 상태가 된다. " +
-            "cartItemCount는 상단 배지에 쓸 장바구니 상품 종류 수다. " + STUB_NOTICE,
+            "cartItemCount는 상단 배지에 쓸 장바구니 상품 종류 수다.",
     )
     @ApiErrorCodes(
         shop = [
