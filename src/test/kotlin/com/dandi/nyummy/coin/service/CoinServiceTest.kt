@@ -88,4 +88,33 @@ class CoinServiceTest {
         }
         verify(exactly = 0) { coinHistoryRepository.save(any()) }
     }
+
+    // decreaseBalance
+
+    @Test
+    fun `잠근 잔액 행에서 빼고 음수 수량과 줄인 뒤 잔액으로 내역을 남긴다`() {
+        val coin = Coin(userId = userId).apply { balance = 300 }
+        val savedHistory = slot<CoinHistory>()
+        every { coinHistoryRepository.save(capture(savedHistory)) } answers { firstArg() }
+
+        val balance = coinService.decreaseBalance(coin, 120, CoinHistoryCategory.ROOM_ITEM_PURCHASE, sourceId = 7L)
+
+        assertEquals(180, balance)
+        assertEquals(180, coin.balance)
+        assertEquals(userId, savedHistory.captured.userId)
+        assertEquals(CoinHistoryCategory.ROOM_ITEM_PURCHASE, savedHistory.captured.category)
+        assertEquals(-120, savedHistory.captured.quantity)
+        assertEquals(180, savedHistory.captured.balanceAfter)
+        assertEquals(7L, savedHistory.captured.sourceId)
+    }
+
+    @Test
+    fun `잔액이 모자라면 내역을 남기지 않고 실패한다`() {
+        val coin = Coin(userId = userId).apply { balance = 100 }
+
+        assertFailsWith<IllegalArgumentException> {
+            coinService.decreaseBalance(coin, 120, CoinHistoryCategory.ROOM_ITEM_PURCHASE, sourceId = 7L)
+        }
+        verify(exactly = 0) { coinHistoryRepository.save(any()) }
+    }
 }

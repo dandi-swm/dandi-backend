@@ -79,6 +79,49 @@ class MailService(
     }
 
     /**
+     * 아이템 우편을 만든다. 상자와 달리 만료되지 않고, 목록에는 [representativeItemId]의 이미지가 나온다.
+     *
+     * 우편과 우편 아이템을 따로 저장하므로, 호출하는 쪽이 연 트랜잭션 안에서 불러야 둘이 함께 커밋된다.
+     *
+     * @param userId 우편을 받을 사용자 ID
+     * @param title 우편 제목
+     * @param content 아이템을 얻은 경로 문구
+     * @param representativeItemId 목록에 그릴 아이템
+     * @param items 우편에 넣을 아이템. 하나에 1개씩 넣는다
+     * @return 저장된 [Mail]
+     */
+    fun createItemMail(
+        userId: Long,
+        title: String,
+        content: String,
+        representativeItemId: Long,
+        items: List<GrantedRoomItem>,
+    ): Mail {
+        val mail = mailRepository.save(
+            Mail(
+                userId = userId,
+                category = MailCategory.ITEM,
+                title = title,
+                content = content,
+                representativeItemId = representativeItemId,
+            ),
+        )
+
+        mailItemRepository.saveAll(
+            items.map {
+                MailItem(
+                    mailId = mail.id,
+                    itemId = it.itemId,
+                    quantity = 1,
+                    itemPurchaseLineId = it.itemPurchaseLineId,
+                )
+            },
+        )
+
+        return mail
+    }
+
+    /**
      * 사용자의 우편 목록을 최신순으로 [size]개씩 조회한다. 무한 스크롤용 cursor 방식이다.
      *
      * 첫 요청은 [cursor] 없이 보내고, 다음 요청부터는 직전 응답의 nextCursor(마지막 우편 id)를 보낸다.

@@ -199,6 +199,37 @@ class MailServiceTest {
         assertFalse(savedMail.captured.isExpired(Instant.MAX))
     }
 
+    // createItemMail
+
+    @Test
+    fun `아이템 우편은 만료 없이 만들고 대표 아이템과 구매 구성품을 넣는다`() {
+        val savedMail = slot<Mail>()
+        val savedItems = slot<List<MailItem>>()
+        every { mailRepository.save(capture(savedMail)) } answers {
+            firstArg<Mail>().apply { ReflectionTestUtils.setField(this, "id", mailId) }
+        }
+        every { mailItemRepository.saveAll(capture(savedItems)) } answers { firstArg() }
+
+        mailService.createItemMail(
+            userId = userId,
+            title = "호박 세트",
+            content = "상점 구매",
+            representativeItemId = 2L,
+            items = listOf(GrantedRoomItem(2L, itemPurchaseLineId = 7L), GrantedRoomItem(3L, itemPurchaseLineId = 8L)),
+        )
+
+        assertEquals(MailCategory.ITEM, savedMail.captured.category)
+        assertEquals("호박 세트", savedMail.captured.title)
+        assertEquals("상점 구매", savedMail.captured.content)
+        assertEquals(2L, savedMail.captured.representativeItemId)
+        assertNull(savedMail.captured.expiresAt)
+        assertNull(savedMail.captured.coinQuantity)
+        assertEquals(listOf(mailId, mailId), savedItems.captured.map { it.mailId })
+        assertEquals(listOf(2L, 3L), savedItems.captured.map { it.itemId })
+        assertEquals(listOf(1, 1), savedItems.captured.map { it.quantity })
+        assertEquals(listOf<Long?>(7L, 8L), savedItems.captured.map { it.itemPurchaseLineId })
+    }
+
     // getMails
 
     @Test
