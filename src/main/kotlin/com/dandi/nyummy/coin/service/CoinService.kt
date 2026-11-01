@@ -2,12 +2,14 @@ package com.dandi.nyummy.coin.service
 
 import com.dandi.nyummy.coin.dto.CoinHistoriesResponse
 import com.dandi.nyummy.coin.dto.CoinHistoryResponse
+import com.dandi.nyummy.coin.entity.Coin
 import com.dandi.nyummy.coin.entity.CoinHistory
 import com.dandi.nyummy.coin.enum.CoinHistoryCategory
 import com.dandi.nyummy.coin.repository.CoinHistoryRepository
 import com.dandi.nyummy.coin.repository.CoinRepository
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
 
@@ -41,6 +43,21 @@ class CoinService(
     }
 
     /**
+     * 사용자의 코인 행을 잠가(SELECT … FOR UPDATE) 반환한다.
+     *
+     * 이 행을 사용자 단위 자물쇠로 쓴다. 코인·우편·장바구니를 함께 바꾸는 트랜잭션은 첫 문장에서 이 메서드를 불러,
+     * 같은 사용자의 요청을 하나씩 처리하고 서로 반대 순서로 기다리지 않게 한다. 첫 문장이어야 REPEATABLE READ의
+     * 스냅샷이 잠금 뒤에 생겨 이후 조회가 앞 요청이 커밋한 데이터를 본다.
+     *
+     * 잠금은 호출한 쪽 트랜잭션이 끝날 때 풀리므로, 트랜잭션 없이 부르면 실패시킨다.
+     *
+     * @throws IllegalStateException 가입 시 생성되어야 할 코인 행이 없는 경우
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    fun lockCoin(userId: Long): Coin = coinRepository.findCoinWithLockByUserId(userId)
+        ?: throw IllegalStateException("가입 시 생성되어야 할 코인 행이 없습니다: userId=$userId")
+
+    /**
      * 사용자의 코인 잔액을 [quantity]만큼 늘리고 내역을 남긴다.
      *
      * 잔액 행을 잠근 뒤(SELECT … FOR UPDATE) 엔티티에서 더한다. 같은 사용자의 지급·차감이 동시에 와도
@@ -58,8 +75,7 @@ class CoinService(
      */
     @Transactional
     fun increaseBalance(userId: Long, quantity: Int, category: CoinHistoryCategory, sourceId: Long?): Int {
-        val coin = coinRepository.findCoinWithLockByUserId(userId)
-            ?: throw IllegalStateException("가입 시 생성되어야 할 코인 행이 없습니다: userId=$userId")
+        val coin = lockCoin(userId)
 
         coin.increaseBalance(quantity)
         coinHistoryRepository.save(

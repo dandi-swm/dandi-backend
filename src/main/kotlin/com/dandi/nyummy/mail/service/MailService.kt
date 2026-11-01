@@ -116,7 +116,7 @@ class MailService(
      * 코인은 잔액에 더하고 내역을 남긴다. 보상 상자에 든 아이템도 같이 지급한다.
      *
      * 같은 우편을 동시에 받아 두 번 지급되지 않도록 우편 행을 잠근 뒤 검증한다. 뒤에 온 요청은 앞 요청이
-     * 커밋할 때까지 기다렸다가 이미 받은 우편으로 거절된다. 잠금 순서는 우편 → 코인이다.
+     * 커밋할 때까지 기다렸다가 이미 받은 우편으로 거절된다. 잠금 순서는 코인 → 우편이다([CoinService.lockCoin]).
      *
      * 받은 우편만 삭제할 수 있으므로 삭제된 우편은 없는 우편으로 본다.
      * 응답의 아이템은 같은 아이템을 하나로 합치고, 우편에 넣은 순서로 준다.
@@ -128,6 +128,7 @@ class MailService(
      */
     @Transactional
     fun claimMail(userId: Long, mailId: Long): RewardResponse {
+        coinService.lockCoin(userId)
         val mail = mailRepository.findMailWithLockByIdAndDeletedAtIsNull(mailId)
             ?: throw BusinessException(MailErrorCode.MAIL_NOT_FOUND)
 
@@ -147,14 +148,16 @@ class MailService(
      * 이미 받은 우편과 만료된 우편은 조회에서 빼고, 남은 우편은 하나 받기와 같은 상태 전이([Mail.claim])를 거친다.
      * 같은 시각으로 거르고 받으므로 여기서 거부되는 우편은 없다. 개수 상한은 두지 않는다.
      *
-     * 우편을 id 오름차순으로 모두 잠근 뒤 코인 행을 잠근다. 잠금 순서는 하나 받기와 같은 우편 → 코인이다.
-     * 코인은 우편마다 지급해 내역이 우편마다 남는다. 코인 행은 첫 지급에서 잠기고 이후는 같은 잠금을 쓴다.
+     * 코인 행을 잠근 뒤 우편을 id 오름차순으로 모두 잠근다. 잠금 순서는 하나 받기와 같은 코인 → 우편이다.
+     * 우편을 먼저 잠그면 그 잠금이 (user_id, claimed_at) 인덱스의 갭까지 막아, 코인을 잠그고 우편을 만드는
+     * 구매와 교착이 난다. 코인은 우편마다 지급해 내역이 우편마다 남는다.
      * 응답의 아이템은 여러 우편의 같은 아이템을 하나로 합치고, 우편 순서 → 우편에 넣은 순서로 준다.
      *
      * 받을 우편이 없으면 coin과 items가 모두 null이다.
      */
     @Transactional
     fun claimMails(userId: Long): TotalRewardResponse {
+        coinService.lockCoin(userId)
         val now = Instant.now(clock)
         val mails = mailRepository.findMailsWithLockByUserIdAndClaimedAtIsNull(userId, now)
         if (mails.isEmpty()) {

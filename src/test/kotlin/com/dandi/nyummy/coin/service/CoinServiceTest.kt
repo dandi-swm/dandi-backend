@@ -42,6 +42,23 @@ class CoinServiceTest {
         assertEquals(0, coinService.getBalance(userId))
     }
 
+    // lockCoin
+
+    @Test
+    fun `코인 행을 잠가 반환한다`() {
+        val coin = Coin(userId = userId)
+        every { coinRepository.findCoinWithLockByUserId(userId) } returns coin
+
+        assertEquals(coin, coinService.lockCoin(userId))
+    }
+
+    @Test
+    fun `잠글 코인 행이 없으면 실패한다`() {
+        every { coinRepository.findCoinWithLockByUserId(userId) } returns null
+
+        assertFailsWith<IllegalStateException> { coinService.lockCoin(userId) }
+    }
+
     // increaseBalance
 
     @Test

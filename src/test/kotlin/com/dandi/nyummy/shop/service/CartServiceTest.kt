@@ -2,7 +2,6 @@ package com.dandi.nyummy.shop.service
 
 import com.dandi.nyummy.auth.enum.AuthProvider
 import com.dandi.nyummy.coin.entity.Coin
-import com.dandi.nyummy.coin.repository.CoinRepository
 import com.dandi.nyummy.coin.service.CoinService
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.ErrorCode
@@ -58,7 +57,6 @@ class CartServiceTest {
     private val productRepository = mockk<ProductRepository>()
     private val productItemRepository = mockk<ProductItemRepository>()
     private val ownedRoomItemRepository = mockk<OwnedRoomItemRepository>()
-    private val coinRepository = mockk<CoinRepository>()
     private val coinService = mockk<CoinService>()
     private val cartItemRepository = mockk<CartItemRepository>()
 
@@ -76,7 +74,6 @@ class CartServiceTest {
         ),
         coinService = coinService,
         shopProperties = shopProperties,
-        coinRepository = coinRepository,
         cartItemRepository = cartItemRepository,
         productRepository = productRepository,
         promotionProductRepository = promotionProductRepository,
@@ -116,7 +113,7 @@ class CartServiceTest {
         every { ownedRoomItemRepository.findOwnedRoomItemCounts(userId, any()) } answers {
             secondArg<List<Long>>().filter { it in ownedItemIds }.map { OwnedRoomItemCountResult(it, 1) }
         }
-        every { coinRepository.findCoinWithLockByUserId(userId) } returns Coin(userId).also { it.balance = 1000 }
+        every { coinService.lockCoin(userId) } returns Coin(userId).also { it.balance = 1000 }
         every { coinService.getBalance(userId) } returns 1000
         every { cartItemRepository.findByUserIdOrderByCreatedAtDescIdDesc(userId) } answers { cartItems }
         every { cartItemRepository.save(any<CartItem>()) } answers { firstArg() }
@@ -229,7 +226,7 @@ class CartServiceTest {
         verify(exactly = 0) { cartItemRepository.save(any<CartItem>()) }
         // 잠금이 첫 문장이어야 그 뒤 조회가 앞 요청이 커밋한 행을 본다
         verifyOrder {
-            coinRepository.findCoinWithLockByUserId(userId)
+            coinService.lockCoin(userId)
             productRepository.findById(101)
             cartItemRepository.findByUserIdOrderByCreatedAtDescIdDesc(userId)
         }

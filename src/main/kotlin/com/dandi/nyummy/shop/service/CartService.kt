@@ -1,7 +1,5 @@
 package com.dandi.nyummy.shop.service
 
-import com.dandi.nyummy.coin.entity.Coin
-import com.dandi.nyummy.coin.repository.CoinRepository
 import com.dandi.nyummy.coin.service.CoinService
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.ShopErrorCode
@@ -45,7 +43,6 @@ class CartService(
     private val shopItemService: ShopItemService,
     private val coinService: CoinService,
     private val shopProperties: ShopProperties,
-    private val coinRepository: CoinRepository,
     private val cartItemRepository: CartItemRepository,
     private val productRepository: ProductRepository,
     private val promotionProductRepository: PromotionProductRepository,
@@ -75,7 +72,7 @@ class CartService(
      */
     @Transactional
     fun createCartItem(userId: Long, request: CreateCartItemRequest): CreatedCartItemResponse {
-        lockCoin(userId)
+        coinService.lockCoin(userId)
         val now = clock.instant()
         val product = productRepository.findByIdOrNull(request.productId)
             ?: throw BusinessException(ShopErrorCode.PRODUCT_NOT_FOUND)
@@ -115,7 +112,7 @@ class CartService(
      */
     @Transactional
     fun updateCartItemQuantity(userId: Long, productId: Long, request: UpdateCartItemQuantityRequest): CartResponse {
-        val coin = lockCoin(userId)
+        val coin = coinService.lockCoin(userId)
         val cartItems = cartItemRepository.findByUserIdOrderByCreatedAtDescIdDesc(userId)
         val pricedCartItems = getPricedCartItems(userId, cartItems, clock.instant())
         val target = pricedCartItems.find { it.cartItem.productId == productId }
@@ -138,7 +135,7 @@ class CartService(
      */
     @Transactional
     fun updateCartSelection(userId: Long, request: UpdateCartSelectionRequest): CartResponse {
-        val coin = lockCoin(userId)
+        val coin = coinService.lockCoin(userId)
         val cartItems = cartItemRepository.findByUserIdOrderByCreatedAtDescIdDesc(userId)
         val pricedCartItems = getPricedCartItems(userId, cartItems, clock.instant())
 
@@ -154,7 +151,7 @@ class CartService(
      */
     @Transactional
     fun deleteCartItems(userId: Long, productIds: List<Long>): CartResponse {
-        val coin = lockCoin(userId)
+        val coin = coinService.lockCoin(userId)
         val (deletedCartItems, cartItems) = cartItemRepository.findByUserIdOrderByCreatedAtDescIdDesc(userId)
             .partition { it.productId in productIds }
 
@@ -162,10 +159,6 @@ class CartService(
 
         return createCart(getPricedCartItems(userId, cartItems, clock.instant()), coin.balance)
     }
-
-    // SELECT … FOR UPDATE. 장바구니를 바꾸는 트랜잭션의 첫 문장으로 부른다.
-    private fun lockCoin(userId: Long): Coin = coinRepository.findCoinWithLockByUserId(userId)
-        ?: throw IllegalStateException("가입 시 생성되어야 할 코인 행이 없습니다: userId=$userId")
 
     // 방 배경은 단품이라 대표 아이템을 하나라도 가지면 이미 가진 것이다
     private fun existsOwnedRoomItem(userId: Long, product: Product): Boolean =

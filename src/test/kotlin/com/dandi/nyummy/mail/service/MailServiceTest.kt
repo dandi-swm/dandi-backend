@@ -1,5 +1,6 @@
 package com.dandi.nyummy.mail.service
 
+import com.dandi.nyummy.coin.entity.Coin
 import com.dandi.nyummy.coin.enum.CoinHistoryCategory
 import com.dandi.nyummy.coin.service.CoinService
 import com.dandi.nyummy.exception.BusinessException
@@ -58,6 +59,7 @@ class MailServiceTest {
     )
 
     init {
+        every { coinService.lockCoin(any()) } answers { Coin(userId = firstArg()) }
         every { coinService.increaseBalance(any(), any(), any(), any()) } returns 0
         every { roomService.createOwnedRoomItems(any(), any()) } just runs
         every { mailItemRepository.findMailItemsByMailIds(any()) } returns emptyList()
@@ -369,6 +371,19 @@ class MailServiceTest {
     }
 
     @Test
+    fun `하나 받기는 코인을 먼저 잠근 뒤 우편을 잠그고 지급한다`() {
+        givenMail(mail(id = mailId, coinQuantity = 100))
+
+        mailService.claimMail(userId, mailId)
+
+        verifyOrder {
+            coinService.lockCoin(userId)
+            mailRepository.findMailWithLockByIdAndDeletedAtIsNull(mailId)
+            coinService.increaseBalance(userId, 100, CoinHistoryCategory.MAIL_CLAIM, mailId)
+        }
+    }
+
+    @Test
     fun `없거나 삭제된 우편이면 거부한다`() {
         givenMail(null)
 
@@ -476,7 +491,7 @@ class MailServiceTest {
     }
 
     @Test
-    fun `우편을 잠가 받은 상태로 바꾼 뒤 아이템과 코인을 지급한다`() {
+    fun `모두 받기는 코인을 먼저 잠근 뒤 우편을 잠그고 아이템과 코인을 지급한다`() {
         val mail =
             mail(
                 id = 1,
@@ -491,6 +506,7 @@ class MailServiceTest {
         mailService.claimMails(userId)
 
         verifyOrder {
+            coinService.lockCoin(userId)
             mailRepository.findMailsWithLockByUserIdAndClaimedAtIsNull(userId, now)
             roomService.createOwnedRoomItems(userId, listOf(3L))
             coinService.increaseBalance(userId, 30, CoinHistoryCategory.MAIL_CLAIM, 1L)
