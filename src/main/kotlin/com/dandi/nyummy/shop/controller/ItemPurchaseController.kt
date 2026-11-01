@@ -2,6 +2,8 @@ package com.dandi.nyummy.shop.controller
 
 import com.dandi.nyummy.config.openapi.ApiErrorCodes
 import com.dandi.nyummy.exception.errorcode.ShopErrorCode
+import com.dandi.nyummy.header.CommonHeader
+import com.dandi.nyummy.header.CurrentCommonHeader
 import com.dandi.nyummy.security.AuthUser
 import com.dandi.nyummy.security.CurrentUser
 import com.dandi.nyummy.shop.dto.CreateItemPurchaseRequest
@@ -34,14 +36,18 @@ class ItemPurchaseController(private val itemPurchaseService: ItemPurchaseServic
             "같은 키로 다시 오면 처음 결과를 그대로 돌려준다. " +
             "products는 장바구니에 담긴 상품·수량 그대로 보내고, purchasePrice는 화면에서 본 1개 결제가다. " +
             "차감할 코인은 서버가 계산하고, 화면 가격과 다르면 409 priceChanged다. " +
-            "앞선 구매가 아직 처리 중이면 409 purchaseInProgress이고, 앱은 같은 키로 다시 보내지 않고 장바구니와 잔액을 다시 조회한다. " +
-            "현재는 저장하지 않고 고정 상품·잔액으로 검증한 결과만 반환하며, 장바구니 일치(cartMismatch)와 처리 중(purchaseInProgress)은 아직 확인하지 않는다.",
+            "같은 키로 다른 상품·수량·가격을 보내면 409 idempotencyKeyReused다. " +
+            "장바구니에 담긴 상품·수량과 다르면 409 cartMismatch이고, 앱은 장바구니를 다시 조회한다. " +
+            "앞선 요청이 아직 처리 중이면 409 purchaseInProgress이고, 결과를 알 수 없으므로 앱은 새 키를 만들지 않고 " +
+            "같은 키로 다시 보내거나 잔액과 장바구니를 다시 조회한다.",
     )
     @ApiErrorCodes(
         shop = [
             ShopErrorCode.PRODUCT_NOT_FOUND,
             ShopErrorCode.PRODUCT_NOT_FOR_SALE,
             ShopErrorCode.ALREADY_OWNED,
+            ShopErrorCode.PURCHASE_LIMIT_EXCEEDED,
+            ShopErrorCode.IDEMPOTENCY_KEY_REUSED,
             ShopErrorCode.CART_MISMATCH,
             ShopErrorCode.PRICE_CHANGED,
             ShopErrorCode.INSUFFICIENT_BALANCE,
@@ -51,10 +57,12 @@ class ItemPurchaseController(private val itemPurchaseService: ItemPurchaseServic
     @PostMapping
     fun createItemPurchase(
         @CurrentUser user: AuthUser,
+        @CurrentCommonHeader commonHeader: CommonHeader,
         @Parameter(description = "구매 버튼을 누를 때마다 앱이 만드는 UUID. 재시도할 때만 같은 값을 보낸다 (1~64자)")
         @RequestHeader(IDEMPOTENCY_KEY)
         @Size(min = 1, max = 64)
         idempotencyKey: String,
         @Valid @RequestBody request: CreateItemPurchaseRequest,
-    ): ItemPurchaseResponse = itemPurchaseService.createItemPurchase(user.userId, idempotencyKey, request)
+    ): ItemPurchaseResponse =
+        itemPurchaseService.createItemPurchase(user.userId, idempotencyKey, request, commonHeader.appVersion)
 }
