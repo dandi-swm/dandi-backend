@@ -7,13 +7,16 @@ import org.apache.hc.client5.http.config.RequestConfig
 import org.apache.hc.client5.http.impl.classic.HttpClients
 import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder
 import org.apache.hc.core5.util.Timeout
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBooleanProperty
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory
 import org.springframework.web.client.RestClient
 
+// 영양 분석을 하는 서비스(기본은 Worker)에서만 Gemini 연결 풀을 만든다. API 서비스에는 Gemini 호출이 없다.
 @Configuration
+@ConditionalOnBooleanProperty("app.ai.enabled")
 @EnableConfigurationProperties(AiProperties::class)
 class AiConfig {
 

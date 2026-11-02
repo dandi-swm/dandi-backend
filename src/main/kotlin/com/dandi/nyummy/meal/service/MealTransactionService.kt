@@ -3,11 +3,9 @@ package com.dandi.nyummy.meal.service
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.UserErrorCode
 import com.dandi.nyummy.mail.service.MailService
-import com.dandi.nyummy.meal.dto.NutritionAnalysisResult
 import com.dandi.nyummy.meal.dto.RewardBoxResult
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.entity.MealAnalysisJob
-import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.repository.MealAnalysisJobRepository
 import com.dandi.nyummy.meal.repository.MealRepository
 import com.dandi.nyummy.streak.service.StreakService
@@ -77,29 +75,5 @@ class MealTransactionService(
         )
         streakService.updateStreak(meal.userId)
         return meal
-    }
-
-    /**
-     * 식사의 분석 상태를 변경하고 즉시 커밋한다.
-     *
-     * @param meal 상태를 변경할 [Meal]
-     * @param status 변경할 [MealStatus]
-     */
-    @Transactional
-    fun updateStatus(meal: Meal, status: MealStatus) {
-        meal.updateStatus(status)
-        mealRepository.save(meal)
-    }
-
-    /**
-     * 식사의 영양 분석 결과(이름·아이콘·영양)를 저장하고 즉시 커밋한다.
-     *
-     * @param meal 분석 결과를 저장할 [Meal]
-     * @param analysisResult 저장할 [NutritionAnalysisResult]
-     */
-    @Transactional
-    fun updateAnalysisResult(meal: Meal, analysisResult: NutritionAnalysisResult) {
-        meal.updateAnalysisResult(analysisResult)
-        mealRepository.save(meal)
     }
 }
