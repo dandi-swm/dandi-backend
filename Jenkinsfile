@@ -254,6 +254,22 @@ pipeline {
     }
 
     post {
+        always {
+            // 이미지는 ECR에 있으니 서버에 남기지 않는다. 쌓이면 디스크가 차서 노드가 오프라인이 된다.
+            // 정리에 실패해도 빌드 결과는 바꾸지 않는다.
+            sh '''#!/bin/bash
+                if [ -n "${IMAGE_URI:-}" ]; then
+                    docker image rm "$IMAGE_URI" || true
+                fi
+
+                # 태그가 빠진 옛 베이스 이미지를 지운다.
+                docker image prune -f || true
+
+                # 3일 넘게 쓰지 않은 빌드 캐시만 지운다. 최근 캐시는 남겨 다음 빌드를 빠르게 한다.
+                docker builder prune -af --filter until=72h || true
+            '''
+        }
+
         success {
             echo "CI SUCCESS: ${env.IMAGE_URI}"
         }
