@@ -1,6 +1,7 @@
-# 개발 EC2 (t4g.small / arm64 / 2GB). ECR 이미지를 받아 쓴다.
+# 개발 EC2 (m7g.medium / arm64 / 4GB). ECR 이미지를 받아 쓴다.
 # 한 인스턴스에 app + mysql + valkey가 같이 뜨므로 컨테이너마다 메모리 상한을 둔다.
-#   app 768m(힙 576m) + mysql 512m + valkey 256m = 1.5GB, 나머지 약 500MB는 OS/도커 몫.
+#   app 2g(힙 1.5g) + mysql 512m + valkey 256m = 약 2.75GB, 나머지 약 1GB는 OS/도커/Nginx 몫.
+#   app은 API와 Worker(영양 분석)를 같이 돌려 분석 스레드·이미지만큼 더 쓴다.
 # DB 포트는 루프백에만 열린다. 밖에서 붙으려면 SSH 터널:
 #   ssh -L 3307:127.0.0.1:3307 <dev-host>
 # COMPOSE_FILE=docker-compose.yml:docker-compose.dev.yml
@@ -18,7 +19,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 768m
+          memory: 2g
     depends_on:
       mysql-db:
         condition: service_healthy
