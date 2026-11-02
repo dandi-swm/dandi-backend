@@ -62,7 +62,9 @@ pipeline {
                     # Docker 소켓에 접근할 수 있도록 그룹 ID 확인
                     DOCKER_GID=$(stat -c '%g' /var/run/docker.sock)
 
+                    # 캐시된 옛 이미지 대신 배포 이미지와 같은 최신 JDK 패치로 테스트
                     docker run --rm \
+                      --pull=always \
                       --network host \
                       --user "$(id -u):$(id -g)" \
                       --group-add "$DOCKER_GID" \
@@ -84,7 +86,9 @@ pipeline {
                 sh '''#!/bin/bash
                     set -euo pipefail
 
+                    # 베이스 이미지(JDK·JRE·Node)를 매번 최신 보안 패치로 받는다
                     docker build \
+                      --pull \
                       -t "$IMAGE_URI" \
                       .
                 '''
