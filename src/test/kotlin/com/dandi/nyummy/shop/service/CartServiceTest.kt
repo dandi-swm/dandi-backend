@@ -6,12 +6,14 @@ import com.dandi.nyummy.coin.service.CoinService
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.ErrorCode
 import com.dandi.nyummy.exception.errorcode.ShopErrorCode
+import com.dandi.nyummy.mail.repository.MailItemRepository
 import com.dandi.nyummy.room.dto.OwnedRoomItemCountResult
 import com.dandi.nyummy.room.enum.RoomItemCategory
 import com.dandi.nyummy.room.repository.OwnedRoomItemRepository
 import com.dandi.nyummy.shop.config.ShopProperties
 import com.dandi.nyummy.shop.dto.CartResponse
 import com.dandi.nyummy.shop.dto.CreateCartItemRequest
+import com.dandi.nyummy.shop.dto.PurchasedProductCountResult
 import com.dandi.nyummy.shop.dto.UpdateCartItemQuantityRequest
 import com.dandi.nyummy.shop.dto.UpdateCartSelectionRequest
 import com.dandi.nyummy.shop.entity.CartItem
@@ -21,6 +23,8 @@ import com.dandi.nyummy.shop.entity.Promotion
 import com.dandi.nyummy.shop.entity.PromotionProduct
 import com.dandi.nyummy.shop.enum.PromotionCategory
 import com.dandi.nyummy.shop.repository.CartItemRepository
+import com.dandi.nyummy.shop.repository.ItemPurchaseProductRepository
+import com.dandi.nyummy.shop.repository.ItemPurchaseRepository
 import com.dandi.nyummy.shop.repository.ProductItemRepository
 import com.dandi.nyummy.shop.repository.ProductRepository
 import com.dandi.nyummy.shop.repository.PromotionProductRepository
@@ -43,6 +47,7 @@ import java.util.Optional
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -57,6 +62,9 @@ class CartServiceTest {
     private val productRepository = mockk<ProductRepository>()
     private val productItemRepository = mockk<ProductItemRepository>()
     private val ownedRoomItemRepository = mockk<OwnedRoomItemRepository>()
+    private val itemPurchaseRepository = mockk<ItemPurchaseRepository>()
+    private val itemPurchaseProductRepository = mockk<ItemPurchaseProductRepository>()
+    private val mailItemRepository = mockk<MailItemRepository>()
     private val coinService = mockk<CoinService>()
     private val cartItemRepository = mockk<CartItemRepository>()
 
@@ -70,6 +78,9 @@ class CartServiceTest {
             promotionRepository = promotionRepository,
             productItemRepository = productItemRepository,
             ownedRoomItemRepository = ownedRoomItemRepository,
+            itemPurchaseRepository = itemPurchaseRepository,
+            itemPurchaseProductRepository = itemPurchaseProductRepository,
+            mailItemRepository = mailItemRepository,
             shopProperties = shopProperties,
         ),
         coinService = coinService,
@@ -77,7 +88,6 @@ class CartServiceTest {
         cartItemRepository = cartItemRepository,
         productRepository = productRepository,
         promotionProductRepository = promotionProductRepository,
-        ownedRoomItemRepository = ownedRoomItemRepository,
     )
 
     // 테스트마다 채우는 DB 상태
@@ -88,6 +98,12 @@ class CartServiceTest {
 
     // 보유한 아이템 id
     private var ownedItemIds = setOf<Long>()
+
+    // 샀지만 우편을 아직 안 받은 아이템 id
+    private var unclaimedPurchasedItemIds = listOf<Long>()
+
+    // productId별 산 개수
+    private var purchasedCounts = mapOf<Long, Long>()
 
     init {
         val user = User(provider = AuthProvider.EMAIL, email = "cat@test.com")
@@ -113,8 +129,17 @@ class CartServiceTest {
         every { ownedRoomItemRepository.findOwnedRoomItemCounts(userId, any()) } answers {
             secondArg<List<Long>>().filter { it in ownedItemIds }.map { OwnedRoomItemCountResult(it, 1) }
         }
+        every { mailItemRepository.findUnclaimedPurchasedItemIds(userId, any()) } answers {
+            secondArg<Collection<Long>>().filter { it in unclaimedPurchasedItemIds }
+        }
+        every { itemPurchaseProductRepository.findPurchasedProductCounts(userId, any()) } answers {
+            secondArg<Collection<Long>>().mapNotNull { productId ->
+                purchasedCounts[productId]?.let { PurchasedProductCountResult(productId, it) }
+            }
+        }
         every { coinService.lockCoin(userId) } returns Coin(userId).also { it.balance = 1000 }
         every { coinService.getBalance(userId) } returns 1000
+        every { itemPurchaseRepository.existsByUserId(userId) } returns false
         every { cartItemRepository.findByUserIdOrderByCreatedAtDescIdDesc(userId) } answers { cartItems }
         every { cartItemRepository.save(any<CartItem>()) } answers { firstArg() }
         every { cartItemRepository.deleteAll(any<Iterable<CartItem>>()) } just Runs
@@ -125,6 +150,7 @@ class CartServiceTest {
         price: Int = 1000,
         category: RoomItemCategory = RoomItemCategory.BED,
         saleEndsAt: Instant? = null,
+        purchaseLimit: Int? = null,
     ) = Product(
         category = category,
         name = "상품 $id",
@@ -133,6 +159,7 @@ class CartServiceTest {
         isLimited = false,
         saleStartsAt = now.minus(Duration.ofDays(30)),
         saleEndsAt = saleEndsAt,
+        purchaseLimit = purchaseLimit,
     ).also { ReflectionTestUtils.setField(it, "id", id) }
 
     private fun cartItem(product: Product, quantity: Int = 1, isSelected: Boolean = true) =
@@ -211,6 +238,39 @@ class CartServiceTest {
     }
 
     @Test
+    fun `1인 구매 한도까지 남은 개수가 담을 수 있는 수량이고 다 샀으면 구매할 수 없다`() {
+        val limited = product(101, purchaseLimit = 3)
+        val soldOut = product(102, purchaseLimit = 1)
+        val overLimit = product(103, purchaseLimit = 3)
+        products = listOf(limited, soldOut, overLimit)
+        purchasedCounts = mapOf(101L to 1L, 102L to 1L, 103L to 2L)
+        // 운영자가 한도를 줄이면 담긴 수량이 남은 한도보다 많을 수 있다
+        cartItems = listOf(cartItem(limited), cartItem(soldOut), cartItem(overLimit, quantity = 2))
+
+        val cart = cartService.getCart(userId)
+
+        assertEquals(2, cart.itemOf(limited).maxQuantity)
+        assertTrue(cart.itemOf(limited).canPurchase)
+        assertEquals(0, cart.itemOf(soldOut).maxQuantity)
+        assertEquals("구매 한도를 넘었어요", cart.itemOf(soldOut).unavailableReason)
+        assertFalse(cart.itemOf(overLimit).canPurchase)
+        assertEquals("구매 한도를 넘었어요", cart.itemOf(overLimit).unavailableReason)
+    }
+
+    @Test
+    fun `샀지만 우편을 아직 안 받은 방 배경도 이미 가진 것으로 본다`() {
+        val background = product(101, category = RoomItemCategory.BACKGROUND)
+        products = listOf(background)
+        unclaimedPurchasedItemIds = listOf(background.representativeItemId)
+        cartItems = listOf(cartItem(background))
+
+        assertEquals("이미 가진 방 배경이에요", cartService.getCart(userId).itemOf(background).unavailableReason)
+        assertBusinessException(ShopErrorCode.ALREADY_OWNED) {
+            cartService.createCartItem(userId, CreateCartItemRequest(productId = 101, quantity = 1))
+        }
+    }
+
+    @Test
     fun `이미 담긴 상품을 담으면 코인 행을 잠근 뒤 수량을 더하고 선택 상태로 만든다`() {
         val bed = product(101)
         products = listOf(bed)
@@ -263,6 +323,22 @@ class CartServiceTest {
         }
         assertBusinessException(ShopErrorCode.ALREADY_OWNED) {
             cartService.createCartItem(userId, CreateCartItemRequest(productId = 102, quantity = 1))
+        }
+        verify(exactly = 0) { cartItemRepository.save(any<CartItem>()) }
+    }
+
+    @Test
+    fun `1인 구매 한도까지 샀으면 사유로 거부하고 남은 개수를 넘게 담으면 수량 초과로 거부한다`() {
+        val soldOut = product(101, purchaseLimit = 1)
+        val limited = product(102, purchaseLimit = 3)
+        products = listOf(soldOut, limited)
+        purchasedCounts = mapOf(101L to 1L, 102L to 1L)
+
+        assertBusinessException(ShopErrorCode.PURCHASE_LIMIT_EXCEEDED) {
+            cartService.createCartItem(userId, CreateCartItemRequest(productId = 101, quantity = 1))
+        }
+        assertBusinessException(ShopErrorCode.CART_QUANTITY_EXCEEDED) {
+            cartService.createCartItem(userId, CreateCartItemRequest(productId = 102, quantity = 3))
         }
         verify(exactly = 0) { cartItemRepository.save(any<CartItem>()) }
     }

@@ -99,7 +99,7 @@ class CoinLockConcurrencyTest @Autowired constructor(
         val release = CountDownLatch(1)
         val executor = Executors.newFixedThreadPool(2)
 
-        // 구매와 같은 순서다. 구매를 만들면 이 트랜잭션 대신 구매 서비스를 부른다.
+        // 구매와 같은 순서다. 구매 서비스로는 코인 잠금과 우편 INSERT 사이에서 멈출 수 없어 같은 순서를 직접 쓴다.
         val creator = executor.submit {
             transactionTemplate.executeWithoutResult {
                 coinService.lockCoin(userId)

@@ -92,6 +92,33 @@ class CoinService(
     }
 
     /**
+     * 이미 잠근 코인 행의 잔액을 [quantity]만큼 줄이고 내역을 남긴다. 내역의 수량은 음수로 남는다.
+     *
+     * [lockCoin]으로 잠근 행을 받아 다시 조회하지 않는다. 0코인 결제는 변동이 없으므로 호출하지 않는다.
+     *
+     * @param coin [lockCoin]으로 잠근 코인 행
+     * @param quantity 줄일 코인 수(1 이상, 잔액 이하)
+     * @param category 변동 종류. [sourceId]가 어느 테이블의 행인지도 정한다
+     * @param sourceId 변동을 일으킨 행의 id
+     * @return 줄인 뒤의 잔액
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    fun decreaseBalance(coin: Coin, quantity: Int, category: CoinHistoryCategory, sourceId: Long): Int {
+        coin.decreaseBalance(quantity)
+        coinHistoryRepository.save(
+            CoinHistory(
+                userId = coin.userId,
+                category = category,
+                quantity = -quantity,
+                balanceAfter = coin.balance,
+                sourceId = sourceId,
+            ),
+        )
+
+        return coin.balance
+    }
+
+    /**
      * 사용자의 코인 내역을 최신순으로 [size]개씩 조회한다. 무한 스크롤용 cursor 방식이다.
      *
      * 지금은 해피케이스라 요청과 관계없이 고정 내역을 반환한다. 실제 조회는 coin_histories의 (user_id, id) 인덱스로 붙인다.

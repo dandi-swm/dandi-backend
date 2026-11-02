@@ -45,4 +45,13 @@ class Coin(
         require(quantity > 0) { "늘릴 코인 수는 1 이상이어야 합니다: $quantity" }
         balance += quantity
     }
+
+    /**
+     * 잔액을 [quantity]만큼 줄인다. 잔액이 모자라면 호출하는 쪽이 사용자에게 먼저 거부하므로, 여기까지 오면 데이터 오류로 본다.
+     */
+    fun decreaseBalance(quantity: Int) {
+        require(quantity > 0) { "줄일 코인 수는 1 이상이어야 합니다: $quantity" }
+        require(quantity <= balance) { "잔액보다 많이 줄일 수 없습니다: balance=$balance, quantity=$quantity" }
+        balance -= quantity
+    }
 }

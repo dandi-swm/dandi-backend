@@ -6,6 +6,7 @@ import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.CommonErrorCode
 import com.dandi.nyummy.exception.errorcode.ErrorCode
 import com.dandi.nyummy.exception.errorcode.ShopErrorCode
+import com.dandi.nyummy.mail.repository.MailItemRepository
 import com.dandi.nyummy.room.dto.OwnedRoomItemCountResult
 import com.dandi.nyummy.room.enum.RoomItemCategory
 import com.dandi.nyummy.room.repository.OwnedRoomItemRepository
@@ -26,6 +27,7 @@ import com.dandi.nyummy.shop.enum.PromotionCategory
 import com.dandi.nyummy.shop.enum.ShopCategory
 import com.dandi.nyummy.shop.enum.ShopTab
 import com.dandi.nyummy.shop.repository.CartItemRepository
+import com.dandi.nyummy.shop.repository.ItemPurchaseRepository
 import com.dandi.nyummy.shop.repository.ProductItemRepository
 import com.dandi.nyummy.shop.repository.ProductRepository
 import com.dandi.nyummy.shop.repository.PromotionProductRepository
@@ -60,6 +62,8 @@ class ShopServiceTest {
     private val promotionProductRepository = mockk<PromotionProductRepository>()
     private val shopBannerRepository = mockk<ShopBannerRepository>()
     private val ownedRoomItemRepository = mockk<OwnedRoomItemRepository>()
+    private val itemPurchaseRepository = mockk<ItemPurchaseRepository>()
+    private val mailItemRepository = mockk<MailItemRepository>()
     private val userRepository = mockk<UserRepository>()
     private val coinService = mockk<CoinService>()
     private val cartItemRepository = mockk<CartItemRepository>()
@@ -73,6 +77,9 @@ class ShopServiceTest {
             promotionRepository = promotionRepository,
             productItemRepository = productItemRepository,
             ownedRoomItemRepository = ownedRoomItemRepository,
+            itemPurchaseRepository = itemPurchaseRepository,
+            itemPurchaseProductRepository = mockk(),
+            mailItemRepository = mailItemRepository,
             shopProperties = shopProperties,
         ),
         shopProperties = shopProperties,
@@ -90,11 +97,13 @@ class ShopServiceTest {
     private var promotionProducts = listOf<PromotionProduct>()
     private var shopBanners = listOf<ShopBanner>()
     private var ownedCounts = listOf<OwnedRoomItemCountResult>()
+    private var unclaimedPurchasedItemIds = listOf<Long>()
 
     init {
         val user = User(provider = AuthProvider.EMAIL, email = "cat@test.com")
             .also { it.createdAt = now.minus(Duration.ofDays(30)) }
         every { userRepository.findByIdOrNull(userId) } returns user
+        every { itemPurchaseRepository.existsByUserId(userId) } returns false
         every { productRepository.findOnSaleProducts(now) } answers { products }
         every { productItemRepository.findByProductIdIn(any()) } answers {
             val productIds = firstArg<Collection<Long>>()
@@ -107,6 +116,7 @@ class ShopServiceTest {
         }
         every { shopBannerRepository.findActiveShopBanners(now) } answers { shopBanners }
         every { ownedRoomItemRepository.findOwnedRoomItemCounts(userId, any()) } answers { ownedCounts }
+        every { mailItemRepository.findUnclaimedPurchasedItemIds(userId, any()) } answers { unclaimedPurchasedItemIds }
     }
 
     // 단품이면 구성품이 대표 아이템 하나다
@@ -194,6 +204,18 @@ class ShopServiceTest {
         assertEquals("https://cdn.test.com/shop-banners/12.png", banner.imageUrl)
         assertEquals(BannerCornerStyle.ROUNDED, banner.cornerStyle)
         assertEquals("https://link.nyummy.co.kr/shop/promotions/2", banner.action?.navigateLink)
+    }
+
+    @Test
+    fun `한 번이라도 샀으면 첫 구매 프로모션의 배너를 빼고 안 샀으면 준다`() {
+        promotions = listOf(promotion(1, PromotionCategory.FIRST_PURCHASE))
+        shopBanners = listOf(shopBanner(11, promotionId = 1))
+
+        assertEquals(1, getRecommendPage().componentOf<HeroBannerComponentResponse>().content.banners.size)
+
+        every { itemPurchaseRepository.existsByUserId(userId) } returns true
+
+        assertTrue(getRecommendPage().sduiComponents.none { it is HeroBannerComponentResponse })
     }
 
     @Test
@@ -291,16 +313,17 @@ class ShopServiceTest {
     }
 
     @Test
-    fun `단품은 대표 아이템 보유 개수를, 세트는 0을 준다`() {
+    fun `단품은 대표 아이템 보유 개수에 안 받은 구매분을 더하고, 세트는 0을 준다`() {
         val bed = product(101)
         val set = product(102, salesCount = 1)
         products = listOf(bed, set)
         productItems = listOf(single(bed), ProductItem(102, 1020, 600), ProductItem(102, 1021, 600))
         ownedCounts = listOf(OwnedRoomItemCountResult(itemId = 1010, ownedCount = 2))
+        unclaimedPurchasedItemIds = listOf(1010, 1010, 1020)
 
         val items = getRecommendPage().componentOf<RankingComponentResponse>().content.items
 
-        assertEquals(mapOf(101L to 2, 102L to 0), items.associate { it.productId to it.ownedCount })
+        assertEquals(mapOf(101L to 4, 102L to 0), items.associate { it.productId to it.ownedCount })
     }
 
     @Test

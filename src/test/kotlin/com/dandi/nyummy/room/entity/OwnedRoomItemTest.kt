@@ -13,6 +13,8 @@ import kotlin.test.assertTrue
 
 class OwnedRoomItemTest {
 
+    private val now = Instant.parse("2026-10-19T03:00:00Z")
+
     private fun ownedRoomItem(isEquipped: Boolean = false) = OwnedRoomItem(userId = 1L, itemId = 2L).apply {
         this.isEquipped = isEquipped
         x = 27f
@@ -32,7 +34,7 @@ class OwnedRoomItemTest {
     fun `장착하면 위치와 크기를 요청한 값으로 바꾼다`() {
         val item = ownedRoomItem()
 
-        item.equip(x = 40f, y = 60f, zIndex = 5, scale = 1.2f)
+        item.equip(x = 40f, y = 60f, zIndex = 5, scale = 1.2f, now = now)
 
         assertTrue(item.isEquipped)
         assertEquals(40f, item.x)
@@ -45,11 +47,22 @@ class OwnedRoomItemTest {
     fun `이미 장착한 아이템을 다시 장착하면 장착한 채로 위치만 바뀐다`() {
         val item = ownedRoomItem(isEquipped = true)
 
-        item.equip(x = 0f, y = 100f, zIndex = 0, scale = 1f)
+        item.equip(x = 0f, y = 100f, zIndex = 0, scale = 1f, now = now)
 
         assertTrue(item.isEquipped)
         assertEquals(0f, item.x)
         assertEquals(100f, item.y)
+    }
+
+    @Test
+    fun `처음 장착한 시각은 처음 장착할 때만 남기고 해제해도 지우지 않는다`() {
+        val item = ownedRoomItem()
+
+        item.equip(x = 40f, y = 60f, zIndex = 5, scale = 1.2f, now = now)
+        item.unequip()
+        item.equip(x = 40f, y = 60f, zIndex = 5, scale = 1.2f, now = now.plusSeconds(60))
+
+        assertEquals(now, item.firstEquippedAt)
     }
 
     // unequip

@@ -7,7 +7,7 @@ enum class CoinHistoryCategory {
     /** 우편 받기. sourceId = mails.id */
     MAIL_CLAIM,
 
-    /** 상점에서 마이룸 아이템 구매. sourceId = owned_room_items.id */
+    /** 상점 구매. sourceId = item_purchases.id */
     ROOM_ITEM_PURCHASE,
 
     /** 인앱 결제로 코인 구매 */

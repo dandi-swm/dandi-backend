@@ -14,6 +14,7 @@ import com.dandi.nyummy.mail.enum.MailCategory
 import com.dandi.nyummy.mail.enum.RewardBoxCategory
 import com.dandi.nyummy.mail.repository.MailItemRepository
 import com.dandi.nyummy.mail.repository.MailRepository
+import com.dandi.nyummy.room.dto.GrantedRoomItem
 import com.dandi.nyummy.room.service.RoomService
 import io.mockk.every
 import io.mockk.just
@@ -101,6 +102,8 @@ class MailServiceTest {
 
     private fun mailItem(itemId: Long, name: String, quantity: Int, mailId: Long = this.mailId) =
         MailItemResult(mailId = mailId, itemId = itemId, name = name, quantity = quantity)
+
+    private fun grantedRoomItems(vararg itemIds: Long) = itemIds.map { GrantedRoomItem(it) }
 
     private fun givenUnclaimedMails(vararg mails: Mail) {
         every { mailRepository.findMailsWithLockByUserIdAndClaimedAtIsNull(userId, now) } returns mails.toList()
@@ -194,6 +197,37 @@ class MailServiceTest {
 
         assertNull(savedMail.captured.expiresAt)
         assertFalse(savedMail.captured.isExpired(Instant.MAX))
+    }
+
+    // createItemMail
+
+    @Test
+    fun `아이템 우편은 만료 없이 만들고 대표 아이템과 구매 구성품을 넣는다`() {
+        val savedMail = slot<Mail>()
+        val savedItems = slot<List<MailItem>>()
+        every { mailRepository.save(capture(savedMail)) } answers {
+            firstArg<Mail>().apply { ReflectionTestUtils.setField(this, "id", mailId) }
+        }
+        every { mailItemRepository.saveAll(capture(savedItems)) } answers { firstArg() }
+
+        mailService.createItemMail(
+            userId = userId,
+            title = "호박 세트",
+            content = "상점 구매",
+            representativeItemId = 2L,
+            items = listOf(GrantedRoomItem(2L, itemPurchaseLineId = 7L), GrantedRoomItem(3L, itemPurchaseLineId = 8L)),
+        )
+
+        assertEquals(MailCategory.ITEM, savedMail.captured.category)
+        assertEquals("호박 세트", savedMail.captured.title)
+        assertEquals("상점 구매", savedMail.captured.content)
+        assertEquals(2L, savedMail.captured.representativeItemId)
+        assertNull(savedMail.captured.expiresAt)
+        assertNull(savedMail.captured.coinQuantity)
+        assertEquals(listOf(mailId, mailId), savedItems.captured.map { it.mailId })
+        assertEquals(listOf(2L, 3L), savedItems.captured.map { it.itemId })
+        assertEquals(listOf(1, 1), savedItems.captured.map { it.quantity })
+        assertEquals(listOf<Long?>(7L, 8L), savedItems.captured.map { it.itemPurchaseLineId })
     }
 
     // getMails
@@ -317,7 +351,7 @@ class MailServiceTest {
 
         val reward = mailService.claimMail(userId, mailId)
 
-        verify { roomService.createOwnedRoomItems(userId, listOf(2L, 2L)) }
+        verify { roomService.createOwnedRoomItems(userId, grantedRoomItems(2L, 2L)) }
         val item = reward.items?.single()
         assertEquals(2L, item?.imageId)
         assertEquals("호박 쿠션", item?.name)
@@ -338,7 +372,7 @@ class MailServiceTest {
 
         val reward = mailService.claimMail(userId, mailId)
 
-        verify { roomService.createOwnedRoomItems(userId, listOf(3L)) }
+        verify { roomService.createOwnedRoomItems(userId, grantedRoomItems(3L)) }
         verify { coinService.increaseBalance(userId, 30, CoinHistoryCategory.MAIL_CLAIM, mailId) }
         assertEquals(listOf(3L), reward.items?.map { it.imageId })
         assertEquals(30, reward.coin?.quantity)
@@ -356,7 +390,7 @@ class MailServiceTest {
 
         val reward = mailService.claimMail(userId, mailId)
 
-        verify { roomService.createOwnedRoomItems(userId, listOf(3L, 2L, 3L, 3L)) }
+        verify { roomService.createOwnedRoomItems(userId, grantedRoomItems(3L, 2L, 3L, 3L)) }
         assertEquals(listOf(3L to 3, 2L to 1), reward.items?.map { it.imageId to it.quantity })
     }
 
@@ -368,6 +402,24 @@ class MailServiceTest {
 
         verify(exactly = 0) { roomService.createOwnedRoomItems(any(), any()) }
         assertNull(reward.items)
+    }
+
+    @Test
+    fun `구매 우편의 아이템은 구매 구성품을 이어서 보유 아이템으로 만든다`() {
+        givenMail(mail(id = mailId, category = MailCategory.ITEM))
+        givenMailItems(
+            MailItemResult(mailId = mailId, itemId = 2L, name = "호박 쿠션", quantity = 1, itemPurchaseLineId = 7L),
+            MailItemResult(mailId = mailId, itemId = 3L, name = "스크래처 타워", quantity = 1, itemPurchaseLineId = 8L),
+        )
+
+        mailService.claimMail(userId, mailId)
+
+        verify {
+            roomService.createOwnedRoomItems(
+                userId,
+                listOf(GrantedRoomItem(2L, itemPurchaseLineId = 7L), GrantedRoomItem(3L, itemPurchaseLineId = 8L)),
+            )
+        }
     }
 
     @Test
@@ -485,7 +537,7 @@ class MailServiceTest {
 
         val reward = mailService.claimMails(userId)
 
-        verify { roomService.createOwnedRoomItems(userId, listOf(3L, 2L, 2L, 2L)) }
+        verify { roomService.createOwnedRoomItems(userId, grantedRoomItems(3L, 2L, 2L, 2L)) }
         assertEquals(listOf(3L to 1, 2L to 3), reward.items?.map { it.imageId to it.quantity })
         assertEquals(listOf("스크래처 타워", "호박 쿠션"), reward.items?.map { it.name })
     }
@@ -508,7 +560,7 @@ class MailServiceTest {
         verifyOrder {
             coinService.lockCoin(userId)
             mailRepository.findMailsWithLockByUserIdAndClaimedAtIsNull(userId, now)
-            roomService.createOwnedRoomItems(userId, listOf(3L))
+            roomService.createOwnedRoomItems(userId, grantedRoomItems(3L))
             coinService.increaseBalance(userId, 30, CoinHistoryCategory.MAIL_CLAIM, 1L)
         }
     }

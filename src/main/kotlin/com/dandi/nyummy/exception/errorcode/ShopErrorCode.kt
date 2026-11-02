@@ -18,5 +18,7 @@ enum class ShopErrorCode(override val status: HttpStatus, override val code: Str
     CART_MISMATCH(HttpStatus.CONFLICT, "api.shop.cartMismatch", "구매할 상품이 장바구니에 담긴 상품·수량과 다릅니다."),
     PRICE_CHANGED(HttpStatus.CONFLICT, "api.shop.priceChanged", "상품 가격이 바뀌었습니다."),
     INSUFFICIENT_BALANCE(HttpStatus.CONFLICT, "api.shop.insufficientBalance", "코인이 부족합니다."),
+    IDEMPOTENCY_KEY_REUSED(HttpStatus.CONFLICT, "api.shop.idempotencyKeyReused", "같은 Idempotency-Key로 다른 구매를 요청했습니다."),
+    PURCHASE_LIMIT_EXCEEDED(HttpStatus.CONFLICT, "api.shop.purchaseLimitExceeded", "1인 구매 한도를 넘었습니다."),
     PURCHASE_IN_PROGRESS(HttpStatus.CONFLICT, "api.shop.purchaseInProgress", "처리 중인 구매가 있습니다."),
 }
