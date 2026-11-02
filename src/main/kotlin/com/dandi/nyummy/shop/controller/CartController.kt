@@ -1,6 +1,7 @@
 package com.dandi.nyummy.shop.controller
 
 import com.dandi.nyummy.config.openapi.ApiErrorCodes
+import com.dandi.nyummy.exception.errorcode.CommonErrorCode
 import com.dandi.nyummy.exception.errorcode.ShopErrorCode
 import com.dandi.nyummy.security.AuthUser
 import com.dandi.nyummy.security.CurrentUser
@@ -53,6 +54,7 @@ class CartController(private val cartService: CartService) {
             ShopErrorCode.CART_QUANTITY_EXCEEDED,
             ShopErrorCode.CART_FULL,
         ],
+        common = [CommonErrorCode.REQUEST_CONFLICT],
     )
     @PostMapping("/items")
     fun createCartItem(
@@ -74,6 +76,7 @@ class CartController(private val cartService: CartService) {
             ShopErrorCode.CART_QUANTITY_EXCEEDED,
             ShopErrorCode.CART_FULL,
         ],
+        common = [CommonErrorCode.REQUEST_CONFLICT],
     )
     @PutMapping("/items/{productId}")
     fun updateCartItemQuantity(
@@ -87,6 +90,7 @@ class CartController(private val cartService: CartService) {
         description = "선택된 상품 목록을 요청 목록으로 맞추고 장바구니 전체를 반환한다. 전체 선택은 구매 가능한 모든 id, " +
             "전체 해제는 빈 목록이다. 장바구니에 없는 id는 무시하고, 구매 불가 항목은 선택되지 않는다.",
     )
+    @ApiErrorCodes(common = [CommonErrorCode.REQUEST_CONFLICT])
     @PutMapping("/selection")
     fun updateCartSelection(
         @CurrentUser user: AuthUser,
@@ -99,6 +103,7 @@ class CartController(private val cartService: CartService) {
             "productIds는 쉼표 구분(117,121)과 반복(productIds=117&productIds=121) 모두 받는다. " +
             "장바구니에 없는 id는 무시한다.",
     )
+    @ApiErrorCodes(common = [CommonErrorCode.REQUEST_CONFLICT])
     @DeleteMapping("/items")
     fun deleteCartItems(
         @CurrentUser user: AuthUser,

@@ -2,6 +2,7 @@ package com.dandi.nyummy.exception
 
 import com.dandi.nyummy.exception.errorcode.CommonErrorCode
 import org.slf4j.LoggerFactory
+import org.springframework.dao.CannotAcquireLockException
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.HttpStatusCode
@@ -97,6 +98,15 @@ class GlobalExceptionHandler : ResponseEntityExceptionHandler() {
             .body(ErrorResponse.of("api.common.missingParameter", message))
     }
      */
+
+    // 행 잠금 대기 초과와 교착. 트랜잭션이 롤백되어 같은 요청을 다시 보낼 수 있으므로 500으로 두지 않는다.
+    @ExceptionHandler(CannotAcquireLockException::class)
+    fun handleCannotAcquireLockException(e: CannotAcquireLockException): ResponseEntity<ErrorResponse> {
+        log.warn("DB 행 잠금을 얻지 못했습니다", e)
+        return ResponseEntity
+            .status(CommonErrorCode.REQUEST_CONFLICT.status)
+            .body(ErrorResponse.of(CommonErrorCode.REQUEST_CONFLICT))
+    }
 
     @ExceptionHandler(Exception::class)
     fun handleException(e: Exception): ResponseEntity<ErrorResponse> {

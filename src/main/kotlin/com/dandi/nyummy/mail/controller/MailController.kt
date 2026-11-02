@@ -2,6 +2,7 @@ package com.dandi.nyummy.mail.controller
 
 import com.dandi.nyummy.config.openapi.ApiErrorCodes
 import com.dandi.nyummy.exception.errorcode.AuthErrorCode
+import com.dandi.nyummy.exception.errorcode.CommonErrorCode
 import com.dandi.nyummy.exception.errorcode.MailErrorCode
 import com.dandi.nyummy.mail.dto.MailsResponse
 import com.dandi.nyummy.mail.dto.RewardResponse
@@ -65,6 +66,7 @@ class MailController(private val mailService: MailService) {
     @ApiErrorCodes(
         mail = [MailErrorCode.MAIL_NOT_FOUND, MailErrorCode.ALREADY_CLAIMED, MailErrorCode.MAIL_EXPIRED],
         auth = [AuthErrorCode.FORBIDDEN],
+        common = [CommonErrorCode.REQUEST_CONFLICT],
     )
     @PostMapping("/{mailId}/claim")
     fun claimMail(
@@ -80,6 +82,7 @@ class MailController(private val mailService: MailService) {
             "이미 받은 우편과 만료된 우편은 대상이 아니며, 받을 수 있는 우편은 개수 제한 없이 모두 받는다. " +
             "items는 여러 우편의 같은 아이템을 하나로 합쳐 quantity에 개수를 더하고, 먼저 온 우편 → 우편에 넣은 순서로 준다.",
     )
+    @ApiErrorCodes(common = [CommonErrorCode.REQUEST_CONFLICT])
     @PostMapping("/claim-all")
     fun claimMails(@CurrentUser user: AuthUser): TotalRewardResponse = mailService.claimMails(user.userId)
 
