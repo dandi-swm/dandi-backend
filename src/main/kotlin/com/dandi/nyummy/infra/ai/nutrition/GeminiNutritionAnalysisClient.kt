@@ -1,15 +1,26 @@
 package com.dandi.nyummy.infra.ai.nutrition
 
+import aws.sdk.kotlin.services.s3.model.NoSuchKey
+import aws.smithy.kotlin.runtime.SdkBaseException
+import aws.smithy.kotlin.runtime.ServiceException
 import com.dandi.nyummy.infra.ai.AiProperties
 import com.dandi.nyummy.infra.storage.s3.S3StorageClient
+import com.dandi.nyummy.infra.storage.s3.dto.S3ObjectContentResult
+import com.dandi.nyummy.meal.dto.IconSummaryResult
 import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.dto.NutritionAnalysisResult
 import com.dandi.nyummy.meal.repository.IconRepository
 import com.dandi.nyummy.meal.service.IconService
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
+import org.springframework.dao.DataAccessException
 import org.springframework.stereotype.Component
+import org.springframework.web.client.HttpClientErrorException
+import org.springframework.web.client.HttpServerErrorException
+import org.springframework.web.client.ResourceAccessException
 import org.springframework.web.client.RestClient
+import org.springframework.web.client.RestClientException
+import tools.jackson.core.JacksonException
 import tools.jackson.databind.ObjectMapper
 import kotlin.io.encoding.Base64
 
@@ -96,12 +107,17 @@ class GeminiNutritionAnalysisClient(
         private val logger = LoggerFactory.getLogger(GeminiNutritionAnalysisClient::class.java)
     }
 
+    /**
+     * 식사 이미지를 Gemini로 분석한다.
+     *
+     * @throws AnalysisFailureException 실패를 [AnalysisFailureCategory]로 나눠 던진다. 분류에 없는 예외는 그대로 올린다.
+     */
     override fun analyzeNutrition(imageKey: String): NutritionAnalysisResult {
-        val objectContent = runBlocking { s3StorageClient.downloadObject(imageKey) }
+        val objectContent = downloadImage(imageKey)
         val encodedContent = Base64.encode(objectContent.bytes, 0, objectContent.bytes.size)
         val mimeType = objectContent.contentType
 
-        val icons = iconService.getIcons()
+        val icons = getIcons()
         val iconsJson = objectMapper.writeValueAsString(icons)
 
         // 다음 식사 추천이 한 메뉴로 몰리지 않게 음식 종류와 메뉴 형태를 요청마다 무작위로 정한다.
@@ -131,23 +147,40 @@ class GeminiNutritionAnalysisClient(
             ),
         )
 
-        val response = restClient.post()
-            .uri("/v1/publishers/google/models/{model}:generateContent", aiProperties.model)
-            .header("x-goog-api-key", aiProperties.apiKey)
-            .body(requestBody)
-            .retrieve()
-            .body(GeminiGenerateContentResponse::class.java)
-            ?: throw IllegalStateException("Gemini 응답이 비어 있습니다.")
+        val response = try {
+            restClient.post()
+                .uri("/v1/publishers/google/models/{model}:generateContent", aiProperties.model)
+                .header("x-goog-api-key", aiProperties.apiKey)
+                .body(requestBody)
+                .retrieve()
+                .body(GeminiGenerateContentResponse::class.java)
+        } catch (e: HttpClientErrorException.TooManyRequests) {
+            throw AnalysisFailureException(AnalysisFailureCategory.UNAVAILABLE, "Gemini 요청 한도를 넘었습니다.", e)
+        } catch (e: HttpClientErrorException) {
+            throw AnalysisFailureException(
+                AnalysisFailureCategory.INVALID_REQUEST,
+                "Gemini가 요청을 거부했습니다: ${e.statusCode}",
+                e,
+            )
+        } catch (e: HttpServerErrorException) {
+            throw AnalysisFailureException(AnalysisFailureCategory.UNAVAILABLE, "Gemini 서버 오류입니다: ${e.statusCode}", e)
+        } catch (e: ResourceAccessException) {
+            // 연결·읽기 타임아웃과 연결 풀 대기 시간 초과가 여기로 온다.
+            throw AnalysisFailureException(AnalysisFailureCategory.UNAVAILABLE, "Gemini에 연결하지 못했습니다.", e)
+        } catch (e: RestClientException) {
+            // 위에서 잡지 않은 나머지는 응답을 GeminiGenerateContentResponse로 읽지 못한 경우다.
+            throw AnalysisFailureException(AnalysisFailureCategory.INVALID_RESPONSE, "Gemini 응답을 읽지 못했습니다.", e)
+        } ?: throw AnalysisFailureException(AnalysisFailureCategory.INVALID_RESPONSE, "Gemini 응답이 비어 있습니다.")
 
         val resultJson = response.candidates.firstOrNull()
             ?.content?.parts?.firstOrNull()?.text
-            ?: throw IllegalStateException("Gemini 응답에 결과가 없습니다.")
+            ?: throw AnalysisFailureException(AnalysisFailureCategory.INVALID_RESPONSE, "Gemini 응답에 결과가 없습니다.")
 
-        val parsed = objectMapper.readValue(resultJson, GeminiNutritionResponse::class.java)
+        val parsed = convertNutritionResponse(resultJson)
 
         if (!parsed.isFood) {
             logger.info("영양 분석에 실패했습니다: imageKey={}, rejectReason={}", imageKey, parsed.rejectReason)
-            throw IllegalStateException("음식이 아닙니다.")
+            throw AnalysisFailureException(AnalysisFailureCategory.NOT_FOOD, "음식이 아닙니다.")
         }
 
         return NutritionAnalysisResult(
@@ -156,6 +189,44 @@ class GeminiNutritionAnalysisClient(
             catComment = parsed.catComment,
             iconId = parsed.iconId,
         )
+    }
+
+    /**
+     * 분석할 식사 이미지를 S3에서 받는다.
+     * 객체가 없거나 비었으면 다시 해도 소용없으므로 [AnalysisFailureCategory.INVALID_REQUEST],
+     * S3 서버 오류·요청 한도·네트워크 오류는 [AnalysisFailureCategory.UNAVAILABLE]이다.
+     */
+    private fun downloadImage(imageKey: String): S3ObjectContentResult = try {
+        runBlocking { s3StorageClient.downloadObject(imageKey) }
+    } catch (e: NoSuchKey) {
+        throw AnalysisFailureException(AnalysisFailureCategory.INVALID_REQUEST, "분석할 이미지가 없습니다: $imageKey", e)
+    } catch (e: ServiceException) {
+        val metadata = e.sdkErrorMetadata
+        val category = if (metadata.errorType == ServiceException.ErrorType.Client && !metadata.isThrottling) {
+            AnalysisFailureCategory.INVALID_REQUEST
+        } else {
+            AnalysisFailureCategory.UNAVAILABLE
+        }
+        throw AnalysisFailureException(category, "분석할 이미지를 받지 못했습니다: $imageKey", e)
+    } catch (e: SdkBaseException) {
+        // 응답을 받기 전의 실패(타임아웃·연결 오류·재시도 소진)다.
+        throw AnalysisFailureException(AnalysisFailureCategory.UNAVAILABLE, "분석할 이미지를 받지 못했습니다: $imageKey", e)
+    } catch (e: IllegalStateException) {
+        // S3StorageClient가 바디 없는 객체를 이렇게 알린다.
+        throw AnalysisFailureException(AnalysisFailureCategory.INVALID_REQUEST, "분석할 이미지가 비어 있습니다: $imageKey", e)
+    }
+
+    /** 프롬프트에 넣을 아이콘 목록. DB 조회 실패는 잠시 뒤 다시 하면 될 수 있다. */
+    private fun getIcons(): List<IconSummaryResult> = try {
+        iconService.getIcons()
+    } catch (e: DataAccessException) {
+        throw AnalysisFailureException(AnalysisFailureCategory.UNAVAILABLE, "아이콘 목록을 조회하지 못했습니다.", e)
+    }
+
+    private fun convertNutritionResponse(resultJson: String): GeminiNutritionResponse = try {
+        objectMapper.readValue(resultJson, GeminiNutritionResponse::class.java)
+    } catch (e: JacksonException) {
+        throw AnalysisFailureException(AnalysisFailureCategory.INVALID_RESPONSE, "Gemini 결과를 해석하지 못했습니다.", e)
     }
 }
 
