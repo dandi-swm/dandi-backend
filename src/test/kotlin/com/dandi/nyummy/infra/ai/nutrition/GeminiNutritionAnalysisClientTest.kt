@@ -5,6 +5,8 @@ import aws.sdk.kotlin.services.s3.model.S3ErrorMetadata
 import aws.sdk.kotlin.services.s3.model.S3Exception
 import aws.smithy.kotlin.runtime.SdkBaseException
 import aws.smithy.kotlin.runtime.ServiceException
+import aws.smithy.kotlin.runtime.http.HttpStatusCode
+import aws.smithy.kotlin.runtime.http.response.HttpResponse
 import com.dandi.nyummy.infra.ai.AiProperties
 import com.dandi.nyummy.infra.storage.s3.S3StorageClient
 import com.dandi.nyummy.infra.storage.s3.dto.S3ObjectContentResult
@@ -108,11 +110,17 @@ class GeminiNutritionAnalysisClientTest {
         coEvery { s3StorageClient.downloadObject(imageKey) } throws exception
     }
 
-    /** 오류 메타데이터를 채우는 SDK API는 내부용이라, 분류에 쓰는 두 값만 mockk로 흉내 낸다. */
-    private fun createS3Exception(errorType: ServiceException.ErrorType, isThrottling: Boolean = false): S3Exception {
+    /** 오류 메타데이터를 채우는 SDK API는 내부용이라, 분류에 쓰는 값만 mockk로 흉내 낸다. */
+    private fun createS3Exception(
+        errorType: ServiceException.ErrorType,
+        status: HttpStatusCode,
+        isThrottling: Boolean = false,
+    ): S3Exception {
+        val response = mockk<HttpResponse> { every { this@mockk.status } returns status }
         val metadata = mockk<S3ErrorMetadata> {
             every { this@mockk.errorType } returns errorType
             every { this@mockk.isThrottling } returns isThrottling
+            every { protocolResponse } returns response
         }
         return mockk<S3Exception> { every { sdkErrorMetadata } returns metadata }
     }
@@ -215,21 +223,27 @@ class GeminiNutritionAnalysisClientTest {
 
     @Test
     fun `S3 서버 오류면 UNAVAILABLE로 실패한다`() {
-        givenS3Failure(createS3Exception(ServiceException.ErrorType.Server))
+        givenS3Failure(createS3Exception(ServiceException.ErrorType.Server, HttpStatusCode.InternalServerError))
 
         assertAnalysisFailure(AnalysisFailureCategory.UNAVAILABLE) { client.analyzeNutrition(imageKey) }
     }
 
     @Test
     fun `S3 요청 한도를 넘으면 UNAVAILABLE로 실패한다`() {
-        givenS3Failure(createS3Exception(ServiceException.ErrorType.Client, isThrottling = true))
+        givenS3Failure(
+            createS3Exception(
+                ServiceException.ErrorType.Client,
+                HttpStatusCode.ServiceUnavailable,
+                isThrottling = true,
+            ),
+        )
 
         assertAnalysisFailure(AnalysisFailureCategory.UNAVAILABLE) { client.analyzeNutrition(imageKey) }
     }
 
     @Test
     fun `S3가 요청을 거부하면 INVALID_REQUEST로 실패한다`() {
-        givenS3Failure(createS3Exception(ServiceException.ErrorType.Client))
+        givenS3Failure(createS3Exception(ServiceException.ErrorType.Client, HttpStatusCode.BadRequest))
 
         assertAnalysisFailure(AnalysisFailureCategory.INVALID_REQUEST) { client.analyzeNutrition(imageKey) }
     }

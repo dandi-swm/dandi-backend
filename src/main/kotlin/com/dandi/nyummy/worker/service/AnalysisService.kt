@@ -16,6 +16,7 @@ import com.dandi.nyummy.worker.dto.MealAnalysisJobResult
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.time.Clock
+import java.time.Duration
 import java.time.Instant
 
 @Service
@@ -30,6 +31,9 @@ class AnalysisService(
 ) {
     companion object {
         private val logger = LoggerFactory.getLogger(AnalysisService::class.java)
+
+        // 설정 오류로 되돌린 작업을 다시 가져가기까지 기다리는 시간. 설정이 고장 난 동안 Gemini를 1초마다 부르지 않게 한다.
+        private val MISCONFIGURED_DELAY = Duration.ofMinutes(1)
     }
 
     /**
@@ -38,6 +42,7 @@ class AnalysisService(
      * Gemini 호출은 트랜잭션 밖에서 하고, 결과는 [MealAnalysisJobTransactionService]의 짧은 트랜잭션으로 남긴다.
      * - 성공하면 COMPLETED로 확정한다.
      * - 요청 한도 초과·서버 오류·타임아웃처럼 일시적인 실패는 재시도할 수 있으면 대기로 되돌리고 알리지 않는다.
+     * - 키·권한 같은 설정 오류는 시도 횟수를 쓰지 않고 잠시 뒤로 되돌리고 알리지 않는다. 설정을 고치면 그대로 처리된다.
      * - 그 밖의 실패(재시도를 다 쓴 일시적 실패, 음식 아님, 응답 해석 실패, 거부, 분류에 없는 예외)는 FAILED로 끝낸다.
      *
      * lease가 만료돼 다른 Worker가 같은 작업을 가져갔으면 결과를 쓰지 않고 알리지도 않는다.
@@ -66,6 +71,8 @@ class AnalysisService(
      * 분류된 실패를 재시도할지 FAILED로 끝낼지 정하고, FAILED로 끝냈으면 알린다.
      *
      * 일시적인 실패(UNAVAILABLE)는 재시도할 수 있으면 대기로 되돌리고 알리지 않는다. 마지막 시도였으면 FAILED로 끝낸다.
+     * 설정 오류(MISCONFIGURED)는 사용자 탓이 아니고 모든 작업이 같이 실패하므로, FAILED로 끝내지도 알리지도 않고
+     * 번호를 내려 [MISCONFIGURED_DELAY] 뒤에 다시 가져가게 한다.
      * Worker가 종료될 때 대기 시간 안에 끝나지 않은 작업도 같은 규칙으로 정리한다.
      */
     fun handleAnalysisFailure(job: MealAnalysisJobResult, failure: AnalysisFailureException) {
@@ -98,6 +105,17 @@ class AnalysisService(
 
             AnalysisFailureCategory.INVALID_RESPONSE, AnalysisFailureCategory.INVALID_REQUEST ->
                 logger.error("영양 분석에 실패했습니다: mealId={}, category={}", job.mealId, failure.category, failure)
+
+            AnalysisFailureCategory.MISCONFIGURED -> {
+                logger.error(
+                    "설정 오류로 영양 분석을 하지 못해 잠시 뒤 다시 시도합니다: mealId={}, leaseCount={}",
+                    job.mealId,
+                    job.leaseCount,
+                    failure,
+                )
+                mealAnalysisJobTransactionService.cancelMealAnalysis(job, MISCONFIGURED_DELAY)
+                return
+            }
         }
         sendAnalysisPush(mealAnalysisJobTransactionService.failMealAnalysis(job), failure.category, analyzedAt)
     }
