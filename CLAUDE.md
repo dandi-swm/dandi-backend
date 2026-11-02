@@ -70,7 +70,7 @@
 | 익명화 | anonymize | mask, scrub, pseudonymize(가명처리는 다른 개념) |
 | 보상 받기 | claim | receive, accept, collect(수집 뜻의 collect는 그대로) |
 | 큐의 작업을 잠가 가져가기 | lease | claim(보상 받기 전용), pick(후보 중 선택) |
-| 시도를 쓰고 대기로 되돌리기 / 시작하지 못한 작업을 번호까지 되돌리기 | retry / cancel | release, undo. 처리 중일 수 있는 작업에는 cancel 금지(번호가 다시 쓰여 늦게 끝난 Worker를 가려내지 못한다) |
+| 시도를 쓰고 대기로 되돌리기 / 시작하지 못한 작업을 번호까지 되돌리기 | retry / cancel | release, undo. 처리 중일 수 있는 작업에는 cancel 금지(번호가 다시 쓰여 늦게 끝난 Worker를 가려내지 못한다). 예외는 설정 오류로 거부된 작업뿐(시도 횟수를 쓰지 않으려고 이 위험을 감수한다) |
 | 관측 종료 | stop | end, finish, close. 시작은 Observation API의 `start()` |
 
 ## 클래스 접미사
