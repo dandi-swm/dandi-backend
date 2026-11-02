@@ -18,10 +18,10 @@ import com.dandi.nyummy.meal.dto.CreateMealRequest
 import com.dandi.nyummy.meal.dto.RewardBoxResult
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.enum.MealStatus
+import com.dandi.nyummy.meal.repository.MealAnalysisJobRepository
 import com.dandi.nyummy.meal.repository.MealRepository
 import com.dandi.nyummy.user.entity.Profile
 import com.dandi.nyummy.user.repository.ProfileRepository
-import com.dandi.nyummy.worker.service.AnalysisService
 import io.mockk.Runs
 import io.mockk.every
 import io.mockk.just
@@ -56,8 +56,8 @@ class MealServiceTest {
         RewardBoxCategory.GOLD to RewardBoxProperties(rate = 20, minCoinQuantity = 350, maxCoinQuantity = 500),
     )
 
-    private val analysisService = mockk<AnalysisService>()
     private val mealRepository = mockk<MealRepository>()
+    private val mealAnalysisJobRepository = mockk<MealAnalysisJobRepository>()
     private val imageService = mockk<ImageService>()
     private val mealAttemptService = mockk<MealAttemptService>()
     private val profileRepository = mockk<ProfileRepository>()
@@ -67,8 +67,8 @@ class MealServiceTest {
     private val mailService = mockk<MailService>()
 
     private val mealService = MealService(
-        analysisService = analysisService,
         mealRepository = mealRepository,
+        mealAnalysisJobRepository = mealAnalysisJobRepository,
         imageService = imageService,
         mealAttemptService = mealAttemptService,
         clock = clock,
@@ -98,7 +98,7 @@ class MealServiceTest {
         every { random.nextInt(100) } returns 85
         every { random.nextInt(350, 501) } returns 412
         every { mealTransactionService.createMeal(capture(savedMeal), any(), any()) } answers { firstArg() }
-        every { analysisService.analyzeNutrition(any()) } just Runs
+        every { mealAnalysisJobRepository.save(any()) } answers { firstArg() }
     }
 
     /** ImageService가 공통 검증을 통과시킨 뒤 콜백을 실행하는 동작을 흉내 낸다. */
@@ -118,7 +118,7 @@ class MealServiceTest {
     }
 
     @Test
-    fun `횟수 검사 후 식사 용도로 확정하고, EXIF 촬영 시각으로 식사를 저장해 분석한다`() {
+    fun `횟수 검사 후 식사 용도로 확정하고, EXIF 촬영 시각으로 식사를 저장한다`() {
         val capturedAt = now.minusSeconds(600)
         givenConfirmUpload(capturedAt)
 
@@ -131,7 +131,6 @@ class MealServiceTest {
             mealAttemptService.validateDailyCount(userId)
             imageService.confirmUpload(userId, ImagePurpose.MEAL, imageKey, any())
             mealTransactionService.createMeal(any(), any(), any())
-            analysisService.analyzeNutrition(savedMeal.captured)
         }
     }
 
@@ -198,7 +197,6 @@ class MealServiceTest {
 
         assertBusinessException(MealErrorCode.STALE_IMAGE) { mealService.createMeal(userId, request) }
         verify(exactly = 0) { mealTransactionService.createMeal(any(), any(), any()) }
-        verify(exactly = 0) { analysisService.analyzeNutrition(any()) }
     }
 
     // createTutorialMeal
@@ -293,51 +291,51 @@ class MealServiceTest {
     // retryNutritionAnalysis
 
     @Test
-    fun `FAILED인 식사를 재시도하면 분석하고 분석 뒤의 상태를 돌려준다`() {
+    fun `FAILED인 식사를 재시도하면 작업을 다시 쌓고 WAITING을 돌려준다`() {
         val meal = Meal(status = MealStatus.FAILED, imageKey = imageKey, mealAt = now, userId = userId)
-        every { mealRepository.findMealByIdAndDeletedAtIsNull(mealId) } returns meal
-        every { analysisService.analyzeNutrition(meal) } answers { meal.updateStatus(MealStatus.COMPLETED) }
+        every { mealRepository.findMealWithLockById(mealId) } returns meal
 
         val response = mealService.retryNutritionAnalysis(userId, mealId)
 
-        verify(exactly = 1) { analysisService.analyzeNutrition(meal) }
+        verify(exactly = 1) { mealAnalysisJobRepository.save(match { it.mealId == meal.id }) }
+        assertEquals(MealStatus.WAITING, meal.status)
         assertEquals(meal.id, response.id)
-        assertEquals(MealStatus.COMPLETED, response.status)
+        assertEquals(MealStatus.WAITING, response.status)
     }
 
     @Test
-    fun `재시도할 식사가 없거나 삭제됐으면 MEAL_NOT_FOUND 예외를 던지고 분석하지 않는다`() {
-        every { mealRepository.findMealByIdAndDeletedAtIsNull(mealId) } returns null
+    fun `재시도할 식사가 없으면 MEAL_NOT_FOUND 예외를 던지고 작업을 쌓지 않는다`() {
+        every { mealRepository.findMealWithLockById(mealId) } returns null
 
         assertBusinessException(MealErrorCode.MEAL_NOT_FOUND) { mealService.retryNutritionAnalysis(userId, mealId) }
 
-        verify(exactly = 0) { analysisService.analyzeNutrition(any()) }
+        verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
     }
 
     @Test
-    fun `다른 사용자의 식사를 재시도하면 FORBIDDEN 예외를 던지고 분석하지 않는다`() {
+    fun `다른 사용자의 식사를 재시도하면 FORBIDDEN 예외를 던지고 작업을 쌓지 않는다`() {
         val otherUserId = 2L
         val meal = Meal(status = MealStatus.FAILED, imageKey = imageKey, mealAt = now, userId = otherUserId)
-        every { mealRepository.findMealByIdAndDeletedAtIsNull(mealId) } returns meal
+        every { mealRepository.findMealWithLockById(mealId) } returns meal
 
         assertBusinessException(AuthErrorCode.FORBIDDEN) { mealService.retryNutritionAnalysis(userId, mealId) }
 
-        verify(exactly = 0) { analysisService.analyzeNutrition(any()) }
+        verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
     }
 
     @Test
-    fun `FAILED가 아닌 식사를 재시도하면 ANALYSIS_NOT_RETRYABLE 예외를 던지고 분석하지 않는다`() {
+    fun `FAILED가 아닌 식사를 재시도하면 ANALYSIS_NOT_RETRYABLE 예외를 던지고 작업을 쌓지 않는다`() {
         val notRetryableStatuses = MealStatus.entries - MealStatus.FAILED
 
         notRetryableStatuses.forEach { status ->
             val meal = Meal(status = status, imageKey = imageKey, mealAt = now, userId = userId)
-            every { mealRepository.findMealByIdAndDeletedAtIsNull(mealId) } returns meal
+            every { mealRepository.findMealWithLockById(mealId) } returns meal
 
             assertBusinessException(MealErrorCode.ANALYSIS_NOT_RETRYABLE) {
                 mealService.retryNutritionAnalysis(userId, mealId)
             }
         }
 
-        verify(exactly = 0) { analysisService.analyzeNutrition(any()) }
+        verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
     }
 }

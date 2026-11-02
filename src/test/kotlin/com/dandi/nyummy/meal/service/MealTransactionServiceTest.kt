@@ -10,6 +10,7 @@ import com.dandi.nyummy.mail.service.MailService
 import com.dandi.nyummy.meal.dto.RewardBoxResult
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.enum.MealStatus
+import com.dandi.nyummy.meal.repository.MealAnalysisJobRepository
 import com.dandi.nyummy.meal.repository.MealRepository
 import com.dandi.nyummy.streak.service.StreakService
 import com.dandi.nyummy.user.entity.Profile
@@ -39,6 +40,7 @@ class MealTransactionServiceTest {
     private val profileRepository = mockk<ProfileRepository>()
     private val mealAttemptService = mockk<MealAttemptService>()
     private val mealRepository = mockk<MealRepository>()
+    private val mealAnalysisJobRepository = mockk<MealAnalysisJobRepository>()
     private val mailService = mockk<MailService>()
     private val streakService = mockk<StreakService>()
 
@@ -46,6 +48,7 @@ class MealTransactionServiceTest {
         profileRepository = profileRepository,
         mealAttemptService = mealAttemptService,
         mealRepository = mealRepository,
+        mealAnalysisJobRepository = mealAnalysisJobRepository,
         mailService = mailService,
         streakService = streakService,
     )
@@ -54,6 +57,7 @@ class MealTransactionServiceTest {
         every { profileRepository.findProfileWithLockByUserId(userId) } returns Profile(userId = userId)
         every { mealAttemptService.validateDailyCount(userId) } just Runs
         every { mealRepository.save(meal) } returns meal
+        every { mealAnalysisJobRepository.save(any()) } answers { firstArg() }
         every { mailService.createRewardBoxMail(any(), any(), any(), any(), any()) } returns mockk<Mail>()
         every { streakService.updateStreak(userId) } just Runs
     }

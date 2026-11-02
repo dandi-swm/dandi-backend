@@ -24,6 +24,7 @@ import com.dandi.nyummy.meal.dto.MonthlyMealsResponse
 import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.dto.TodayMealSummaryResponse
 import com.dandi.nyummy.meal.entity.Meal
+import com.dandi.nyummy.meal.entity.MealAnalysisJob
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.mapper.toCreateMealResponse
 import com.dandi.nyummy.meal.mapper.toDailyMealResponse
@@ -31,9 +32,9 @@ import com.dandi.nyummy.meal.mapper.toEntity
 import com.dandi.nyummy.meal.mapper.toMealResponse
 import com.dandi.nyummy.meal.mapper.toMealStatusResponse
 import com.dandi.nyummy.meal.mapper.toNutrition
+import com.dandi.nyummy.meal.repository.MealAnalysisJobRepository
 import com.dandi.nyummy.meal.repository.MealRepository
 import com.dandi.nyummy.user.repository.ProfileRepository
-import com.dandi.nyummy.worker.service.AnalysisService
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -46,8 +47,8 @@ import kotlin.random.Random
 
 @Service
 class MealService(
-    private val analysisService: AnalysisService,
     private val mealRepository: MealRepository,
+    private val mealAnalysisJobRepository: MealAnalysisJobRepository,
     private val imageService: ImageService,
     private val mealAttemptService: MealAttemptService,
     private val clock: Clock,
@@ -65,7 +66,7 @@ class MealService(
     }
 
     /**
-     * 업로드된 이미지를 확정하고 식사 기록을 생성한 뒤, 영양 분석을 수행한다.
+     * 업로드된 이미지를 확정하고 식사 기록과 영양 분석 작업을 생성한다.
      *
      * 이미지는 [ImageService.createUploadUrl]로 발급받은 키에 이미 업로드되어 있어야 한다.
      * 별도 경로로 복사하지 않고 상태 태그만 `status=committed`로 바꾸므로,
@@ -74,8 +75,8 @@ class MealService(
      * 하나의 imageKey로 식사를 중복 생성할 수 없다. 소프트 삭제된 식사도 검사 대상에 포함되므로,
      * 한 번 사용된 imageKey는 다시 사용할 수 없다.
      *
-     * 분석은 [AnalysisService.analyzeNutrition]에서 동기로 실행되므로,
-     * 반환되는 상태는 이미 COMPLETED 또는 FAILED로 확정된 값이다.
+     * 분석은 Worker가 작업을 가져가 따로 실행하므로, 반환되는 상태는 WAITING이다.
+     * 결과는 [getMealStatus]로 확인하고, 끝나면 알림으로도 알린다.
      *
      * [Meal.mealAt]에는 이미지 EXIF에서 추출한 촬영 시각이 저장되고, EXIF가 없으면 서버 시각이
      * 들어간다. [MealAttemptService.validateCapturedAt]가 촬영 날짜를 오늘로 강제하므로 저장되는
@@ -130,8 +131,6 @@ class MealService(
         val rewardMailExpiresAt = Instant.now(clock).plus(mealProperties.rewardMailTimeToLive)
 
         mealTransactionService.createMeal(meal, rewardBox, rewardMailExpiresAt)
-
-        analysisService.analyzeNutrition(meal)
 
         return meal.toCreateMealResponse(rewardBox.category)
     }
@@ -326,17 +325,22 @@ class MealService(
     }
 
     /**
-     * FAILED 상태의 식사에 대해 영양 분석을 재시도한다.
+     * FAILED 상태의 식사에 대해 영양 분석을 다시 요청한다. 작업을 다시 쌓고 식사를 WAITING으로 둔다.
+     *
+     * 식사를 잠가 확인하므로, 같은 식사의 재시도가 동시에 들어와도 하나만 작업을 쌓고 나머지는
+     * WAITING을 보고 [MealErrorCode.ANALYSIS_NOT_RETRYABLE]로 거부된다.
      *
      * @param userId 재시도를 요청한 사용자 ID (소유권 검증에 사용)
      * @param mealId 재시도할 [Meal]의 ID
-     * @return 재시도 결과의 분석 상태를 담은 [MealStatusResponse]
+     * @return 다시 요청한 뒤의 분석 상태(WAITING)를 담은 [MealStatusResponse]
      * @throws BusinessException [MealErrorCode.MEAL_NOT_FOUND] mealId에 해당하는 식사가 없거나, 삭제된 경우
      * @throws BusinessException [AuthErrorCode.FORBIDDEN] userId가 소유자가 아닌 경우
      * @throws BusinessException [MealErrorCode.ANALYSIS_NOT_RETRYABLE] 식사가 FAILED 상태가 아닌 경우
      */
+    @Transactional
     fun retryNutritionAnalysis(userId: Long, mealId: Long): MealStatusResponse {
-        val meal = mealRepository.findMealByIdAndDeletedAtIsNull(mealId)
+        val meal = mealRepository.findMealWithLockById(mealId)
+            ?.takeIf { it.deletedAt == null }
             ?: throw BusinessException(MealErrorCode.MEAL_NOT_FOUND)
 
         meal.validateOwnership(userId)
@@ -345,7 +349,8 @@ class MealService(
             throw BusinessException(MealErrorCode.ANALYSIS_NOT_RETRYABLE)
         }
 
-        analysisService.analyzeNutrition(meal)
+        mealAnalysisJobRepository.save(MealAnalysisJob(mealId = meal.id))
+        meal.updateStatus(MealStatus.WAITING)
 
         return meal.toMealStatusResponse()
     }

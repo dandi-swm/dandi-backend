@@ -6,7 +6,9 @@ import com.dandi.nyummy.mail.service.MailService
 import com.dandi.nyummy.meal.dto.NutritionAnalysisResult
 import com.dandi.nyummy.meal.dto.RewardBoxResult
 import com.dandi.nyummy.meal.entity.Meal
+import com.dandi.nyummy.meal.entity.MealAnalysisJob
 import com.dandi.nyummy.meal.enum.MealStatus
+import com.dandi.nyummy.meal.repository.MealAnalysisJobRepository
 import com.dandi.nyummy.meal.repository.MealRepository
 import com.dandi.nyummy.streak.service.StreakService
 import com.dandi.nyummy.user.repository.ProfileRepository
@@ -26,6 +28,7 @@ class MealTransactionService(
     private val profileRepository: ProfileRepository,
     private val mealAttemptService: MealAttemptService,
     private val mealRepository: MealRepository,
+    private val mealAnalysisJobRepository: MealAnalysisJobRepository,
     private val mailService: MailService,
     private val streakService: StreakService,
 ) {
@@ -34,8 +37,10 @@ class MealTransactionService(
     }
 
     /**
-     * 식사와 보상 상자 우편을 한 트랜잭션으로 저장하고 연속 기록을 갱신한다. 우편 저장이나 연속 기록 갱신이
+     * 식사와 보상 상자 우편, 영양 분석 작업을 한 트랜잭션으로 저장하고 연속 기록을 갱신한다. 우편·작업 저장이나 연속 기록 갱신이
      * 실패하면 식사도 남기지 않는다. 연속 기록은 분석 결과와 상관없이 식사를 만든 날을 인정하므로 여기서 갱신한다.
+     *
+     * 영양 분석은 Worker가 작업을 가져가 따로 처리한다. 식사와 작업을 같은 트랜잭션에 저장하므로, 식사만 남고 분석이 빠지는 일이 없다.
      *
      * 하루 시도 횟수는 [MealService.createMeal]이 이미지 확정 전에 한 번 거르지만, 그 검사와 저장 사이에
      * 같은 사용자의 요청이 동시에 들어오면 둘 다 통과할 수 있다. 그래서 프로필 행을 잠가 같은 사용자의 기록을
@@ -63,6 +68,7 @@ class MealTransactionService(
         mealAttemptService.validateDailyCount(meal.userId)
 
         mealRepository.save(meal)
+        mealAnalysisJobRepository.save(MealAnalysisJob(mealId = meal.id))
         mailService.createRewardBoxMail(
             userId = meal.userId,
             rewardBoxCategory = rewardBox.category,
