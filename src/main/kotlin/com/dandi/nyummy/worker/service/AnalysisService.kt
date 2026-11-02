@@ -68,10 +68,15 @@ class AnalysisService(
      * 일시적인 실패(UNAVAILABLE)는 재시도할 수 있으면 대기로 되돌리고 알리지 않는다. 마지막 시도였으면 FAILED로 끝낸다.
      * Worker가 종료될 때 대기 시간 안에 끝나지 않은 작업도 같은 규칙으로 정리한다.
      */
-    fun handleAnalysisFailure(
+    fun handleAnalysisFailure(job: MealAnalysisJobResult, failure: AnalysisFailureException) {
+        handleAnalysisFailure(job, failure, Instant.now(clock))
+    }
+
+    // 기본 인자로 시각을 받지 않는다. Kotlin은 기본 인자 호출을 정적 보조 메서드로 바꿔 mock으로 가로챌 수 없게 된다.
+    private fun handleAnalysisFailure(
         job: MealAnalysisJobResult,
         failure: AnalysisFailureException,
-        analyzedAt: Instant = Instant.now(clock),
+        analyzedAt: Instant,
     ) {
         when (failure.category) {
             AnalysisFailureCategory.UNAVAILABLE ->
