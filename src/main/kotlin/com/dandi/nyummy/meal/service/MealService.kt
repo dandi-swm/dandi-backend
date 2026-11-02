@@ -33,6 +33,7 @@ import com.dandi.nyummy.meal.mapper.toMealStatusResponse
 import com.dandi.nyummy.meal.mapper.toNutrition
 import com.dandi.nyummy.meal.repository.MealRepository
 import com.dandi.nyummy.user.repository.ProfileRepository
+import com.dandi.nyummy.worker.service.AnalysisService
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional

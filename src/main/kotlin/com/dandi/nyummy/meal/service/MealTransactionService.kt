@@ -10,6 +10,7 @@ import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.repository.MealRepository
 import com.dandi.nyummy.streak.service.StreakService
 import com.dandi.nyummy.user.repository.ProfileRepository
+import com.dandi.nyummy.worker.service.AnalysisService
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant

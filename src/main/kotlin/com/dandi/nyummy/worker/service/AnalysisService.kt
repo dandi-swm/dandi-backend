@@ -1,4 +1,4 @@
-package com.dandi.nyummy.meal.service
+package com.dandi.nyummy.worker.service
 
 import com.dandi.nyummy.cat.repository.CatRepository
 import com.dandi.nyummy.cat.service.CatService
@@ -8,6 +8,8 @@ import com.dandi.nyummy.infra.push.dto.PushMessage
 import com.dandi.nyummy.infra.push.dto.PushType
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.enum.MealStatus
+import com.dandi.nyummy.meal.service.MealService
+import com.dandi.nyummy.meal.service.MealTransactionService
 import com.dandi.nyummy.notification.NotificationId
 import com.dandi.nyummy.notification.service.NotificationService
 import org.slf4j.LoggerFactory
