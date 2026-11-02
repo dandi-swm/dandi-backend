@@ -16,6 +16,7 @@ import com.dandi.nyummy.notification.NotificationId
 import com.dandi.nyummy.notification.service.NotificationService
 import com.dandi.nyummy.worker.dto.AnalysisPushResult
 import com.dandi.nyummy.worker.dto.MealAnalysisJobResult
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import io.mockk.Runs
 import io.mockk.every
 import io.mockk.just
@@ -60,6 +61,7 @@ class AnalysisServiceTest {
         catRepository = catRepository,
         notificationService = notificationService,
         appLinkProperties = appLinkProperties,
+        meterRegistry = SimpleMeterRegistry(),
         clock = clock,
     )
 
@@ -91,6 +93,7 @@ class AnalysisServiceTest {
         leaseCount = if (canRetry) 1 else 2,
         imageKey = "meals/$userId/meal-$mealId.jpg",
         canRetry = canRetry,
+        createdAt = now.minusSeconds(30),
     )
 
     private fun createPushResult(status: MealStatus, isDeleted: Boolean = false) =

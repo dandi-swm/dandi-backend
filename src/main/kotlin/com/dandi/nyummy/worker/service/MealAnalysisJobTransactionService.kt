@@ -92,6 +92,7 @@ class MealAnalysisJobTransactionService(
                 leaseCount = leaseCount,
                 imageKey = mealsById.getValue(it.mealId).imageKey,
                 canRetry = leaseCount < workerProperties.maxLeaseCount,
+                createdAt = it.createdAt,
             )
         }
     }
