@@ -3,6 +3,7 @@ package com.dandi.nyummy.infra.ai.nutrition
 import com.dandi.nyummy.infra.ai.AiProperties
 import com.dandi.nyummy.infra.storage.s3.S3StorageClient
 import com.dandi.nyummy.meal.dto.Nutrition
+import com.dandi.nyummy.meal.dto.NutritionAnalysisResult
 import com.dandi.nyummy.meal.repository.IconRepository
 import com.dandi.nyummy.meal.service.IconService
 import kotlinx.coroutines.runBlocking
