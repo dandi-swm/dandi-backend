@@ -106,6 +106,15 @@ class GeminiNutritionAnalysisClientTest {
         server.expect(requestTo(generateContentUrl)).andRespond(withStatus(status))
     }
 
+    /** Gemini 오류 바디. 오류 이유는 error.details[].reason(google.rpc.ErrorInfo)에 들어간다. */
+    private fun givenGeminiError(status: HttpStatus, reason: String) {
+        val body = objectMapper.writeValueAsString(
+            mapOf("error" to mapOf("code" to status.value(), "details" to listOf(mapOf("reason" to reason)))),
+        )
+        server.expect(requestTo(generateContentUrl))
+            .andRespond(withStatus(status).contentType(MediaType.APPLICATION_JSON).body(body))
+    }
+
     private fun givenS3Failure(exception: Throwable) {
         coEvery { s3StorageClient.downloadObject(imageKey) } throws exception
     }
@@ -204,6 +213,30 @@ class GeminiNutritionAnalysisClientTest {
     }
 
     @Test
+    fun `Gemini가 키·권한·모델 이름 때문에 거부하면 MISCONFIGURED로 실패한다`() {
+        listOf(HttpStatus.UNAUTHORIZED, HttpStatus.FORBIDDEN, HttpStatus.NOT_FOUND).forEach { status ->
+            server.reset()
+            givenGeminiStatus(status)
+
+            assertAnalysisFailure(AnalysisFailureCategory.MISCONFIGURED) { client.analyzeNutrition(imageKey) }
+        }
+    }
+
+    @Test
+    fun `Gemini가 400을 줘도 API 키 오류면 MISCONFIGURED로 실패한다`() {
+        givenGeminiError(HttpStatus.BAD_REQUEST, reason = "API_KEY_INVALID")
+
+        assertAnalysisFailure(AnalysisFailureCategory.MISCONFIGURED) { client.analyzeNutrition(imageKey) }
+    }
+
+    @Test
+    fun `Gemini가 400을 주고 API 키 오류가 아니면 INVALID_REQUEST로 실패한다`() {
+        givenGeminiError(HttpStatus.BAD_REQUEST, reason = "INVALID_ARGUMENT")
+
+        assertAnalysisFailure(AnalysisFailureCategory.INVALID_REQUEST) { client.analyzeNutrition(imageKey) }
+    }
+
+    @Test
     fun `Gemini에 연결하지 못하면 UNAVAILABLE로 실패한다`() {
         server.expect(requestTo(generateContentUrl)).andRespond(withException(IOException("connect timed out")))
 
@@ -246,6 +279,13 @@ class GeminiNutritionAnalysisClientTest {
         givenS3Failure(createS3Exception(ServiceException.ErrorType.Client, HttpStatusCode.BadRequest))
 
         assertAnalysisFailure(AnalysisFailureCategory.INVALID_REQUEST) { client.analyzeNutrition(imageKey) }
+    }
+
+    @Test
+    fun `S3 권한이 없어 거부하면 MISCONFIGURED로 실패한다`() {
+        givenS3Failure(createS3Exception(ServiceException.ErrorType.Client, HttpStatusCode.Forbidden))
+
+        assertAnalysisFailure(AnalysisFailureCategory.MISCONFIGURED) { client.analyzeNutrition(imageKey) }
     }
 
     @Test

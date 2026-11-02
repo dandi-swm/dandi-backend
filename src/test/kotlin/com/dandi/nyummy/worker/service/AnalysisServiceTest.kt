@@ -24,6 +24,7 @@ import io.mockk.slot
 import io.mockk.verify
 import org.springframework.dao.QueryTimeoutException
 import java.time.Clock
+import java.time.Duration
 import java.time.Instant
 import java.time.ZoneOffset
 import kotlin.test.Test
@@ -81,6 +82,7 @@ class AnalysisServiceTest {
             createPushResult(MealStatus.COMPLETED)
         every { mealAnalysisJobTransactionService.failMealAnalysis(any()) } returns createPushResult(MealStatus.FAILED)
         every { mealAnalysisJobTransactionService.retryMealAnalysis(any()) } returns true
+        every { mealAnalysisJobTransactionService.cancelMealAnalysis(any(), any()) } returns true
     }
 
     private fun createJob(canRetry: Boolean) = MealAnalysisJobResult(
@@ -209,6 +211,18 @@ class AnalysisServiceTest {
         }
         verify(exactly = 0) { mealAnalysisJobTransactionService.retryMealAnalysis(any()) }
         verify(exactly = 2) { mealAnalysisJobTransactionService.failMealAnalysis(retryableJob) }
+    }
+
+    @Test
+    fun `설정 오류면 마지막 시도라도 실패로 끝내거나 알리지 않고 번호를 내려 1분 뒤로 되돌린다`() {
+        givenAnalysisFailure(lastJob, AnalysisFailureCategory.MISCONFIGURED)
+
+        analysisService.analyzeMealAnalysisJob(lastJob)
+
+        verify(exactly = 1) { mealAnalysisJobTransactionService.cancelMealAnalysis(lastJob, Duration.ofMinutes(1)) }
+        verify(exactly = 0) { mealAnalysisJobTransactionService.retryMealAnalysis(any()) }
+        verify(exactly = 0) { mealAnalysisJobTransactionService.failMealAnalysis(any()) }
+        verify(exactly = 0) { notificationService.sendServicePush(any(), any()) }
     }
 
     @Test
