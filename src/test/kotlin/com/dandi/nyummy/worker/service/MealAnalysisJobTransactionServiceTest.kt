@@ -30,7 +30,7 @@ import kotlin.test.assertTrue
 
 /**
  * leaseMealAnalysisJobs가 잠가 가져온 작업에 lease를 걸고 식사를 ANALYZING으로 바꾸는지, 지워진 식사와 최대 시도를 채운 작업을 건너뛰는지,
- * 확정·재시도·실패가 작업이 아직 그 번호일 때만 결과를 쓰는지 다룬다.
+ * 확정·재시도·되돌리기·실패가 작업이 아직 그 번호일 때만 결과를 쓰는지 다룬다.
  * SKIP LOCKED로 두 Worker가 겹치지 않는지는 실제 DB가 필요해 여기서 다루지 않는다.
  *
  * lease 테스트의 작업·식사는 id와 lease_count가 생성자 밖의 val이라 mockk로 만든다.
@@ -317,6 +317,27 @@ class MealAnalysisJobTransactionServiceTest {
 
         assertTrue(isReset)
         verify(exactly = 1) { mealAnalysisJobRepository.resetLease(1L, 2) }
+        verify(exactly = 1) { mealRepository.updateMealStatuses(listOf(10L), MealStatus.WAITING, now) }
+    }
+
+    @Test
+    fun `시작하지 못한 작업을 되돌릴 때 다른 Worker가 가져간 작업이면 false이고 식사 상태를 바꾸지 않는다`() {
+        every { mealAnalysisJobRepository.cancelLease(leasedJob.jobId, leasedJob.leaseCount) } returns 0
+
+        val isCanceled = mealAnalysisJobTransactionService.cancelMealAnalysis(leasedJob)
+
+        assertFalse(isCanceled)
+        verify(exactly = 0) { mealRepository.updateMealStatuses(any(), any(), any()) }
+    }
+
+    @Test
+    fun `시작하지 못한 작업은 lease와 번호를 되돌리고 식사를 WAITING으로 바꾼다`() {
+        every { mealAnalysisJobRepository.cancelLease(leasedJob.jobId, leasedJob.leaseCount) } returns 1
+
+        val isCanceled = mealAnalysisJobTransactionService.cancelMealAnalysis(leasedJob)
+
+        assertTrue(isCanceled)
+        verify(exactly = 1) { mealAnalysisJobRepository.cancelLease(1L, 2) }
         verify(exactly = 1) { mealRepository.updateMealStatuses(listOf(10L), MealStatus.WAITING, now) }
     }
 
