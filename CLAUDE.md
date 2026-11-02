@@ -69,6 +69,8 @@
 | 탈퇴 | withdraw | leave, quit, deactivate, resign, signout |
 | 익명화 | anonymize | mask, scrub, pseudonymize(가명처리는 다른 개념) |
 | 보상 받기 | claim | receive, accept, collect(수집 뜻의 collect는 그대로) |
+| 큐의 작업을 잠가 가져가기 | lease | claim(보상 받기 전용), pick(후보 중 선택) |
+| 시도를 쓰고 대기로 되돌리기 / 시작하지 못한 작업을 번호까지 되돌리기 | retry / cancel | release, undo. 처리 중일 수 있는 작업에는 cancel 금지(번호가 다시 쓰여 늦게 끝난 Worker를 가려내지 못한다) |
 | 관측 종료 | stop | end, finish, close. 시작은 Observation API의 `start()` |
 
 ## 클래스 접미사
@@ -138,6 +140,7 @@
 - 하루 평가 `DailyNutritionEvaluation`, 권장 섭취량 `RecommendedDailyIntake`(전용 클래스 없이 `calculateRecommendedDailyIntake()`가 `Nutrition` 반환)
 - 하루 섭취 합계 `Current`와 목표 섭취량 `Target` — 응답에서 쌍으로 쓴다
 - Worker가 가져갈 영양 분석 작업 한 건 `MealAnalysisJob`(테이블 `meal_analysis_jobs`, Task 금지 — ECS task와 혼동)
+- 영양 분석 작업을 가져가 처리하는 별도 서비스 `Worker`(패키지 worker, 설정 `app.worker.enabled`, Consumer 금지)
 
 ### 스트릭
 
