@@ -1,6 +1,4 @@
-package com.dandi.nyummy.infra.ai.nutrition
-
-import com.dandi.nyummy.meal.dto.Nutrition
+package com.dandi.nyummy.meal.dto
 
 data class NutritionAnalysisResult(
     val name: String,

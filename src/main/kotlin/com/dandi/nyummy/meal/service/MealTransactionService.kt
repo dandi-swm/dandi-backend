@@ -2,14 +2,15 @@ package com.dandi.nyummy.meal.service
 
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.UserErrorCode
-import com.dandi.nyummy.infra.ai.nutrition.NutritionAnalysisResult
 import com.dandi.nyummy.mail.service.MailService
+import com.dandi.nyummy.meal.dto.NutritionAnalysisResult
 import com.dandi.nyummy.meal.dto.RewardBoxResult
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.repository.MealRepository
 import com.dandi.nyummy.streak.service.StreakService
 import com.dandi.nyummy.user.repository.ProfileRepository
+import com.dandi.nyummy.worker.service.AnalysisService
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant

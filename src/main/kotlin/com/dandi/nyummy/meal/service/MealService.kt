@@ -18,6 +18,7 @@ import com.dandi.nyummy.meal.dto.CreateMealResponse
 import com.dandi.nyummy.meal.dto.DailyMealsResponse
 import com.dandi.nyummy.meal.dto.DailyNutritionResponse
 import com.dandi.nyummy.meal.dto.MealResponse
+import com.dandi.nyummy.meal.dto.MealStatusResponse
 import com.dandi.nyummy.meal.dto.MonthlyMealDayResponse
 import com.dandi.nyummy.meal.dto.MonthlyMealsResponse
 import com.dandi.nyummy.meal.dto.Nutrition
@@ -28,9 +29,11 @@ import com.dandi.nyummy.meal.mapper.toCreateMealResponse
 import com.dandi.nyummy.meal.mapper.toDailyMealResponse
 import com.dandi.nyummy.meal.mapper.toEntity
 import com.dandi.nyummy.meal.mapper.toMealResponse
+import com.dandi.nyummy.meal.mapper.toMealStatusResponse
 import com.dandi.nyummy.meal.mapper.toNutrition
 import com.dandi.nyummy.meal.repository.MealRepository
 import com.dandi.nyummy.user.repository.ProfileRepository
+import com.dandi.nyummy.worker.service.AnalysisService
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -301,6 +304,50 @@ class MealService(
         val canCreateAnalysisFeedback = analysisFeedbackService.canCreateAnalysisFeedback(meal)
 
         return meal.toMealResponse(imageUrl, canCreateAnalysisFeedback)
+    }
+
+    /**
+     * 식사의 영양 분석 상태를 조회한다.
+     *
+     * @param userId 조회를 요청한 사용자 ID (소유권 검증에 사용)
+     * @param mealId 조회할 [Meal]의 ID
+     * @return 분석 상태를 담은 [MealStatusResponse]
+     * @throws BusinessException [MealErrorCode.MEAL_NOT_FOUND] mealId에 해당하는 식사가 없거나, 삭제된 경우
+     * @throws BusinessException [AuthErrorCode.FORBIDDEN] userId가 소유자가 아닌 경우
+     */
+    @Transactional(readOnly = true)
+    fun getMealStatus(userId: Long, mealId: Long): MealStatusResponse {
+        val meal = mealRepository.findMealByIdAndDeletedAtIsNull(mealId)
+            ?: throw BusinessException(MealErrorCode.MEAL_NOT_FOUND, "Meal Not Found")
+
+        meal.validateOwnership(userId)
+
+        return meal.toMealStatusResponse()
+    }
+
+    /**
+     * FAILED 상태의 식사에 대해 영양 분석을 재시도한다.
+     *
+     * @param userId 재시도를 요청한 사용자 ID (소유권 검증에 사용)
+     * @param mealId 재시도할 [Meal]의 ID
+     * @return 재시도 결과의 분석 상태를 담은 [MealStatusResponse]
+     * @throws BusinessException [MealErrorCode.MEAL_NOT_FOUND] mealId에 해당하는 식사가 없거나, 삭제된 경우
+     * @throws BusinessException [AuthErrorCode.FORBIDDEN] userId가 소유자가 아닌 경우
+     * @throws BusinessException [MealErrorCode.ANALYSIS_NOT_RETRYABLE] 식사가 FAILED 상태가 아닌 경우
+     */
+    fun retryNutritionAnalysis(userId: Long, mealId: Long): MealStatusResponse {
+        val meal = mealRepository.findMealByIdAndDeletedAtIsNull(mealId)
+            ?: throw BusinessException(MealErrorCode.MEAL_NOT_FOUND)
+
+        meal.validateOwnership(userId)
+
+        if (meal.status != MealStatus.FAILED) {
+            throw BusinessException(MealErrorCode.ANALYSIS_NOT_RETRYABLE)
+        }
+
+        analysisService.analyzeNutrition(meal)
+
+        return meal.toMealStatusResponse()
     }
 
     /**
