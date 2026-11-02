@@ -135,6 +135,16 @@ class MealServiceTest {
     }
 
     @Test
+    fun `식사를 기록해도 분석 작업 저장은 트랜잭션 서비스에 맡기고 WAITING을 돌려준다`() {
+        givenConfirmUpload(now)
+
+        val result = mealService.createMeal(userId, request)
+
+        assertEquals(MealStatus.WAITING, result.status)
+        verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
+    }
+
+    @Test
     fun `식사를 기록하면 뽑은 상자와 만료 시각으로 식사와 우편을 함께 저장하고 응답에 등급을 담는다`() {
         givenConfirmUpload(now)
 
@@ -306,6 +316,18 @@ class MealServiceTest {
     @Test
     fun `재시도할 식사가 없으면 MEAL_NOT_FOUND 예외를 던지고 작업을 쌓지 않는다`() {
         every { mealRepository.findMealWithLockById(mealId) } returns null
+
+        assertBusinessException(MealErrorCode.MEAL_NOT_FOUND) { mealService.retryNutritionAnalysis(userId, mealId) }
+
+        verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
+    }
+
+    @Test
+    fun `재시도할 식사가 지워졌으면 MEAL_NOT_FOUND 예외를 던지고 작업을 쌓지 않는다`() {
+        val meal = Meal(status = MealStatus.FAILED, imageKey = imageKey, mealAt = now, userId = userId).apply {
+            updateDeletedAt(now.minusSeconds(5))
+        }
+        every { mealRepository.findMealWithLockById(mealId) } returns meal
 
         assertBusinessException(MealErrorCode.MEAL_NOT_FOUND) { mealService.retryNutritionAnalysis(userId, mealId) }
 
