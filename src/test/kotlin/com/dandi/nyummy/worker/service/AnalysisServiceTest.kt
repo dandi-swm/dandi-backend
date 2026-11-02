@@ -176,6 +176,18 @@ class AnalysisServiceTest {
     }
 
     @Test
+    fun `종료 정리처럼 실패 처리를 바로 부르면 같은 규칙으로 마지막 시도는 실패로 끝내고 알린다`() {
+        analysisService.handleAnalysisFailure(
+            lastJob,
+            AnalysisFailureException(AnalysisFailureCategory.UNAVAILABLE, "종료"),
+        )
+
+        verify(exactly = 0) { nutritionAnalysisClient.analyzeNutrition(any()) }
+        verify(exactly = 1) { mealAnalysisJobTransactionService.failMealAnalysis(lastJob) }
+        assertFailedPushSent(title = "사진을 못 알아봤다냥 🐾", body = "다시 시도해줄래?")
+    }
+
+    @Test
     fun `음식 사진이 아니면 다시 시도할 수 있어도 실패로 끝내고 다시 찍어 달라고 알린다`() {
         givenAnalysisFailure(retryableJob, AnalysisFailureCategory.NOT_FOOD)
 
