@@ -28,8 +28,10 @@ import java.time.Clock
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneOffset
+import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 
 /**
  * analyzeMealAnalysisJob이 분석 결과와 실패 분류에 따라 확정·재시도·실패를 고르고, 알맞은 알림을 보내는지 다룬다.
@@ -55,13 +57,15 @@ class AnalysisServiceTest {
         inquiryDetailUrl = "/inquiries",
     )
 
+    private val meterRegistry = SimpleMeterRegistry()
+
     private val analysisService = AnalysisService(
         nutritionAnalysisClient = nutritionAnalysisClient,
         mealAnalysisJobTransactionService = mealAnalysisJobTransactionService,
         catRepository = catRepository,
         notificationService = notificationService,
         appLinkProperties = appLinkProperties,
-        meterRegistry = SimpleMeterRegistry(),
+        meterRegistry = meterRegistry,
         clock = clock,
     )
 
@@ -102,6 +106,15 @@ class AnalysisServiceTest {
     private fun givenAnalysisSuccess(job: MealAnalysisJobResult) {
         every { nutritionAnalysisClient.analyzeNutrition(job.imageKey) } returns analysisResult
     }
+
+    private fun countAnalysis(outcome: String, category: String): Long =
+        meterRegistry.find("nyummy.meal.analysis").tags("outcome", outcome, "category", category).timer()?.count() ?: 0
+
+    private fun findElapsed(outcome: String) =
+        meterRegistry.find("nyummy.meal.analysis.elapsed").tags("outcome", outcome).timer()
+
+    // outcome과 상관없이 기록→결과 시간이 하나라도 남았는지
+    private fun existsElapsed(): Boolean = meterRegistry.find("nyummy.meal.analysis.elapsed").timers().isNotEmpty()
 
     private fun givenAnalysisFailure(job: MealAnalysisJobResult, category: AnalysisFailureCategory) {
         every { nutritionAnalysisClient.analyzeNutrition(job.imageKey) } throws
@@ -293,5 +306,77 @@ class AnalysisServiceTest {
         analysisService.analyzeMealAnalysisJob(retryableJob)
 
         verify(exactly = 1) { notificationService.deleteInvalidDeviceTokens(listOf("dead-token")) }
+    }
+
+    // 지표
+
+    @Test
+    fun `분석에 성공하면 completed로 세고 작업이 쌓인 때부터 걸린 시간을 남긴다`() {
+        givenAnalysisSuccess(retryableJob)
+
+        analysisService.analyzeMealAnalysisJob(retryableJob)
+
+        assertEquals(1, countAnalysis("completed", "none"))
+        assertEquals(30.0, findElapsed("completed")?.totalTime(TimeUnit.SECONDS))
+    }
+
+    @Test
+    fun `일시적인 실패로 다시 시도하면 retried로 세고 끝난 것이 아니라 걸린 시간은 남기지 않는다`() {
+        givenAnalysisFailure(retryableJob, AnalysisFailureCategory.UNAVAILABLE)
+
+        analysisService.analyzeMealAnalysisJob(retryableJob)
+
+        assertEquals(1, countAnalysis("retried", "unavailable"))
+        assertFalse(existsElapsed())
+    }
+
+    @Test
+    fun `설정 오류로 미루면 delayed로 세고 걸린 시간은 남기지 않는다`() {
+        givenAnalysisFailure(lastJob, AnalysisFailureCategory.MISCONFIGURED)
+
+        analysisService.analyzeMealAnalysisJob(lastJob)
+
+        assertEquals(1, countAnalysis("delayed", "misconfigured"))
+        assertFalse(existsElapsed())
+    }
+
+    @Test
+    fun `실패로 끝나면 failed와 분류로 세고 걸린 시간을 남긴다`() {
+        givenAnalysisFailure(retryableJob, AnalysisFailureCategory.NOT_FOOD)
+
+        analysisService.analyzeMealAnalysisJob(retryableJob)
+
+        assertEquals(1, countAnalysis("failed", "not_food"))
+        assertEquals(30.0, findElapsed("failed")?.totalTime(TimeUnit.SECONDS))
+    }
+
+    @Test
+    fun `분류에 없는 예외로 실패하면 unknown으로 센다`() {
+        every { nutritionAnalysisClient.analyzeNutrition(retryableJob.imageKey) } throws IllegalStateException("예상 밖")
+
+        analysisService.analyzeMealAnalysisJob(retryableJob)
+
+        assertEquals(1, countAnalysis("failed", "unknown"))
+    }
+
+    @Test
+    fun `다른 Worker가 가져가 결과를 쓰지 못했으면 아무것도 세지 않는다`() {
+        givenAnalysisSuccess(retryableJob)
+        every { mealAnalysisJobTransactionService.confirmMealAnalysis(any(), any()) } returns null
+
+        analysisService.analyzeMealAnalysisJob(retryableJob)
+
+        assertEquals(0, countAnalysis("completed", "none"))
+        assertFalse(existsElapsed())
+    }
+
+    @Test
+    fun `다른 Worker가 가져가 대기로 되돌리지 못했으면 세지 않는다`() {
+        givenAnalysisFailure(retryableJob, AnalysisFailureCategory.UNAVAILABLE)
+        every { mealAnalysisJobTransactionService.retryMealAnalysis(any()) } returns false
+
+        analysisService.analyzeMealAnalysisJob(retryableJob)
+
+        assertEquals(0, countAnalysis("retried", "unavailable"))
     }
 }
