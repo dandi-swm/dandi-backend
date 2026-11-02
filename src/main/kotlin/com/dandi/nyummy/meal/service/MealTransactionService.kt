@@ -12,14 +12,13 @@ import com.dandi.nyummy.meal.repository.MealAnalysisJobRepository
 import com.dandi.nyummy.meal.repository.MealRepository
 import com.dandi.nyummy.streak.service.StreakService
 import com.dandi.nyummy.user.repository.ProfileRepository
-import com.dandi.nyummy.worker.service.AnalysisService
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
 
 /**
  * 식사 도메인에서 외부 호출(S3·AI)과 분리한 짧은 트랜잭션을 모은다.
- * [MealService.createMeal]과 [AnalysisService.analyzeNutrition]은 외부 호출 때문에 트랜잭션을 열지 않고,
+ * [MealService.createMeal]은 외부 호출 때문에 트랜잭션을 열지 않고,
  * DB에 쓰는 부분만 이 빈을 거쳐 커밋한다. 같은 클래스 안에서 부르면 프록시를 거치지 않아 트랜잭션이 걸리지 않으므로
  * 별도 빈으로 두고, 이 클래스의 메서드끼리도 서로 부르지 않는다.
  */

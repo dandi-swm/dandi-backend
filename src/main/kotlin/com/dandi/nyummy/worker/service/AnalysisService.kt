@@ -1,78 +1,27 @@
 package com.dandi.nyummy.worker.service
 
 import com.dandi.nyummy.cat.repository.CatRepository
-import com.dandi.nyummy.cat.service.CatService
 import com.dandi.nyummy.config.AppLinkProperties
-import com.dandi.nyummy.infra.ai.nutrition.NutritionAnalysisClient
 import com.dandi.nyummy.infra.push.dto.PushMessage
 import com.dandi.nyummy.infra.push.dto.PushType
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.enum.MealStatus
-import com.dandi.nyummy.meal.service.MealService
-import com.dandi.nyummy.meal.service.MealTransactionService
 import com.dandi.nyummy.notification.NotificationId
 import com.dandi.nyummy.notification.service.NotificationService
+import com.dandi.nyummy.worker.config.ConditionalOnWorkerEnabled
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
-import java.time.Clock
 import java.time.Instant
 
 @Service
+@ConditionalOnWorkerEnabled
 class AnalysisService(
-    private val mealTransactionService: MealTransactionService,
-    private val nutritionAnalysisClient: NutritionAnalysisClient,
     private val catRepository: CatRepository,
-    private val catService: CatService,
     private val notificationService: NotificationService,
     private val appLinkProperties: AppLinkProperties,
-    private val clock: Clock,
 ) {
     companion object {
         private val logger = LoggerFactory.getLogger(AnalysisService::class.java)
-    }
-
-    /**
-     * 식사 이미지를 분석해 이름·아이콘·영양을 저장하고,
-     * 분석 상태 전이(WAITING/FAILED → ANALYZING → COMPLETED/FAILED)를 전담한다.
-     *
-     * 상태 변경은 [MealTransactionService]를 통해 각각 독립 트랜잭션으로 즉시 커밋되므로,
-     * 분석이 진행되는 동안에도 [MealService.getMealStatus] 폴링이 ANALYZING 상태를 조회할 수 있다.
-     * 분석 실패는 예외로 전파하지 않고 FAILED 상태로 기록한다.
-     * 소유권 검증은 호출자가 보장한다.
-     *
-     * COMPLETED로 확정되면 고양이의 마지막 식사 시각을 갱신한다. 리텐션 배치가 이 값으로 대상을 고른다.
-     *
-     * 상태가 확정된 뒤 결과를 푸시로 알린다([sendAnalysisPush]).
-     *
-     * @param meal 분석할 [Meal]
-     *  (상태가 [MealStatus.ANALYZABLE_STATUSES]에 속하지 않으면 아무 작업도 하지 않는다)
-     */
-    fun analyzeNutrition(meal: Meal) {
-        if (meal.status !in MealStatus.ANALYZABLE_STATUSES) {
-            return
-        }
-
-        // 이 시도를 식별하는 값. 재시도가 또 실패해도 앞선 실패와 다른 알림이 되게 한다.
-        val analyzedAt = Instant.now(clock)
-
-        mealTransactionService.updateStatus(meal, MealStatus.ANALYZING)
-
-        var status = MealStatus.COMPLETED
-        try {
-            val analysisResult = nutritionAnalysisClient.analyzeNutrition(meal.imageKey)
-            mealTransactionService.updateAnalysisResult(meal, analysisResult)
-        } catch (e: RuntimeException) {
-            logger.error("영양 분석 실패: userId={}, {}", meal.userId, e.message)
-            status = MealStatus.FAILED
-        }
-
-        mealTransactionService.updateStatus(meal, status)
-
-        if (status == MealStatus.COMPLETED) {
-            catService.updateLastMealAt(meal.userId, meal.mealAt)
-        }
-
-        sendAnalysisPush(meal, status, analyzedAt)
     }
 
     /**
