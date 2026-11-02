@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service
 import java.time.Clock
 import java.time.Duration
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 import kotlin.time.TimeSource
@@ -31,6 +32,9 @@ class RetentionBatchService(
         /** 하루 1회 발송이므로 다음 날까지 덮는다. 2시간이면 같은 날 재시도에 중복이 뚫린다. */
         private val DEDUPLICATION_TIME_TO_LIVE = Duration.ofHours(25)
 
+        /** 광고성 푸시를 보낼 수 있는 시각(KST). 21시 전에 발송이 끝나도록 시작을 20시 30분 전까지만 허용한다. */
+        private val MARKETING_PUSH_TIMES = LocalTime.of(8, 0)..<LocalTime.of(20, 30)
+
         private const val SLEEP_DAYS = 14L
         private val LOSE_WEIGHT_DAYS = setOf(3L, 6L, 9L, 12L)
 
@@ -42,8 +46,15 @@ class RetentionBatchService(
      *
      * 수신 거부자·기기 토큰 없는 사용자는 조회 쿼리가 걸러낸다.
      * 발송을 트랜잭션 밖에서 하는 이유는 [MealReminderService.sendMealReminders]와 같다.
+     * 배치가 밀려 [MARKETING_PUSH_TIMES] 밖에 돌면 보내지 않는다. 건너뛴 날은 발송 로그가 없어 누락 경보가 울린다.
      */
     fun sendDailyRetentionPushes() {
+        val now = LocalTime.now(clock.withZone(ZONE))
+        if (now !in MARKETING_PUSH_TIMES) {
+            logger.warn("리텐션 푸시 건너뜀: 발송 가능 시각이 아님, now={}", now)
+            return
+        }
+
         // 소요시간은 주입된 Clock이 아니라 단조 시계로 잰다
         val startedAt = TimeSource.Monotonic.markNow()
 
