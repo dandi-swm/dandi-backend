@@ -131,6 +131,8 @@ app:
     lease-time-to-live: 60s
     # 처음 1번 + 재시도 1번. 요청 한도 초과·서버 오류·타임아웃처럼 일시적인 실패만 재시도한다.
     max-lease-count: 2
+    # polling 한 번에 가져갈 최대 작업 수. 한 트랜잭션이 잠그는 행을 작게 둔다. 실행기(50)가 다 차려면 몇 번의 polling이 걸린다.
+    lease-limit: 10
   fcm:
     # Firebase를 띄울지. false면 FirebaseMessaging 빈 없이 StubPushClient가 주입된다.
     enabled: true

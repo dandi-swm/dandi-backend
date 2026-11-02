@@ -70,4 +70,18 @@ interface MealAnalysisJobRepository : JpaRepository<MealAnalysisJob, Long> {
     @Modifying
     @Query("update MealAnalysisJob j set j.leaseExpiresAt = null where j.id = :id and j.leaseCount = :leaseCount")
     fun resetLease(@Param("id") id: Long, @Param("leaseCount") leaseCount: Int): Int
+
+    /**
+     * 작업이 아직 [leaseCount]번째 시도일 때만 lease를 풀고 lease_count도 하나 내린다. 가져간 적 없는 것처럼 대기로 되돌려,
+     * 분석을 시작하지 못한 작업이 시도 횟수를 쓰지 않게 한다. 바뀐 행 수가 0이면 이 Worker의 작업이 아니다.
+     */
+    @Modifying
+    @Query(
+        """
+        update MealAnalysisJob j
+        set j.leaseExpiresAt = null, j.leaseCount = j.leaseCount - 1
+        where j.id = :id and j.leaseCount = :leaseCount
+    """,
+    )
+    fun cancelLease(@Param("id") id: Long, @Param("leaseCount") leaseCount: Int): Int
 }

@@ -137,6 +137,25 @@ class MealAnalysisJobTransactionService(
     }
 
     /**
+     * 분석을 시작하지 못한 작업을 가져간 적 없는 것처럼 되돌린다. lease를 풀고 번호도 하나 내려 시도 횟수를 쓰지 않으며,
+     * 식사를 WAITING으로 둔다. 다음 polling에서 같은 번호로 다시 가져간다.
+     *
+     * 실행기가 가득 차 작업을 받지 못했을 때 쓴다.
+     *
+     * @return 이 Worker의 작업이라 되돌렸으면 true
+     */
+    @Transactional
+    fun cancelMealAnalysis(job: MealAnalysisJobResult): Boolean {
+        if (mealAnalysisJobRepository.cancelLease(job.jobId, job.leaseCount) == 0) {
+            logger.info("다른 Worker가 가져간 분석 작업이라 되돌리지 않습니다: jobId={}, leaseCount={}", job.jobId, job.leaseCount)
+            return false
+        }
+
+        mealRepository.updateMealStatuses(listOf(job.mealId), MealStatus.WAITING, Instant.now(clock))
+        return true
+    }
+
+    /**
      * 분석을 FAILED로 끝낸다. 작업은 지운다.
      *
      * @return 알림에 쓸 값. 이 Worker의 작업이 아니면 null
