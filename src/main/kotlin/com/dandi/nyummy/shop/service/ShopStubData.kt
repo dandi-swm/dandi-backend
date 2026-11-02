@@ -6,16 +6,13 @@ import com.dandi.nyummy.shop.mapper.createPriceText
 import com.dandi.nyummy.shop.mapper.createTag
 
 /**
- * 상점 해피케이스의 고정 데이터. 상품·장바구니 테이블을 붙이기 전까지 [ShopService]와 [CartService]가 이 값으로 응답한다.
+ * 상점 해피케이스의 고정 데이터. 장바구니·구매를 붙이기 전까지 [CartService]와 [ItemPurchaseService]가 이 값으로 응답한다.
  *
  * 테이블을 붙이면 이 파일을 지우고 서비스만 고친다. 컨트롤러와 응답 DTO는 그대로 둔다.
  */
 internal object ShopStubData {
 
     const val BALANCE = 2480
-    const val MAX_QUANTITY_PER_PRODUCT = 10
-    const val MAX_BACKGROUND_QUANTITY = 1
-    const val MAX_CART_QUANTITY = 30
 
     data class StubProduct(
         val productId: Long,
@@ -31,9 +28,6 @@ internal object ShopStubData {
         val salesCount: Int = 0,
     ) {
         val isOwnedBackground: Boolean get() = category == RoomItemCategory.BACKGROUND && ownedCount > 0
-        val canPurchase: Boolean get() = isOnSale && !isOwnedBackground
-        val maxQuantityPerProduct: Int
-            get() = if (category == RoomItemCategory.BACKGROUND) MAX_BACKGROUND_QUANTITY else MAX_QUANTITY_PER_PRODUCT
     }
 
     data class StubCartItem(val productId: Long, val quantity: Int, val isSelected: Boolean)

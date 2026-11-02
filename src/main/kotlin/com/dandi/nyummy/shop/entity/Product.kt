@@ -90,6 +90,12 @@ class Product(
         }
     }
 
+    /**
+     * [now]에 판매 중인지. [com.dandi.nyummy.shop.repository.ProductRepository.findOnSaleProducts]와 같은 기준으로,
+     * 판매 기간 [saleStartsAt, saleEndsAt) 안이고 [saleEndsAt]이 null이면 끝나지 않은 것으로 본다.
+     */
+    fun isOnSale(now: Instant): Boolean = !saleStartsAt.isAfter(now) && saleEndsAt?.isAfter(now) != false
+
     fun updateName(name: String) {
         this.name = name
     }

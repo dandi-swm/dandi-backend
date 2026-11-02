@@ -1,6 +1,7 @@
 package com.dandi.nyummy.shop.service
 
 import com.dandi.nyummy.auth.enum.AuthProvider
+import com.dandi.nyummy.coin.service.CoinService
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.CommonErrorCode
 import com.dandi.nyummy.exception.errorcode.ErrorCode
@@ -24,6 +25,7 @@ import com.dandi.nyummy.shop.enum.ProductSort
 import com.dandi.nyummy.shop.enum.PromotionCategory
 import com.dandi.nyummy.shop.enum.ShopCategory
 import com.dandi.nyummy.shop.enum.ShopTab
+import com.dandi.nyummy.shop.repository.CartItemRepository
 import com.dandi.nyummy.shop.repository.ProductItemRepository
 import com.dandi.nyummy.shop.repository.ProductRepository
 import com.dandi.nyummy.shop.repository.PromotionProductRepository
@@ -59,17 +61,26 @@ class ShopServiceTest {
     private val shopBannerRepository = mockk<ShopBannerRepository>()
     private val ownedRoomItemRepository = mockk<OwnedRoomItemRepository>()
     private val userRepository = mockk<UserRepository>()
+    private val coinService = mockk<CoinService>()
+    private val cartItemRepository = mockk<CartItemRepository>()
+
+    private val shopProperties = ShopProperties(cdnBaseUrl = "https://cdn.test.com")
 
     private val shopService = ShopService(
-        productRepository = productRepository,
-        productItemRepository = productItemRepository,
-        promotionRepository = promotionRepository,
-        promotionProductRepository = promotionProductRepository,
-        shopBannerRepository = shopBannerRepository,
-        ownedRoomItemRepository = ownedRoomItemRepository,
-        userRepository = userRepository,
-        shopProperties = ShopProperties(cdnBaseUrl = "https://cdn.test.com"),
         clock = Clock.fixed(now, ZoneOffset.UTC),
+        shopItemService = ShopItemService(
+            userRepository = userRepository,
+            promotionRepository = promotionRepository,
+            productItemRepository = productItemRepository,
+            ownedRoomItemRepository = ownedRoomItemRepository,
+            shopProperties = shopProperties,
+        ),
+        shopProperties = shopProperties,
+        promotionProductRepository = promotionProductRepository,
+        productRepository = productRepository,
+        shopBannerRepository = shopBannerRepository,
+        coinService = coinService,
+        cartItemRepository = cartItemRepository,
     )
 
     // 테스트마다 채우는 DB 상태
@@ -445,5 +456,16 @@ class ShopServiceTest {
         // 101은 정가가 가장 비싸지만 50% 할인으로 500이라 가장 싸다. 102·103은 700으로 같다
         assertEquals(listOf(101L, 103L, 102L), getProductIds(sort = ProductSort.PRICE_ASC))
         assertEquals(listOf(103L, 102L, 101L), getProductIds(sort = ProductSort.PRICE_DESC))
+    }
+
+    @Test
+    fun `상단 바는 코인 잔액과 장바구니에 담긴 상품 종류 수를 준다`() {
+        every { coinService.getBalance(userId) } returns 2480
+        every { cartItemRepository.countByUserId(userId) } returns 3
+
+        val me = shopService.getMe(userId)
+
+        assertEquals(2480, me.balance)
+        assertEquals(3, me.cartItemCount)
     }
 }

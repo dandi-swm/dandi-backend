@@ -1,10 +1,9 @@
 package com.dandi.nyummy.shop.service
 
+import com.dandi.nyummy.coin.service.CoinService
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.CommonErrorCode
 import com.dandi.nyummy.exception.errorcode.ShopErrorCode
-import com.dandi.nyummy.exception.errorcode.UserErrorCode
-import com.dandi.nyummy.room.repository.OwnedRoomItemRepository
 import com.dandi.nyummy.shop.calculator.calculateMaxDiscountRates
 import com.dandi.nyummy.shop.calculator.calculatePurchasePrice
 import com.dandi.nyummy.shop.config.ShopProperties
@@ -35,14 +34,10 @@ import com.dandi.nyummy.shop.enum.ShopTab
 import com.dandi.nyummy.shop.mapper.createNavigateAction
 import com.dandi.nyummy.shop.mapper.createPriceText
 import com.dandi.nyummy.shop.mapper.toShopBannerResponse
-import com.dandi.nyummy.shop.mapper.toShopItemResponse
-import com.dandi.nyummy.shop.repository.ProductItemRepository
+import com.dandi.nyummy.shop.repository.CartItemRepository
 import com.dandi.nyummy.shop.repository.ProductRepository
 import com.dandi.nyummy.shop.repository.PromotionProductRepository
-import com.dandi.nyummy.shop.repository.PromotionRepository
 import com.dandi.nyummy.shop.repository.ShopBannerRepository
-import com.dandi.nyummy.user.repository.UserRepository
-import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -50,20 +45,18 @@ import java.time.Duration
 import java.time.Instant
 
 /**
- * 상점 추천 탭·상품 목록·프로모션 상품 목록·상단 바. 상단 바를 뺀 나머지는 DB의 상품·프로모션·배너로 응답하고,
- * 상단 바는 아직 [ShopStubData]의 고정 데이터로 응답한다.
+ * 상점 추천 탭·상품 목록·프로모션 상품 목록·상단 바.
  */
 @Service
 class ShopService(
     private val clock: Clock,
-    private val userRepository: UserRepository,
-    private val promotionRepository: PromotionRepository,
+    private val shopItemService: ShopItemService,
+    private val coinService: CoinService,
     private val shopProperties: ShopProperties,
     private val promotionProductRepository: PromotionProductRepository,
     private val productRepository: ProductRepository,
-    private val ownedRoomItemRepository: OwnedRoomItemRepository,
-    private val productItemRepository: ProductItemRepository,
     private val shopBannerRepository: ShopBannerRepository,
+    private val cartItemRepository: CartItemRepository,
 ) {
 
     companion object {
@@ -88,7 +81,7 @@ class ShopService(
     @Transactional(readOnly = true)
     fun getRecommendPage(userId: Long, shopLayoutVariant: String?): ShopPageResponse {
         val now = clock.instant()
-        val promotions = getEligiblePromotions(userId, now)
+        val promotions = shopItemService.getEligiblePromotions(userId, now)
         val promotionProducts = promotionProductRepository.findByPromotionIdInOrderByDisplayOrderAsc(
             promotions.map { it.id },
         )
@@ -104,8 +97,8 @@ class ShopService(
             .filter { ShopTab.INTERIOR.contains(it.category) }
             .sortedWith(compareByDescending<Product> { it.salesCount }.thenByDescending { it.id })
             .take(POPULAR_PRODUCT_COUNT)
-        val shopItems =
-            createShopItems(userId, (dailyProducts + popularProducts).distinctBy { it.id }, discountRates, now)
+        val shownProducts = (dailyProducts + popularProducts).distinctBy { it.id }
+        val shopItems = shopItemService.createShopItems(userId, shownProducts, discountRates, now)
 
         val discountSection = createProductSection(
             header = SectionHeaderContentResponse(
@@ -162,7 +155,7 @@ class ShopService(
         if (tab == ShopTab.BACKGROUND && category != null) throw BusinessException(CommonErrorCode.INVALID_INPUT_VALUE)
 
         val now = clock.instant()
-        val promotions = getEligiblePromotions(userId, now)
+        val promotions = shopItemService.getEligiblePromotions(userId, now)
         val promotionProducts = promotionProductRepository.findByPromotionIdInOrderByDisplayOrderAsc(
             promotions.map { it.id },
         )
@@ -179,7 +172,7 @@ class ShopService(
             .sortedWith(createComparator(sort, discountRates))
 
         val page = createPage(sorted, cursor, size) { it.id }
-        val shopItems = createShopItems(userId, page.items, discountRates, now)
+        val shopItems = shopItemService.createShopItems(userId, page.items, discountRates, now)
         return ShopItemsResponse(
             items = page.items.map { shopItems.getValue(it.id) },
             nextCursor = page.nextCursor,
@@ -200,7 +193,7 @@ class ShopService(
     @Transactional(readOnly = true)
     fun getPromotionProducts(userId: Long, promotionId: Long, cursor: Long?, size: Int): PromotionProductsResponse {
         val now = clock.instant()
-        val promotions = getEligiblePromotions(userId, now)
+        val promotions = shopItemService.getEligiblePromotions(userId, now)
         val promotion = promotions.find { it.id == promotionId }
             ?: throw BusinessException(ShopErrorCode.PROMOTION_NOT_FOUND)
         // 이 화면은 배너를 눌러야 들어오므로, 노출 중인 배너가 없으면 진행 중이 아닌 프로모션과 같이 본다
@@ -215,7 +208,7 @@ class ShopService(
         val products = getPromotionProductsInOrder(promotion.id, promotionProducts, productsById)
 
         val page = createPage(products, cursor, size) { it.id }
-        val shopItems = createShopItems(userId, page.items, discountRates, now)
+        val shopItems = shopItemService.createShopItems(userId, page.items, discountRates, now)
         return PromotionProductsResponse(
             banner = shopBanner.toShopBannerResponse(
                 imageUrl = createImageUrl(shopBanner.imageKey),
@@ -232,16 +225,11 @@ class ShopService(
     /**
      * 상단 바의 코인 잔액과 장바구니에 담긴 상품 종류 수.
      */
-    fun getMe(userId: Long): ShopMeResponse =
-        ShopMeResponse(balance = ShopStubData.BALANCE, cartItemCount = ShopStubData.cartItems.size)
-
-    // 진행 중인 프로모션 중 사용자가 대상인 것
-    private fun getEligiblePromotions(userId: Long, now: Instant): List<Promotion> {
-        val user = userRepository.findByIdOrNull(userId) ?: throw BusinessException(UserErrorCode.USER_NOT_FOUND)
-
-        return promotionRepository.findActivePromotions(now)
-            .filter { it.category.isEligible(user.createdAt, now, shopProperties.newUserTimeToLive) }
-    }
+    @Transactional(readOnly = true)
+    fun getMe(userId: Long): ShopMeResponse = ShopMeResponse(
+        balance = coinService.getBalance(userId),
+        cartItemCount = cartItemRepository.countByUserId(userId).toInt(),
+    )
 
     // 프로모션의 판매 중 상품을 진열 순서대로. promotionProducts가 이미 진열 순서라 거르기만 한다.
     private fun getPromotionProductsInOrder(
@@ -251,37 +239,6 @@ class ShopService(
     ): List<Product> = promotionProducts
         .filter { it.promotionId == promotionId }
         .mapNotNull { productsById[it.productId] }
-
-    // 상품 카드를 productId로 찾게 만든다. 보유 개수는 단품만 세고(세트는 0), 한 번의 쿼리로 센다.
-    private fun createShopItems(
-        userId: Long,
-        products: List<Product>,
-        discountRates: Map<Long, Int>,
-        now: Instant,
-    ): Map<Long, ShopItemResponse> {
-        if (products.isEmpty()) return emptyMap()
-
-        val itemCounts = productItemRepository.findByProductIdIn(products.map { it.id })
-            .groupingBy { it.productId }
-            .eachCount()
-        val singleProducts = products.filter { itemCounts[it.id] == 1 }
-        val ownedCounts = if (singleProducts.isEmpty()) {
-            emptyMap()
-        } else {
-            ownedRoomItemRepository.findOwnedRoomItemCounts(userId, singleProducts.map { it.representativeItemId })
-                .associate { it.itemId to it.ownedCount.toInt() }
-        }
-        val newProductStartsAt = now.minus(shopProperties.newProductTimeToLive)
-
-        return products.associate { product ->
-            val ownedCount = if (itemCounts[product.id] == 1) ownedCounts[product.representativeItemId] ?: 0 else 0
-            product.id to product.toShopItemResponse(
-                purchasePrice = calculatePurchasePrice(product.price, discountRates[product.id]),
-                isNew = product.saleStartsAt.isAfter(newProductStartsAt),
-                ownedCount = ownedCount,
-            )
-        }
-    }
 
     // 알리는 프로모션이 진행 중이고 사용자가 대상인 배너만 남긴다. 배너가 없으면 칸을 뺀다.
     private fun createHeroBanner(
