@@ -1,5 +1,7 @@
 package com.dandi.nyummy.worker.service
 
+import com.dandi.nyummy.cat.repository.CatRepository
+import com.dandi.nyummy.cat.service.CatService
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.entity.MealAnalysisJob
 import com.dandi.nyummy.meal.enum.MealStatus
@@ -34,10 +36,14 @@ class MealAnalysisJobTransactionServiceTest {
 
     private val mealAnalysisJobRepository = mockk<MealAnalysisJobRepository>()
     private val mealRepository = mockk<MealRepository>()
+    private val catRepository = mockk<CatRepository>()
+    private val catService = mockk<CatService>()
 
     private val mealAnalysisJobTransactionService = MealAnalysisJobTransactionService(
         mealAnalysisJobRepository = mealAnalysisJobRepository,
         mealRepository = mealRepository,
+        catRepository = catRepository,
+        catService = catService,
         workerProperties = WorkerProperties(enabled = true, leaseTimeToLive = Duration.ofSeconds(60)),
         clock = clock,
     )
@@ -111,7 +117,7 @@ class MealAnalysisJobTransactionServiceTest {
 
     @Test
     fun `돌려주는 번호는 읽은 lease_count에 1을 더한 값이고 식사의 이미지 키를 담는다`() {
-        givenJobs(createJob(id = 1L, mealId = 10L, leaseCount = 0), createJob(id = 2L, mealId = 20L, leaseCount = 2))
+        givenJobs(createJob(id = 1L, mealId = 10L, leaseCount = 0), createJob(id = 2L, mealId = 20L, leaseCount = 1))
         // 조회 순서가 작업 순서와 달라도 식사 id로 짝짓는지 본다.
         givenMeals(createMeal(id = 20L), createMeal(id = 10L))
 
@@ -128,7 +134,7 @@ class MealAnalysisJobTransactionServiceTest {
                 MealAnalysisJobResult(
                     jobId = 2L,
                     mealId = 20L,
-                    leaseCount = 3,
+                    leaseCount = 2,
                     imageKey = "meals/1/2026/11/02/meal-20.jpg",
                 ),
             ),

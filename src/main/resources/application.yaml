@@ -129,6 +129,8 @@ app:
     enabled: ${WORKER_ENABLED:false}
     # Gemini 한 건(연결 5초 + 연결 풀 대기 3초 + 읽기 30초)에 S3 다운로드와 결과 저장을 더한 시간보다 길게 둔다.
     lease-time-to-live: 60s
+    # 처음 1번 + 재시도 1번. 요청 한도 초과·서버 오류·타임아웃처럼 일시적인 실패만 재시도한다.
+    max-lease-count: 2
   fcm:
     # Firebase를 띄울지. false면 FirebaseMessaging 빈 없이 StubPushClient가 주입된다.
     enabled: true

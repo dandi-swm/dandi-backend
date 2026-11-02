@@ -2,7 +2,9 @@ package com.dandi.nyummy.meal.repository
 
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.enum.MealStatus
+import jakarta.persistence.LockModeType
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Lock
 import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
@@ -24,6 +26,10 @@ interface MealRepository : JpaRepository<Meal, Long> {
     fun findMealsByUserIdAndPeriod(userId: Long, start: Instant, end: Instant): List<Meal>
 
     fun findMealByIdAndDeletedAtIsNull(mealId: Long): Meal?
+
+    // SELECT … FOR UPDATE. 지워진 식사도 조회한다. 잠근 동안 식사 삭제·이름 변경이 기다리므로 엔티티 전체를 다시 써도 덮지 않는다.
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    fun findMealWithLockById(mealId: Long): Meal?
 
     fun existsByImageKey(imageKey: String): Boolean
 
