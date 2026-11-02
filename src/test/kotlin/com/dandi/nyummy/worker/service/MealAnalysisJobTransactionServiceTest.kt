@@ -138,12 +138,14 @@ class MealAnalysisJobTransactionServiceTest {
                     mealId = 10L,
                     leaseCount = 1,
                     imageKey = "meals/1/2026/11/02/meal-10.jpg",
+                    canRetry = true,
                 ),
                 MealAnalysisJobResult(
                     jobId = 2L,
                     mealId = 20L,
                     leaseCount = 2,
                     imageKey = "meals/1/2026/11/02/meal-20.jpg",
+                    canRetry = false,
                 ),
             ),
             results,
@@ -195,7 +197,13 @@ class MealAnalysisJobTransactionServiceTest {
     private val userId = 1L
     private val mealAt = now.minusSeconds(600)
     private val leasedJob =
-        MealAnalysisJobResult(jobId = 1L, mealId = 10L, leaseCount = 2, imageKey = "meals/1/meal-10.jpg")
+        MealAnalysisJobResult(
+            jobId = 1L,
+            mealId = 10L,
+            leaseCount = 2,
+            imageKey = "meals/1/meal-10.jpg",
+            canRetry = false,
+        )
     private val analysisResult = NutritionAnalysisResult(
         name = "김치찌개",
         nutrition = Nutrition(calory = 450, carbs = 40, protein = 25, fat = 20),

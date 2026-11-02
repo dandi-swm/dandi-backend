@@ -84,11 +84,13 @@ class MealAnalysisJobTransactionService(
         mealRepository.updateMealStatuses(leasableJobs.map { it.mealId }, MealStatus.ANALYZING, Instant.now(clock))
 
         return leasableJobs.map {
+            val leaseCount = it.leaseCount + 1
             MealAnalysisJobResult(
                 jobId = it.id,
                 mealId = it.mealId,
-                leaseCount = it.leaseCount + 1,
+                leaseCount = leaseCount,
                 imageKey = mealsById.getValue(it.mealId).imageKey,
+                canRetry = leaseCount < workerProperties.maxLeaseCount,
             )
         }
     }
