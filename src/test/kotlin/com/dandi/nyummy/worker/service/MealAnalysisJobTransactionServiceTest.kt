@@ -2,12 +2,15 @@ package com.dandi.nyummy.worker.service
 
 import com.dandi.nyummy.cat.repository.CatRepository
 import com.dandi.nyummy.cat.service.CatService
+import com.dandi.nyummy.meal.dto.Nutrition
+import com.dandi.nyummy.meal.dto.NutritionAnalysisResult
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.entity.MealAnalysisJob
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.repository.MealAnalysisJobRepository
 import com.dandi.nyummy.meal.repository.MealRepository
 import com.dandi.nyummy.worker.config.WorkerProperties
+import com.dandi.nyummy.worker.dto.AnalysisPushResult
 import com.dandi.nyummy.worker.dto.MealAnalysisJobResult
 import io.mockk.Runs
 import io.mockk.every
@@ -20,13 +23,18 @@ import java.time.Instant
 import java.time.ZoneOffset
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * leaseMealAnalysisJobs가 잠가 가져온 작업에 lease를 걸고 식사를 ANALYZING으로 바꾸는지, 지워진 식사의 작업을 건너뛰는지 다룬다.
+ * leaseMealAnalysisJobs가 잠가 가져온 작업에 lease를 걸고 식사를 ANALYZING으로 바꾸는지, 지워진 식사와 최대 시도를 채운 작업을 건너뛰는지,
+ * 확정·재시도·실패가 작업이 아직 그 번호일 때만 결과를 쓰는지 다룬다.
  * SKIP LOCKED로 두 Worker가 겹치지 않는지는 실제 DB가 필요해 여기서 다루지 않는다.
  *
- * 작업·식사의 id와 lease_count는 생성자 밖의 val이라 mockk로 만든다.
+ * lease 테스트의 작업·식사는 id와 lease_count가 생성자 밖의 val이라 mockk로 만든다.
+ * 확정·실패 테스트의 식사는 필드가 실제로 바뀌는지 봐야 해서 실제 엔티티를 쓴다.
  */
 class MealAnalysisJobTransactionServiceTest {
 
@@ -166,5 +174,164 @@ class MealAnalysisJobTransactionServiceTest {
         verify(exactly = 1) { mealAnalysisJobRepository.deleteAllByIdInBatch(listOf(1L)) }
         verify(exactly = 0) { mealAnalysisJobRepository.updateLease(any(), any()) }
         verify(exactly = 0) { mealRepository.updateMealStatuses(any(), any(), any()) }
+    }
+
+    @Test
+    fun `최대 시도 횟수를 채운 만료 작업은 지우고 FAILED로 두며 lease와 결과에서 뺀다`() {
+        givenJobs(createJob(id = 1L, mealId = 10L, leaseCount = 0), createJob(id = 2L, mealId = 20L, leaseCount = 2))
+        givenMeals(createMeal(id = 10L), createMeal(id = 20L))
+
+        val results = mealAnalysisJobTransactionService.leaseMealAnalysisJobs(limit)
+
+        verify(exactly = 1) { mealAnalysisJobRepository.deleteAllByIdInBatch(listOf(2L)) }
+        verify(exactly = 1) { mealRepository.updateMealStatuses(listOf(20L), MealStatus.FAILED, now) }
+        verify(exactly = 1) { mealAnalysisJobRepository.updateLease(listOf(1L), 60L) }
+        verify(exactly = 1) { mealRepository.updateMealStatuses(listOf(10L), MealStatus.ANALYZING, now) }
+        assertEquals(listOf(1L), results.map { it.jobId })
+    }
+
+    // 확정·재시도·실패
+
+    private val userId = 1L
+    private val mealAt = now.minusSeconds(600)
+    private val leasedJob =
+        MealAnalysisJobResult(jobId = 1L, mealId = 10L, leaseCount = 2, imageKey = "meals/1/meal-10.jpg")
+    private val analysisResult = NutritionAnalysisResult(
+        name = "김치찌개",
+        nutrition = Nutrition(calory = 450, carbs = 40, protein = 25, fat = 20),
+        catComment = "단백질이 든든하다냥",
+        iconId = 12L,
+    )
+
+    private fun createLockedMeal(deletedAt: Instant? = null) =
+        Meal(status = MealStatus.ANALYZING, imageKey = leasedJob.imageKey, mealAt = mealAt, userId = userId).apply {
+            if (deletedAt != null) updateDeletedAt(deletedAt)
+        }
+
+    /** 작업이 아직 이 Worker의 것이라 조건부 삭제가 1행을 지우고, 잠가 읽은 식사가 [meal]이다. */
+    private fun givenOwnedJob(meal: Meal) {
+        every { mealAnalysisJobRepository.deleteByIdAndLeaseCount(leasedJob.jobId, leasedJob.leaseCount) } returns 1
+        every { mealRepository.findMealWithLockById(leasedJob.mealId) } returns meal
+        every { catRepository.existsByUserId(userId) } returns true
+        every { catService.updateLastMealAt(any(), any()) } just Runs
+    }
+
+    /** lease가 만료돼 다른 Worker가 같은 작업을 다음 번호로 가져가서 조건부 삭제가 0행이다. */
+    private fun givenLostJob() {
+        every { mealAnalysisJobRepository.deleteByIdAndLeaseCount(leasedJob.jobId, leasedJob.leaseCount) } returns 0
+    }
+
+    @Test
+    fun `확정할 때 다른 Worker가 가져간 작업이면 아무것도 쓰지 않고 null을 돌려준다`() {
+        givenLostJob()
+
+        val result = mealAnalysisJobTransactionService.confirmMealAnalysis(leasedJob, analysisResult)
+
+        assertNull(result)
+        verify(exactly = 0) { mealRepository.findMealWithLockById(any()) }
+        verify(exactly = 0) { catService.updateLastMealAt(any(), any()) }
+    }
+
+    @Test
+    fun `작업은 가져갈 때 받은 번호로만 지운다`() {
+        givenOwnedJob(createLockedMeal())
+
+        mealAnalysisJobTransactionService.confirmMealAnalysis(leasedJob, analysisResult)
+
+        verify(exactly = 1) { mealAnalysisJobRepository.deleteByIdAndLeaseCount(1L, 2) }
+    }
+
+    @Test
+    fun `확정하면 결과를 저장하고 COMPLETED로 바꾸며 고양이의 마지막 식사 시각을 갱신한다`() {
+        val meal = createLockedMeal()
+        givenOwnedJob(meal)
+
+        val result = mealAnalysisJobTransactionService.confirmMealAnalysis(leasedJob, analysisResult)
+
+        assertEquals("김치찌개", meal.name)
+        assertEquals(450, meal.calory)
+        assertEquals(40, meal.carbs)
+        assertEquals(25, meal.protein)
+        assertEquals(20, meal.fat)
+        assertEquals(12L, meal.iconId)
+        assertEquals("단백질이 든든하다냥", meal.catComment)
+        assertEquals(MealStatus.COMPLETED, meal.status)
+        verify(exactly = 1) { catService.updateLastMealAt(userId, mealAt) }
+        assertEquals(
+            AnalysisPushResult(
+                mealId = meal.id,
+                userId = userId,
+                mealName = "김치찌개",
+                status = MealStatus.COMPLETED,
+                isDeleted = false,
+            ),
+            result,
+        )
+    }
+
+    @Test
+    fun `고양이가 없으면 마지막 식사 시각만 건너뛰고 확정은 그대로 한다`() {
+        val meal = createLockedMeal()
+        givenOwnedJob(meal)
+        every { catRepository.existsByUserId(userId) } returns false
+
+        val result = mealAnalysisJobTransactionService.confirmMealAnalysis(leasedJob, analysisResult)
+
+        assertEquals(MealStatus.COMPLETED, meal.status)
+        assertNotNull(result)
+        verify(exactly = 0) { catService.updateLastMealAt(any(), any()) }
+    }
+
+    @Test
+    fun `분석하는 동안 식사가 지워졌으면 결과에 지워졌다고 표시한다`() {
+        givenOwnedJob(createLockedMeal(deletedAt = now.minusSeconds(5)))
+
+        val result = mealAnalysisJobTransactionService.confirmMealAnalysis(leasedJob, analysisResult)
+
+        assertEquals(true, result?.isDeleted)
+    }
+
+    @Test
+    fun `재시도할 때 다른 Worker가 가져간 작업이면 false이고 식사 상태를 바꾸지 않는다`() {
+        every { mealAnalysisJobRepository.resetLease(leasedJob.jobId, leasedJob.leaseCount) } returns 0
+
+        val isReset = mealAnalysisJobTransactionService.retryMealAnalysis(leasedJob)
+
+        assertFalse(isReset)
+        verify(exactly = 0) { mealRepository.updateMealStatuses(any(), any(), any()) }
+    }
+
+    @Test
+    fun `재시도하면 lease를 풀고 식사를 WAITING으로 바꾼다`() {
+        every { mealAnalysisJobRepository.resetLease(leasedJob.jobId, leasedJob.leaseCount) } returns 1
+
+        val isReset = mealAnalysisJobTransactionService.retryMealAnalysis(leasedJob)
+
+        assertTrue(isReset)
+        verify(exactly = 1) { mealAnalysisJobRepository.resetLease(1L, 2) }
+        verify(exactly = 1) { mealRepository.updateMealStatuses(listOf(10L), MealStatus.WAITING, now) }
+    }
+
+    @Test
+    fun `실패로 끝낼 때 다른 Worker가 가져간 작업이면 아무것도 쓰지 않고 null을 돌려준다`() {
+        givenLostJob()
+
+        val result = mealAnalysisJobTransactionService.failMealAnalysis(leasedJob)
+
+        assertNull(result)
+        verify(exactly = 0) { mealRepository.findMealWithLockById(any()) }
+    }
+
+    @Test
+    fun `실패로 끝내면 식사를 FAILED로 바꾸고 알림 값을 돌려준다`() {
+        val meal = createLockedMeal()
+        givenOwnedJob(meal)
+
+        val result = mealAnalysisJobTransactionService.failMealAnalysis(leasedJob)
+
+        assertEquals(MealStatus.FAILED, meal.status)
+        assertEquals(MealStatus.FAILED, result?.status)
+        assertEquals(false, result?.isDeleted)
+        verify(exactly = 0) { catService.updateLastMealAt(any(), any()) }
     }
 }
