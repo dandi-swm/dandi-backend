@@ -92,4 +92,34 @@ interface MealAnalysisJobRepository : JpaRepository<MealAnalysisJob, Long> {
         @Param("leaseCount") leaseCount: Int,
         @Param("delaySeconds") delaySeconds: Long,
     ): Int
+
+    /**
+     * Worker가 지금 가져갈 수 있는 작업 수. 대기이거나 lease가 만료된 작업이며, [findMealAnalysisJobsWithLock]의 조건과 같다.
+     * 처리 중인 작업과 설정 오류로 잠시 미뤄 둔 작업(lease_expires_at이 미래)은 세지 않는다.
+     */
+    @Query(
+        value = """
+            SELECT COUNT(*)
+            FROM meal_analysis_jobs
+            WHERE lease_expires_at IS NULL
+                OR lease_expires_at < NOW()
+        """,
+        nativeQuery = true,
+    )
+    fun countWaitingMealAnalysisJobs(): Long
+
+    /**
+     * 가져갈 수 있는 작업 중 가장 오래된 것이 쌓인 뒤 지난 초(DB 시계). 그런 작업이 없으면 null.
+     * 재시도로 대기에 돌아온 작업은 처음 쌓인 때부터 센다.
+     */
+    @Query(
+        value = """
+            SELECT TIMESTAMPDIFF(SECOND, MIN(created_at), NOW())
+            FROM meal_analysis_jobs
+            WHERE lease_expires_at IS NULL
+                OR lease_expires_at < NOW()
+        """,
+        nativeQuery = true,
+    )
+    fun findOldestWaitingSeconds(): Long?
 }
