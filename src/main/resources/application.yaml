@@ -162,16 +162,16 @@ app:
     reward-boxes:
       bronze:
         rate: 50
-        min-coin-quantity: 1
-        max-coin-quantity: 5
+        min-coin-quantity: 50
+        max-coin-quantity: 69
       silver:
         rate: 30
-        min-coin-quantity: 5
-        max-coin-quantity: 10
+        min-coin-quantity: 70
+        max-coin-quantity: 89
       gold:
         rate: 20
-        min-coin-quantity: 10
-        max-coin-quantity: 15
+        min-coin-quantity: 90
+        max-coin-quantity: 100
     reward-mail-time-to-live: 7d
     # 튜토리얼 식사 보상 상자. 등급은 골드로 고정이고 만료되지 않는다. 아이템은 하나에 1개씩 넣는다.
     # itemId는 items·room_items에 직접 넣은 행이다(default-room-items와 같다).
