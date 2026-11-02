@@ -72,16 +72,24 @@ interface MealAnalysisJobRepository : JpaRepository<MealAnalysisJob, Long> {
     fun resetLease(@Param("id") id: Long, @Param("leaseCount") leaseCount: Int): Int
 
     /**
-     * 작업이 아직 [leaseCount]번째 시도일 때만 lease를 풀고 lease_count도 하나 내린다. 가져간 적 없는 것처럼 대기로 되돌려,
-     * 분석을 시작하지 못한 작업이 시도 횟수를 쓰지 않게 한다. 바뀐 행 수가 0이면 이 Worker의 작업이 아니다.
+     * 작업이 아직 [leaseCount]번째 시도일 때만 lease_count를 하나 내려 시도 횟수를 쓰지 않게 하고,
+     * 지금(DB 시계)부터 [delaySeconds]초가 지나면 다시 가져갈 수 있게 둔다. 0이면 다음 polling에서 바로 가져간다.
+     * 바뀐 행 수가 0이면 이 Worker의 작업이 아니다.
      */
     @Modifying
     @Query(
-        """
-        update MealAnalysisJob j
-        set j.leaseExpiresAt = null, j.leaseCount = j.leaseCount - 1
-        where j.id = :id and j.leaseCount = :leaseCount
-    """,
+        value = """
+            UPDATE meal_analysis_jobs
+            SET lease_expires_at = NOW() + INTERVAL :delaySeconds SECOND,
+                lease_count = lease_count - 1
+            WHERE id = :id
+                AND lease_count = :leaseCount
+        """,
+        nativeQuery = true,
     )
-    fun cancelLease(@Param("id") id: Long, @Param("leaseCount") leaseCount: Int): Int
+    fun cancelLease(
+        @Param("id") id: Long,
+        @Param("leaseCount") leaseCount: Int,
+        @Param("delaySeconds") delaySeconds: Long,
+    ): Int
 }

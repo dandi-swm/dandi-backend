@@ -13,6 +13,7 @@ import org.springframework.core.task.TaskRejectedException
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor
 import org.springframework.stereotype.Component
+import java.time.Duration
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import kotlin.math.min
@@ -85,7 +86,7 @@ class MealAnalysisJobPoller(
             } catch (e: TaskRejectedException) {
                 inProgressJobs.remove(job)
                 logger.warn("실행기가 가득 차 분석 작업을 되돌립니다: mealId={}, leaseCount={}", job.mealId, job.leaseCount)
-                mealAnalysisJobTransactionService.cancelMealAnalysis(job)
+                mealAnalysisJobTransactionService.cancelMealAnalysis(job, Duration.ZERO)
             }
         }
     }

@@ -322,9 +322,9 @@ class MealAnalysisJobTransactionServiceTest {
 
     @Test
     fun `시작하지 못한 작업을 되돌릴 때 다른 Worker가 가져간 작업이면 false이고 식사 상태를 바꾸지 않는다`() {
-        every { mealAnalysisJobRepository.cancelLease(leasedJob.jobId, leasedJob.leaseCount) } returns 0
+        every { mealAnalysisJobRepository.cancelLease(leasedJob.jobId, leasedJob.leaseCount, 0L) } returns 0
 
-        val isCanceled = mealAnalysisJobTransactionService.cancelMealAnalysis(leasedJob)
+        val isCanceled = mealAnalysisJobTransactionService.cancelMealAnalysis(leasedJob, Duration.ZERO)
 
         assertFalse(isCanceled)
         verify(exactly = 0) { mealRepository.updateMealStatuses(any(), any(), any()) }
@@ -332,12 +332,12 @@ class MealAnalysisJobTransactionServiceTest {
 
     @Test
     fun `시작하지 못한 작업은 lease와 번호를 되돌리고 식사를 WAITING으로 바꾼다`() {
-        every { mealAnalysisJobRepository.cancelLease(leasedJob.jobId, leasedJob.leaseCount) } returns 1
+        every { mealAnalysisJobRepository.cancelLease(leasedJob.jobId, leasedJob.leaseCount, 0L) } returns 1
 
-        val isCanceled = mealAnalysisJobTransactionService.cancelMealAnalysis(leasedJob)
+        val isCanceled = mealAnalysisJobTransactionService.cancelMealAnalysis(leasedJob, Duration.ZERO)
 
         assertTrue(isCanceled)
-        verify(exactly = 1) { mealAnalysisJobRepository.cancelLease(1L, 2) }
+        verify(exactly = 1) { mealAnalysisJobRepository.cancelLease(1L, 2, 0L) }
         verify(exactly = 1) { mealRepository.updateMealStatuses(listOf(10L), MealStatus.WAITING, now) }
     }
 

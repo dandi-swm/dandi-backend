@@ -12,6 +12,7 @@ import io.mockk.mockk
 import io.mockk.verify
 import org.springframework.core.task.TaskRejectedException
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor
+import java.time.Duration
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import kotlin.test.Test
@@ -45,7 +46,7 @@ class MealAnalysisJobPollerTest {
         every { analysisExecutor.execute(any()) } answers { firstArg<Runnable>().run() }
         every { analysisService.analyzeMealAnalysisJob(any()) } just Runs
         every { mealAnalysisJobTransactionService.leaseMealAnalysisJobs(any()) } returns listOf(firstJob, secondJob)
-        every { mealAnalysisJobTransactionService.cancelMealAnalysis(any()) } returns true
+        every { mealAnalysisJobTransactionService.cancelMealAnalysis(any(), any()) } returns true
         // 컨텍스트가 뜰 때 Spring이 하듯 시작해 둔다. 시작 전이나 종료 뒤에는 작업을 가져가지 않는다.
         mealAnalysisJobPoller.start()
     }
@@ -112,8 +113,8 @@ class MealAnalysisJobPollerTest {
 
         mealAnalysisJobPoller.pollMealAnalysisJobs()
 
-        verify(exactly = 1) { mealAnalysisJobTransactionService.cancelMealAnalysis(firstJob) }
-        verify(exactly = 0) { mealAnalysisJobTransactionService.cancelMealAnalysis(secondJob) }
+        verify(exactly = 1) { mealAnalysisJobTransactionService.cancelMealAnalysis(firstJob, Duration.ZERO) }
+        verify(exactly = 0) { mealAnalysisJobTransactionService.cancelMealAnalysis(secondJob, any()) }
         verify(exactly = 1) { analysisService.analyzeMealAnalysisJob(secondJob) }
     }
 
