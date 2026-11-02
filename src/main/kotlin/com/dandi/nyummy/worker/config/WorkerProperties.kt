@@ -11,6 +11,8 @@ import java.time.Duration
  *   한 건 처리(S3 다운로드 + Gemini 호출 + 결과 저장)가 끝나는 시간보다 길어야 같은 작업을 두 Worker가 함께 처리하지 않는다
  * @property maxLeaseCount 한 작업을 가져갈 수 있는 최대 횟수(= 최대 시도 수). 일시적인 실패도 이 횟수를 채우면 FAILED로 끝낸다
  * @property leaseLimit polling 한 번에 가져갈 최대 작업 수. 빈 자리가 더 많아도 이만큼만 가져간다
+ * @property shutdownTimeout 종료할 때 처리 중인 작업이 끝나기를 기다리는 최대 시간. 정상 처리 시간보다 길어야 하고,
+ *   나머지 종료 시간을 더해도 ECS stopTimeout보다 짧아야 기다리는 도중에 강제로 끝나지 않는다
  */
 @ConfigurationProperties(prefix = "app.worker")
 data class WorkerProperties(
@@ -18,4 +20,5 @@ data class WorkerProperties(
     val leaseTimeToLive: Duration = Duration.ofSeconds(60),
     val maxLeaseCount: Int = 2,
     val leaseLimit: Int = 10,
+    val shutdownTimeout: Duration = Duration.ofSeconds(40),
 )

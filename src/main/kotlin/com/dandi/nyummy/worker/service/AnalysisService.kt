@@ -46,57 +46,55 @@ class AnalysisService(
     fun analyzeMealAnalysisJob(job: MealAnalysisJobResult) {
         // 이 시도를 식별하는 값. 재시도가 또 실패해도 앞선 실패와 다른 알림이 되게 한다.
         val analyzedAt = Instant.now(clock)
-        var failureCategory: AnalysisFailureCategory? = null
 
-        val pushResult = try {
+        try {
             val analysisResult = nutritionAnalysisClient.analyzeNutrition(job.imageKey)
-            mealAnalysisJobTransactionService.confirmMealAnalysis(job, analysisResult)
+            sendAnalysisPush(
+                mealAnalysisJobTransactionService.confirmMealAnalysis(job, analysisResult),
+                null,
+                analyzedAt,
+            )
         } catch (e: AnalysisFailureException) {
-            failureCategory = e.category
-            handleAnalysisFailure(job, e)
+            handleAnalysisFailure(job, e, analyzedAt)
         } catch (e: RuntimeException) {
             logger.error("영양 분석 중 예상하지 못한 오류로 실패합니다: mealId={}, leaseCount={}", job.mealId, job.leaseCount, e)
-            mealAnalysisJobTransactionService.failMealAnalysis(job)
+            sendAnalysisPush(mealAnalysisJobTransactionService.failMealAnalysis(job), null, analyzedAt)
         }
-
-        if (pushResult == null) {
-            return
-        }
-        if (pushResult.isDeleted) {
-            logger.info("분석하는 동안 지워진 식사라 알림을 보내지 않습니다: mealId={}", pushResult.mealId)
-            return
-        }
-        sendAnalysisPush(pushResult, failureCategory, analyzedAt)
     }
 
     /**
-     * 분류된 실패를 재시도할지 FAILED로 끝낼지 정한다.
+     * 분류된 실패를 재시도할지 FAILED로 끝낼지 정하고, FAILED로 끝냈으면 알린다.
      *
-     * @return 알림에 쓸 값. 재시도로 되돌렸거나 이 Worker의 작업이 아니면 null
+     * 일시적인 실패(UNAVAILABLE)는 재시도할 수 있으면 대기로 되돌리고 알리지 않는다. 마지막 시도였으면 FAILED로 끝낸다.
+     * Worker가 종료될 때 대기 시간 안에 끝나지 않은 작업도 같은 규칙으로 정리한다.
      */
-    private fun handleAnalysisFailure(job: MealAnalysisJobResult, e: AnalysisFailureException): AnalysisPushResult? {
-        when (e.category) {
+    fun handleAnalysisFailure(
+        job: MealAnalysisJobResult,
+        failure: AnalysisFailureException,
+        analyzedAt: Instant = Instant.now(clock),
+    ) {
+        when (failure.category) {
             AnalysisFailureCategory.UNAVAILABLE ->
                 if (job.canRetry) {
                     logger.warn(
                         "영양 분석이 일시적으로 실패해 다시 시도합니다: mealId={}, leaseCount={}, {}",
                         job.mealId,
                         job.leaseCount,
-                        e.message,
+                        failure.message,
                     )
                     mealAnalysisJobTransactionService.retryMealAnalysis(job)
-                    return null
+                    return
                 } else {
-                    logger.error("영양 분석이 재시도 후에도 실패했습니다: mealId={}, leaseCount={}", job.mealId, job.leaseCount, e)
+                    logger.error("영양 분석이 재시도 후에도 실패했습니다: mealId={}, leaseCount={}", job.mealId, job.leaseCount, failure)
                 }
 
             AnalysisFailureCategory.NOT_FOOD ->
                 logger.info("음식 사진이 아니라 분석을 실패로 끝냅니다: mealId={}", job.mealId)
 
             AnalysisFailureCategory.INVALID_RESPONSE, AnalysisFailureCategory.INVALID_REQUEST ->
-                logger.error("영양 분석에 실패했습니다: mealId={}, category={}", job.mealId, e.category, e)
+                logger.error("영양 분석에 실패했습니다: mealId={}, category={}", job.mealId, failure.category, failure)
         }
-        return mealAnalysisJobTransactionService.failMealAnalysis(job)
+        sendAnalysisPush(mealAnalysisJobTransactionService.failMealAnalysis(job), failure.category, analyzedAt)
     }
 
     /**
@@ -104,10 +102,19 @@ class AnalysisService(
      * 수신 거부·토큰 없음은 [NotificationService.sendServicePush]가 조용히 넘긴다.
      */
     private fun sendAnalysisPush(
-        pushResult: AnalysisPushResult,
+        pushResult: AnalysisPushResult?,
         failureCategory: AnalysisFailureCategory?,
         analyzedAt: Instant,
     ) {
+        // 이 Worker의 작업이 아니었으면(다른 Worker가 가져갔으면) 결과를 쓰지 않았으므로 알리지도 않는다.
+        if (pushResult == null) {
+            return
+        }
+        if (pushResult.isDeleted) {
+            logger.info("분석하는 동안 지워진 식사라 알림을 보내지 않습니다: mealId={}", pushResult.mealId)
+            return
+        }
+
         try {
             val catName = catRepository.findByUserId(pushResult.userId)?.name
                 ?: run {

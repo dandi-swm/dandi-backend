@@ -133,6 +133,9 @@ app:
     max-lease-count: 2
     # polling 한 번에 가져갈 최대 작업 수. 한 트랜잭션이 잠그는 행을 작게 둔다. 실행기(50)가 다 차려면 몇 번의 polling이 걸린다.
     lease-limit: 10
+    # 종료할 때 처리 중인 작업을 기다리는 최대 시간. 정상 처리(Gemini 약 38초 + S3·저장)는 이 안에 끝난다.
+    # 이 값에 나머지 종료 시간을 더해도 Worker ECS stopTimeout(60초)보다 짧아야 기다리는 도중에 강제로 끝나지 않는다.
+    shutdown-timeout: 40s
   fcm:
     # Firebase를 띄울지. false면 FirebaseMessaging 빈 없이 StubPushClient가 주입된다.
     enabled: true
