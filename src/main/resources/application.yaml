@@ -124,6 +124,9 @@ app:
     enabled: ${ADMIN_ENABLED:false}
     google-client-id: ${ADMIN_GOOGLE_CLIENT_ID:}
     cdn-distribution-id: ${CDN_DISTRIBUTION_ID:}
+  worker:
+    # Worker 서비스(와 dev 앱 컨테이너)에서만 true. API 서비스는 false라 Worker 빈을 만들지 않는다.
+    enabled: ${WORKER_ENABLED:false}
   fcm:
     # Firebase를 띄울지. false면 FirebaseMessaging 빈 없이 StubPushClient가 주입된다.
     enabled: true
