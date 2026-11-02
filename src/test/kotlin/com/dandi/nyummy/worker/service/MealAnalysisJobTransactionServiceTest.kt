@@ -342,6 +342,16 @@ class MealAnalysisJobTransactionServiceTest {
     }
 
     @Test
+    fun `시작하지 못한 작업을 되돌릴 때 대기 시간을 초로 바꿔 다시 가져갈 시각을 미룬다`() {
+        every { mealAnalysisJobRepository.cancelLease(leasedJob.jobId, leasedJob.leaseCount, 60L) } returns 1
+
+        val isCanceled = mealAnalysisJobTransactionService.cancelMealAnalysis(leasedJob, Duration.ofMinutes(1))
+
+        assertTrue(isCanceled)
+        verify(exactly = 1) { mealAnalysisJobRepository.cancelLease(1L, 2, 60L) }
+    }
+
+    @Test
     fun `실패로 끝낼 때 다른 Worker가 가져간 작업이면 아무것도 쓰지 않고 null을 돌려준다`() {
         givenLostJob()
 
