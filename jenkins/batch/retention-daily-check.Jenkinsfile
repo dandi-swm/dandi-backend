@@ -7,7 +7,7 @@ pipeline {
         disableConcurrentBuilds()
         disableResume()
         buildDiscarder(logRotator(daysToKeepStr: '30'))
-        timeout(time: 5, unit: 'MINUTES')
+        timeout(time: 10, unit: 'MINUTES')
     }
 
     triggers {
