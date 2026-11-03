@@ -4,6 +4,7 @@ import com.dandi.nyummy.infra.push.dto.PushMessage
 import com.dandi.nyummy.infra.push.dto.PushResult
 import com.google.firebase.messaging.AndroidConfig
 import com.google.firebase.messaging.BatchResponse
+import com.google.firebase.messaging.FcmOptions
 import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.messaging.FirebaseMessagingException
 import com.google.firebase.messaging.Message
@@ -73,6 +74,8 @@ class FcmPushClient(
                 )
                 .putAllData(convertData(message))
                 .setAndroidConfig(ANDROID_CONFIG)
+                // Firebase 콘솔 리포트에서 알림 종류별로 보기 위한 라벨이다. 앱으로 전달되는 값은 아니다
+                .setFcmOptions(FcmOptions.withAnalyticsLabel(message.type.name))
                 .build()
         }
 
