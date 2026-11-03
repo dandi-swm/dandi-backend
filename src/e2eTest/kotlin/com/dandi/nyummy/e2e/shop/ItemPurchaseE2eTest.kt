@@ -39,6 +39,7 @@ class ItemPurchaseE2eTest {
             assertEquals(balanceBefore - product.purchasePrice, getBalance(), "구매 뒤 잔액")
             assertNull(getCart().findCartItem(product.productId), "산 상품이 장바구니에 남아 있습니다")
             assertEquals(ownedCountBefore + 1, getOwnedCount(product.productId), "우편을 받기 전 상품 카드의 보유 개수")
+            validateLatestCoinHistory(product, balanceAfter = balanceBefore - product.purchasePrice)
 
             // 2. 같은 키 재시도: 코인이 더 빠지지 않고 같은 구매를 받는다
             val retried = createItemPurchase(idempotencyKey, product.toRequestProducts())
@@ -229,6 +230,24 @@ class ItemPurchaseE2eTest {
 
         abort<Unit>("살 수 있는 판매 중 인테리어 상품이 없어 건너뜁니다")
         error("abort는 항상 예외를 던진다")
+    }
+
+    // 0코인 상품이면 내역이 생기지 않아 검증할 수 없다
+    private fun validateLatestCoinHistory(product: CartProduct, balanceAfter: Int) {
+        if (product.purchasePrice == 0) return
+
+        Given {
+            spec(RequestSpecs.createAuthorizedSpec())
+            queryParam("size", 1)
+        } When {
+            get("/api/v1/coins/histories")
+        } Then {
+            statusCode(200)
+            body("coinHistories[0].category", equalTo("ROOM_ITEM_PURCHASE"))
+            body("coinHistories[0].title", equalTo("${product.name} 구매"))
+            body("coinHistories[0].quantity", equalTo(-product.purchasePrice))
+            body("coinHistories[0].balanceAfter", equalTo(balanceAfter))
+        }
     }
 
     private fun getOwnedCount(productId: Long): Int {
