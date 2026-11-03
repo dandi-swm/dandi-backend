@@ -61,7 +61,7 @@ class ShopService(
 
     companion object {
         private const val LAYOUT_B = "B"
-        private const val DAILY_PRODUCT_COUNT = 3
+        const val DAILY_PRODUCT_COUNT = 3
         private const val POPULAR_PRODUCT_COUNT = 4
     }
 

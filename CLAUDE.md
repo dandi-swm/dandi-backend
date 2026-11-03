@@ -199,6 +199,7 @@
 - 프로모션 `Promotion`(Event·Campaign 금지) — 신입 집사 환영·첫 구매 혜택처럼 기간·대상을 정해 상품을 묶어 파는 것. 이를 알리는 배너 `ShopBanner`(SDUI 칸 이름 `HeroBanner`와 구분), 배너 모서리 `cornerStyle`(`BannerCornerStyle`), 글자색 `titleColor`·`descriptionColor`(SDUI 색 토큰 이름, TextColor·FontColor 금지)
 - 프로모션 대상 `PromotionCategory`(Target 금지 — 알림 발송 대상과 충돌) — 분류 칩 `ShopCategory`·아이템 분류 `RoomItemCategory`와 다른 enum. 할인율 `discountRate`, 진열 순서 `displayOrder`(마이룸 쌓임 순서 `ZIndex`와 구분)
 - 진행 중이고 사용자가 대상인 프로모션 `Eligible`(`isEligible`, `getEligiblePromotions`) — 대상 종류 `PromotionCategory`와 구분
+- 내부 배치가 하루치로 만드는 오늘의 할인 프로모션 `DailyPromotion`(대상 `DAILY`), 그 할인율 `dailyDiscountRate`(프로모션의 `discountRate`에 넣는 설정값)
 - 신입 집사로 보는 기간 `newUserTimeToLive`, 신규 태그를 붙이는 기간 `newProductTimeToLive`
 - 앱(Remote Config)이 정한 A/B 그룹 `Variant`(Test·Group·Bucket 금지). 추천 탭 배치 그룹은 헤더 `X-Shop-Layout-Variant`로 받는다
 - 상점 구매 `ItemPurchase`(`itemPurchaseId`, Order 금지) — 1개 결제가 `purchasePrice`와 다른 개념. 재시도를 알아보는 키는 헤더 `Idempotency-Key`(RequestId·Nonce 금지)

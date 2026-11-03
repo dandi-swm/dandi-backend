@@ -5,3 +5,7 @@ X-Internal-Batch-Key: {{secret-batch-key}}
 ### 리텐션 푸시 알림
 POST {{url}}/api/v1/internal/batch/retentions/daily-check
 X-Internal-Batch-Key: {{secret-batch-key}}
+
+### 오늘의 할인 생성 (date를 빼면 내일)
+POST {{url}}/api/v1/internal/batch/shop/daily-promotions?date=2026-11-05
+X-Internal-Batch-Key: {{secret-batch-key}}
