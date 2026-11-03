@@ -1,12 +1,15 @@
 package com.dandi.nyummy.internal.batch.controller
 
+import com.dandi.nyummy.internal.batch.service.DailyPromotionService
 import com.dandi.nyummy.internal.batch.service.MealReminderService
 import com.dandi.nyummy.internal.batch.service.RetentionBatchService
 import io.swagger.v3.oas.annotations.Hidden
+import org.springframework.format.annotation.DateTimeFormat
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
+import java.time.LocalDate
 
 @Hidden // Swagger 문서 노출 차단
 @RestController
@@ -14,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController
 class InternalBatchController(
     private val mealReminderService: MealReminderService,
     private val retentionBatchService: RetentionBatchService,
+    private val dailyPromotionService: DailyPromotionService,
 ) {
 
     // 매시 정각 호출
@@ -26,5 +30,13 @@ class InternalBatchController(
     @PostMapping("/retentions/daily-check")
     fun triggerDailyRetentionCheck() {
         retentionBatchService.sendDailyRetentionPushes()
+    }
+
+    // 매일 23:50 호출. 다음 날 오늘의 할인을 미리 만든다
+    @PostMapping("/shop/daily-promotions")
+    fun triggerDailyPromotion(
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) date: LocalDate?,
+    ) {
+        dailyPromotionService.createDailyPromotion(date)
     }
 }
