@@ -27,7 +27,8 @@ interface MealRepository : JpaRepository<Meal, Long> {
 
     fun findMealByIdAndDeletedAtIsNull(mealId: Long): Meal?
 
-    // SELECT … FOR UPDATE. 지워진 식사도 조회한다. 잠근 동안 식사 삭제·이름 변경이 기다리므로 엔티티 전체를 다시 써도 덮지 않는다.
+    // SELECT … FOR UPDATE. 지워진 식사도 조회한다. Meal은 바뀐 컬럼만이 아니라 엔티티 전체를 다시 쓰므로,
+    // 같은 식사를 고치는 쪽(분석 확정, 재시도, 이름 변경, 삭제)이 모두 이걸로 읽어야 서로의 값을 덮지 않는다.
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     fun findMealWithLockById(mealId: Long): Meal?
 

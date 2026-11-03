@@ -358,6 +358,9 @@ class MealService(
     /**
      * 식사 이름을 수정한다.
      *
+     * 식사를 잠가 읽는다. 엔티티 전체를 다시 쓰므로, 잠그지 않으면 읽은 뒤 Worker가 확정한 분석 결과를
+     * 읽었던 값(ANALYZING·영양값 없음)으로 덮는다. 작업 행은 이미 지워져 그 식사는 분석 중에서 벗어나지 못한다.
+     *
      * @param userId 수정하는 사용자 ID
      * @param mealId 수정할 식사 ID
      * @param name 변경할 식사 이름
@@ -367,7 +370,8 @@ class MealService(
      */
     @Transactional
     fun updateMeal(userId: Long, mealId: Long, name: String): MealResponse {
-        val meal = mealRepository.findMealByIdAndDeletedAtIsNull(mealId)
+        val meal = mealRepository.findMealWithLockById(mealId)
+            ?.takeIf { it.deletedAt == null }
             ?: throw BusinessException(MealErrorCode.MEAL_NOT_FOUND)
 
         meal.validateOwnership(userId)
@@ -382,6 +386,8 @@ class MealService(
     /**
      * 식사 기록을 소프트 삭제한다(deletedAt 기록).
      *
+     * [updateMeal]과 같은 이유로 식사를 잠가 읽는다.
+     *
      * @param userId 삭제하는 사용자 ID
      * @param mealId 삭제할 식사 ID
      * @throws BusinessException [MealErrorCode.MEAL_NOT_FOUND] mealId에 해당하는 식사가 없거나, 삭제된 경우
@@ -389,7 +395,8 @@ class MealService(
      */
     @Transactional
     fun deleteMeal(userId: Long, mealId: Long) {
-        val meal = mealRepository.findMealByIdAndDeletedAtIsNull(mealId)
+        val meal = mealRepository.findMealWithLockById(mealId)
+            ?.takeIf { it.deletedAt == null }
             ?: throw BusinessException(MealErrorCode.MEAL_NOT_FOUND)
 
         meal.validateOwnership(userId)
