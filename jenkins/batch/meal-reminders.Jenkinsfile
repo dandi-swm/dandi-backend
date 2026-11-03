@@ -12,7 +12,7 @@ pipeline {
 
     triggers {
         cron("""TZ=Asia/Seoul
-0 8-20 * * *""")
+0 * * * *""")
     }
 
     environment {
