@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
+import java.time.Instant
 
 @Repository
 interface ItemPurchaseProductRepository : JpaRepository<ItemPurchaseProduct, Long> {
@@ -25,6 +26,18 @@ interface ItemPurchaseProductRepository : JpaRepository<ItemPurchaseProduct, Lon
     fun findItemPurchaseProductNames(
         @Param("itemPurchaseIds") itemPurchaseIds: Collection<Long>,
     ): List<ItemPurchaseProductNameResult>
+
+    /** [startsAt] 이후 상품마다 팔린 개수. 그동안 팔리지 않은 상품은 결과에 없다. */
+    @Query(
+        """
+        select new com.dandi.nyummy.shop.dto.PurchasedProductCountResult(ipp.productId, count(ipp))
+        from ItemPurchaseProduct as ipp
+            join ItemPurchase as ip on ip.id = ipp.itemPurchaseId
+        where ip.createdAt >= :startsAt
+        group by ipp.productId
+    """,
+    )
+    fun findSalesCounts(@Param("startsAt") startsAt: Instant): List<PurchasedProductCountResult>
 
     /** 사용자가 상품마다 산 개수. 한 번도 사지 않은 상품은 결과에 없다. */
     @Query(
