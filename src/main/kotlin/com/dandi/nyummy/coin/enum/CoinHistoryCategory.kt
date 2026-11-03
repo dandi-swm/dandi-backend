@@ -13,6 +13,6 @@ enum class CoinHistoryCategory {
     /** 인앱 결제로 코인 구매 */
     IN_APP_PURCHASE,
 
-    /** 코인 충전 이벤트의 선물. 실제로 결제하지 않는다. sourceId = 고른 패키지 번호(행의 id가 아니다) */
+    /** 코인 충전 이벤트의 선물. 실제로 결제하지 않는다. sourceId = 패키지 번호, A 그룹 1~3·B 그룹 4~6(행의 id가 아니다) */
     COIN_GIFT,
 }

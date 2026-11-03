@@ -6,6 +6,7 @@ Authorization: Bearer {{accessToken}}
 ### 선물 코인 받기 API
 POST {{url}}/api/v1/coins/gifts
 Authorization: Bearer {{accessToken}}
+X-Coin-Package-Variant: A
 Content-Type: application/json
 
 {
