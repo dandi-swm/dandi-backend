@@ -10,6 +10,7 @@ import com.dandi.nyummy.mail.service.MailService
 import com.dandi.nyummy.meal.dto.RewardBoxResult
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.enum.MealStatus
+import com.dandi.nyummy.meal.repository.MealAnalysisJobRepository
 import com.dandi.nyummy.meal.repository.MealRepository
 import com.dandi.nyummy.streak.service.StreakService
 import com.dandi.nyummy.user.entity.Profile
@@ -39,6 +40,7 @@ class MealTransactionServiceTest {
     private val profileRepository = mockk<ProfileRepository>()
     private val mealAttemptService = mockk<MealAttemptService>()
     private val mealRepository = mockk<MealRepository>()
+    private val mealAnalysisJobRepository = mockk<MealAnalysisJobRepository>()
     private val mailService = mockk<MailService>()
     private val streakService = mockk<StreakService>()
 
@@ -46,6 +48,7 @@ class MealTransactionServiceTest {
         profileRepository = profileRepository,
         mealAttemptService = mealAttemptService,
         mealRepository = mealRepository,
+        mealAnalysisJobRepository = mealAnalysisJobRepository,
         mailService = mailService,
         streakService = streakService,
     )
@@ -54,6 +57,7 @@ class MealTransactionServiceTest {
         every { profileRepository.findProfileWithLockByUserId(userId) } returns Profile(userId = userId)
         every { mealAttemptService.validateDailyCount(userId) } just Runs
         every { mealRepository.save(meal) } returns meal
+        every { mealAnalysisJobRepository.save(any()) } answers { firstArg() }
         every { mailService.createRewardBoxMail(any(), any(), any(), any(), any()) } returns mockk<Mail>()
         every { streakService.updateStreak(userId) } just Runs
     }
@@ -79,6 +83,16 @@ class MealTransactionServiceTest {
     }
 
     @Test
+    fun `식사를 저장한 뒤 그 식사의 분석 작업을 같은 트랜잭션에 저장한다`() {
+        mealTransactionService.createMeal(meal, rewardBox, rewardMailExpiresAt)
+
+        verifyOrder {
+            mealRepository.save(meal)
+            mealAnalysisJobRepository.save(match { it.mealId == meal.id })
+        }
+    }
+
+    @Test
     fun `다시 센 횟수가 상한이면 식사와 우편을 저장하지 않고 연속 기록도 갱신하지 않는다`() {
         every { mealAttemptService.validateDailyCount(userId) } throws
             BusinessException(MealErrorCode.DAILY_COUNT_EXCEEDED)
@@ -87,6 +101,7 @@ class MealTransactionServiceTest {
             mealTransactionService.createMeal(meal, rewardBox, rewardMailExpiresAt)
         }
         verify(exactly = 0) { mealRepository.save(any()) }
+        verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
         verify(exactly = 0) { mailService.createRewardBoxMail(any(), any(), any(), any(), any()) }
         verify(exactly = 0) { streakService.updateStreak(any()) }
     }
@@ -100,6 +115,7 @@ class MealTransactionServiceTest {
         }
         verify(exactly = 0) { mealAttemptService.validateDailyCount(any()) }
         verify(exactly = 0) { mealRepository.save(any()) }
+        verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
     }
 
     @Test

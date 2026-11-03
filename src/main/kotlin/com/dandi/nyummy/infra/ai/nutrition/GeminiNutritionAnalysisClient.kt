@@ -3,6 +3,7 @@ package com.dandi.nyummy.infra.ai.nutrition
 import aws.sdk.kotlin.services.s3.model.NoSuchKey
 import aws.smithy.kotlin.runtime.SdkBaseException
 import aws.smithy.kotlin.runtime.ServiceException
+import aws.smithy.kotlin.runtime.http.response.HttpResponse
 import com.dandi.nyummy.infra.ai.AiProperties
 import com.dandi.nyummy.infra.storage.s3.S3StorageClient
 import com.dandi.nyummy.infra.storage.s3.dto.S3ObjectContentResult
@@ -13,7 +14,9 @@ import com.dandi.nyummy.meal.repository.IconRepository
 import com.dandi.nyummy.meal.service.IconService
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBooleanProperty
 import org.springframework.dao.DataAccessException
+import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Component
 import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.client.HttpServerErrorException
@@ -25,6 +28,7 @@ import tools.jackson.databind.ObjectMapper
 import kotlin.io.encoding.Base64
 
 @Component
+@ConditionalOnBooleanProperty("app.ai.enabled")
 class GeminiNutritionAnalysisClient(
     private val restClient: RestClient,
     private val aiProperties: AiProperties,
@@ -157,6 +161,13 @@ class GeminiNutritionAnalysisClient(
         } catch (e: HttpClientErrorException.TooManyRequests) {
             throw AnalysisFailureException(AnalysisFailureCategory.UNAVAILABLE, "Gemini 요청 한도를 넘었습니다.", e)
         } catch (e: HttpClientErrorException) {
+            if (isMisconfigured(e)) {
+                throw AnalysisFailureException(
+                    AnalysisFailureCategory.MISCONFIGURED,
+                    "Gemini 설정 오류로 요청이 거부됐습니다: ${e.statusCode}",
+                    e,
+                )
+            }
             throw AnalysisFailureException(
                 AnalysisFailureCategory.INVALID_REQUEST,
                 "Gemini가 요청을 거부했습니다: ${e.statusCode}",
@@ -192,8 +203,30 @@ class GeminiNutritionAnalysisClient(
     }
 
     /**
+     * Gemini가 요청 하나가 아니라 우리 쪽 설정(키·권한·모델 이름) 때문에 거부했는지.
+     *
+     * 401·403은 키·권한, 404는 모델 이름·경로 오류다. 400은 이미지 같은 요청 문제와 키 오류가 같은 코드로 오므로
+     * 본문의 오류 이유(ErrorInfo reason)가 API_KEY_로 시작할 때만 설정 오류로 본다.
+     */
+    private fun isMisconfigured(e: HttpClientErrorException): Boolean = when (e.statusCode) {
+        HttpStatus.UNAUTHORIZED, HttpStatus.FORBIDDEN, HttpStatus.NOT_FOUND -> true
+        HttpStatus.BAD_REQUEST -> extractErrorReasons(e).any { it.startsWith("API_KEY_") }
+        else -> false
+    }
+
+    /** Gemini 오류 본문에서 오류 이유들을 꺼낸다. 본문이 약속한 형식이 아니면 이유가 없는 것으로 본다. */
+    private fun extractErrorReasons(e: HttpClientErrorException): List<String> = try {
+        objectMapper.readValue(e.responseBodyAsString, GeminiErrorResponse::class.java)
+            .error?.details.orEmpty()
+            .mapNotNull { it.reason }
+    } catch (_: JacksonException) {
+        emptyList()
+    }
+
+    /**
      * 분석할 식사 이미지를 S3에서 받는다.
      * 객체가 없거나 비었으면 다시 해도 소용없으므로 [AnalysisFailureCategory.INVALID_REQUEST],
+     * 권한 오류(403)는 이미지와 상관없이 모든 요청이 거부되므로 [AnalysisFailureCategory.MISCONFIGURED],
      * S3 서버 오류·요청 한도·네트워크 오류는 [AnalysisFailureCategory.UNAVAILABLE]이다.
      */
     private fun downloadImage(imageKey: String): S3ObjectContentResult = try {
@@ -202,10 +235,14 @@ class GeminiNutritionAnalysisClient(
         throw AnalysisFailureException(AnalysisFailureCategory.INVALID_REQUEST, "분석할 이미지가 없습니다: $imageKey", e)
     } catch (e: ServiceException) {
         val metadata = e.sdkErrorMetadata
-        val category = if (metadata.errorType == ServiceException.ErrorType.Client && !metadata.isThrottling) {
-            AnalysisFailureCategory.INVALID_REQUEST
-        } else {
-            AnalysisFailureCategory.UNAVAILABLE
+        val category = when {
+            (metadata.protocolResponse as? HttpResponse)?.status?.value == HttpStatus.FORBIDDEN.value() ->
+                AnalysisFailureCategory.MISCONFIGURED
+
+            metadata.errorType == ServiceException.ErrorType.Client && !metadata.isThrottling ->
+                AnalysisFailureCategory.INVALID_REQUEST
+
+            else -> AnalysisFailureCategory.UNAVAILABLE
         }
         throw AnalysisFailureException(category, "분석할 이미지를 받지 못했습니다: $imageKey", e)
     } catch (e: SdkBaseException) {
@@ -234,6 +271,9 @@ data class GeminiGenerateContentResponse(val candidates: List<GeminiCandidate> =
 data class GeminiCandidate(val content: GeminiContent?)
 data class GeminiContent(val parts: List<GeminiPart> = emptyList())
 data class GeminiPart(val text: String?)
+private data class GeminiErrorResponse(val error: GeminiError?)
+private data class GeminiError(val details: List<GeminiErrorDetail> = emptyList())
+private data class GeminiErrorDetail(val reason: String?)
 private data class GeminiNutritionResponse(
     val isFood: Boolean,
     val rejectReason: String,

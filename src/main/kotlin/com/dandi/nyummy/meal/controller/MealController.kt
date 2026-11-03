@@ -104,7 +104,8 @@ class MealController(
 
     @Operation(
         summary = "식사 생성",
-        description = "업로드된 이미지 키로 식사를 생성하고 영양 분석을 수행한 뒤, 식사 ID와 분석 상태를 반환한다. " +
+        description = "업로드된 이미지 키로 식사를 생성하고 영양 분석을 요청한 뒤, 식사 ID와 분석 상태(WAITING)를 반환한다. " +
+            "분석은 서버에서 따로 진행되므로 결과는 영양 분석 상태 조회 API로 확인한다. 분석이 끝나면 알림도 보낸다. " +
             "기록이 끝나면 보상 상자 우편이 하나 생기고, 응답의 rewardBoxCategory에 그 상자의 등급을 담는다. " +
             "상자에 든 코인 수는 응답에 없고 우편을 받을 때 알 수 있다. 분석이 실패해도 상자는 지급된다. " +
             "영양 정보가 필요하면 식사 단건 조회 API를 사용한다.",
@@ -150,7 +151,11 @@ class MealController(
         @Parameter(description = "식사 ID") @PathVariable @NotNull @Valid mealId: Long,
     ): MealStatusResponse = mealService.getMealStatus(user.userId, mealId)
 
-    @Operation(summary = "영양 분석 재시도", description = "실패한 식사의 영양 분석을 다시 시도하고 변경된 분석 상태를 반환한다.")
+    @Operation(
+        summary = "영양 분석 재시도",
+        description = "실패한(FAILED) 식사의 영양 분석을 다시 요청하고 분석 상태(WAITING)를 반환한다. " +
+            "결과는 영양 분석 상태 조회 API로 확인한다.",
+    )
     @ApiErrorCodes(
         meal = [MealErrorCode.MEAL_NOT_FOUND, MealErrorCode.ANALYSIS_NOT_RETRYABLE],
         auth = [AuthErrorCode.FORBIDDEN],

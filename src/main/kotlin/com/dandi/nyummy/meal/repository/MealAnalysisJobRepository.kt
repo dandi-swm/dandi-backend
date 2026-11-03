@@ -53,4 +53,43 @@ interface MealAnalysisJobRepository : JpaRepository<MealAnalysisJob, Long> {
         @Param("ids") ids: Collection<Long>,
         @Param("leaseTimeToLiveSeconds") leaseTimeToLiveSeconds: Long,
     ): Int
+
+    /**
+     * 작업이 아직 [leaseCount]번째 시도일 때만 지운다. 지운 행 수가 0이면 lease가 만료돼 다른 Worker가 가져갔거나 이미 끝난 작업이다.
+     *
+     * 조회 후 삭제하는 파생 메서드와 달리 한 문장이라, 확인과 삭제 사이에 다른 Worker가 끼어들 수 없다.
+     */
+    @Modifying
+    @Query("delete from MealAnalysisJob j where j.id = :id and j.leaseCount = :leaseCount")
+    fun deleteByIdAndLeaseCount(@Param("id") id: Long, @Param("leaseCount") leaseCount: Int): Int
+
+    /**
+     * 작업이 아직 [leaseCount]번째 시도일 때만 lease를 풀어 대기로 되돌린다. 바뀐 행 수가 0이면 이 Worker의 작업이 아니다.
+     * lease_count는 그대로 두어, 다음에 가져갈 때 다음 번호가 된다.
+     */
+    @Modifying
+    @Query("update MealAnalysisJob j set j.leaseExpiresAt = null where j.id = :id and j.leaseCount = :leaseCount")
+    fun resetLease(@Param("id") id: Long, @Param("leaseCount") leaseCount: Int): Int
+
+    /**
+     * 작업이 아직 [leaseCount]번째 시도일 때만 lease_count를 하나 내려 시도 횟수를 쓰지 않게 하고,
+     * 지금(DB 시계)부터 [delaySeconds]초가 지나면 다시 가져갈 수 있게 둔다. 0이면 다음 polling에서 바로 가져간다.
+     * 바뀐 행 수가 0이면 이 Worker의 작업이 아니다.
+     */
+    @Modifying
+    @Query(
+        value = """
+            UPDATE meal_analysis_jobs
+            SET lease_expires_at = NOW() + INTERVAL :delaySeconds SECOND,
+                lease_count = lease_count - 1
+            WHERE id = :id
+                AND lease_count = :leaseCount
+        """,
+        nativeQuery = true,
+    )
+    fun cancelLease(
+        @Param("id") id: Long,
+        @Param("leaseCount") leaseCount: Int,
+        @Param("delaySeconds") delaySeconds: Long,
+    ): Int
 }

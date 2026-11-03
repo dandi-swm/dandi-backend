@@ -31,11 +31,14 @@ class MealE2eTest {
         var rewardBoxMailId: Long? = null
 
         try {
-            // 1. 분석 완료. Gemini 응답은 실행마다 달라 가끔 실패한다. 앱처럼 재시도 API로 다시 시도한다.
-            var status = created.status
+            // 1. 분석 완료. 분석은 Worker가 따로 하므로 기록 응답은 WAITING이고, 상태 조회 API로 끝날 때까지 기다린다.
+            // Gemini 응답은 실행마다 달라 가끔 실패한다. 앱처럼 재시도 API로 다시 요청한다.
+            assertEquals("WAITING", created.status)
+            var status = waitForAnalysis(mealId)
             var retryCount = 0
             while (status == "FAILED" && retryCount < MAX_ANALYSIS_RETRY_COUNT) {
-                status = retryNutritionAnalysis(mealId)
+                assertEquals("WAITING", retryNutritionAnalysis(mealId))
+                status = waitForAnalysis(mealId)
                 retryCount++
             }
             assertEquals(
@@ -284,7 +287,7 @@ class MealE2eTest {
     } Then {
         statusCode(200)
         body("keySet()", hasItems("id", "status", "rewardBoxCategory"))
-        body("status", oneOf("COMPLETED", "FAILED"))
+        body("status", equalTo("WAITING"))
         body("rewardBoxCategory", oneOf("BRONZE", "SILVER", "GOLD"))
     } Extract {
         val response = jsonPath()
@@ -327,9 +330,30 @@ class MealE2eTest {
         post("/api/v1/meals/$mealId/analysis")
     } Then {
         statusCode(200)
-        body("status", oneOf("COMPLETED", "FAILED"))
     } Extract {
         path("status")
+    }
+
+    private fun getAnalysisStatus(mealId: Long): String = Given {
+        spec(RequestSpecs.createAuthorizedSpec())
+    } When {
+        get("/api/v1/meals/$mealId/analysis")
+    } Then {
+        statusCode(200)
+        body("keySet()", hasItems("id", "status"))
+    } Extract {
+        path("status")
+    }
+
+    // 분석이 COMPLETED나 FAILED로 끝날 때까지 상태 조회 API를 폴링한다. 시간 안에 끝나지 않으면 마지막 상태를 돌려준다.
+    private fun waitForAnalysis(mealId: Long): String {
+        val deadline = System.currentTimeMillis() + ANALYSIS_WAIT_TIMEOUT_MILLIS
+        var status = getAnalysisStatus(mealId)
+        while (status !in FINISHED_ANALYSIS_STATUSES && System.currentTimeMillis() < deadline) {
+            Thread.sleep(ANALYSIS_POLL_INTERVAL_MILLIS)
+            status = getAnalysisStatus(mealId)
+        }
+        return status
     }
 
     // 우편 목록은 최신순이라 첫 우편이 가장 최근 우편이다. 우편이 하나도 없으면 null이다.
@@ -352,6 +376,11 @@ class MealE2eTest {
     companion object {
         // 첫 분석을 포함해 최대 3번 시도한다. 그래도 실패하면 일시적 흔들림이 아니라 실제 문제로 본다.
         private const val MAX_ANALYSIS_RETRY_COUNT = 2
+
+        // 서버의 lease는 60초이고 Gemini 응답은 p95 약 13초다. 재시도까지 끝날 시간을 두고 2초마다 묻는다.
+        private const val ANALYSIS_WAIT_TIMEOUT_MILLIS = 90_000L
+        private const val ANALYSIS_POLL_INTERVAL_MILLIS = 2_000L
+        private val FINISHED_ANALYSIS_STATUSES = setOf("COMPLETED", "FAILED")
 
         // 앱이 상자 이미지 경로를 조립하는 번호. 서버의 RewardBoxCategory.id와 같은 약속이다.
         private val REWARD_BOX_IDS = mapOf("BRONZE" to 1, "SILVER" to 2, "GOLD" to 3)

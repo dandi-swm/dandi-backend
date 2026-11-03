@@ -18,10 +18,10 @@ import com.dandi.nyummy.meal.dto.CreateMealRequest
 import com.dandi.nyummy.meal.dto.RewardBoxResult
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.enum.MealStatus
+import com.dandi.nyummy.meal.repository.MealAnalysisJobRepository
 import com.dandi.nyummy.meal.repository.MealRepository
 import com.dandi.nyummy.user.entity.Profile
 import com.dandi.nyummy.user.repository.ProfileRepository
-import com.dandi.nyummy.worker.service.AnalysisService
 import io.mockk.Runs
 import io.mockk.every
 import io.mockk.just
@@ -37,10 +37,13 @@ import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 
 /**
  * createMeal의 검사·확정 순서와 mealAt 결정, createTutorialMeal의 완료 기록과 보상 상자 우편,
- * getMealStatus의 조회·소유권 검증, retryNutritionAnalysis의 재시도 가능 여부 검사를 다룬다.
+ * getMealStatus의 조회·소유권 검증, retryNutritionAnalysis의 재시도 가능 여부 검사,
+ * updateMeal·deleteMeal이 식사를 잠가 읽는지와 검증을 다룬다.
  * 하루 정책 자체는 MealAttemptServiceTest가 맡는다.
  */
 class MealServiceTest {
@@ -56,8 +59,8 @@ class MealServiceTest {
         RewardBoxCategory.GOLD to RewardBoxProperties(rate = 20, minCoinQuantity = 350, maxCoinQuantity = 500),
     )
 
-    private val analysisService = mockk<AnalysisService>()
     private val mealRepository = mockk<MealRepository>()
+    private val mealAnalysisJobRepository = mockk<MealAnalysisJobRepository>()
     private val imageService = mockk<ImageService>()
     private val mealAttemptService = mockk<MealAttemptService>()
     private val profileRepository = mockk<ProfileRepository>()
@@ -67,8 +70,8 @@ class MealServiceTest {
     private val mailService = mockk<MailService>()
 
     private val mealService = MealService(
-        analysisService = analysisService,
         mealRepository = mealRepository,
+        mealAnalysisJobRepository = mealAnalysisJobRepository,
         imageService = imageService,
         mealAttemptService = mealAttemptService,
         clock = clock,
@@ -98,7 +101,7 @@ class MealServiceTest {
         every { random.nextInt(100) } returns 85
         every { random.nextInt(350, 501) } returns 412
         every { mealTransactionService.createMeal(capture(savedMeal), any(), any()) } answers { firstArg() }
-        every { analysisService.analyzeNutrition(any()) } just Runs
+        every { mealAnalysisJobRepository.save(any()) } answers { firstArg() }
     }
 
     /** ImageService가 공통 검증을 통과시킨 뒤 콜백을 실행하는 동작을 흉내 낸다. */
@@ -118,7 +121,7 @@ class MealServiceTest {
     }
 
     @Test
-    fun `횟수 검사 후 식사 용도로 확정하고, EXIF 촬영 시각으로 식사를 저장해 분석한다`() {
+    fun `횟수 검사 후 식사 용도로 확정하고, EXIF 촬영 시각으로 식사를 저장한다`() {
         val capturedAt = now.minusSeconds(600)
         givenConfirmUpload(capturedAt)
 
@@ -131,8 +134,17 @@ class MealServiceTest {
             mealAttemptService.validateDailyCount(userId)
             imageService.confirmUpload(userId, ImagePurpose.MEAL, imageKey, any())
             mealTransactionService.createMeal(any(), any(), any())
-            analysisService.analyzeNutrition(savedMeal.captured)
         }
+    }
+
+    @Test
+    fun `식사를 기록해도 분석 작업 저장은 트랜잭션 서비스에 맡기고 WAITING을 돌려준다`() {
+        givenConfirmUpload(now)
+
+        val result = mealService.createMeal(userId, request)
+
+        assertEquals(MealStatus.WAITING, result.status)
+        verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
     }
 
     @Test
@@ -198,7 +210,6 @@ class MealServiceTest {
 
         assertBusinessException(MealErrorCode.STALE_IMAGE) { mealService.createMeal(userId, request) }
         verify(exactly = 0) { mealTransactionService.createMeal(any(), any(), any()) }
-        verify(exactly = 0) { analysisService.analyzeNutrition(any()) }
     }
 
     // createTutorialMeal
@@ -293,51 +304,157 @@ class MealServiceTest {
     // retryNutritionAnalysis
 
     @Test
-    fun `FAILED인 식사를 재시도하면 분석하고 분석 뒤의 상태를 돌려준다`() {
+    fun `FAILED인 식사를 재시도하면 작업을 다시 쌓고 WAITING을 돌려준다`() {
         val meal = Meal(status = MealStatus.FAILED, imageKey = imageKey, mealAt = now, userId = userId)
-        every { mealRepository.findMealByIdAndDeletedAtIsNull(mealId) } returns meal
-        every { analysisService.analyzeNutrition(meal) } answers { meal.updateStatus(MealStatus.COMPLETED) }
+        every { mealRepository.findMealWithLockById(mealId) } returns meal
 
         val response = mealService.retryNutritionAnalysis(userId, mealId)
 
-        verify(exactly = 1) { analysisService.analyzeNutrition(meal) }
+        verify(exactly = 1) { mealAnalysisJobRepository.save(match { it.mealId == meal.id }) }
+        assertEquals(MealStatus.WAITING, meal.status)
         assertEquals(meal.id, response.id)
-        assertEquals(MealStatus.COMPLETED, response.status)
+        assertEquals(MealStatus.WAITING, response.status)
     }
 
     @Test
-    fun `재시도할 식사가 없거나 삭제됐으면 MEAL_NOT_FOUND 예외를 던지고 분석하지 않는다`() {
-        every { mealRepository.findMealByIdAndDeletedAtIsNull(mealId) } returns null
+    fun `재시도할 식사가 없으면 MEAL_NOT_FOUND 예외를 던지고 작업을 쌓지 않는다`() {
+        every { mealRepository.findMealWithLockById(mealId) } returns null
 
         assertBusinessException(MealErrorCode.MEAL_NOT_FOUND) { mealService.retryNutritionAnalysis(userId, mealId) }
 
-        verify(exactly = 0) { analysisService.analyzeNutrition(any()) }
+        verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
     }
 
     @Test
-    fun `다른 사용자의 식사를 재시도하면 FORBIDDEN 예외를 던지고 분석하지 않는다`() {
+    fun `재시도할 식사가 지워졌으면 MEAL_NOT_FOUND 예외를 던지고 작업을 쌓지 않는다`() {
+        val meal = Meal(status = MealStatus.FAILED, imageKey = imageKey, mealAt = now, userId = userId).apply {
+            updateDeletedAt(now.minusSeconds(5))
+        }
+        every { mealRepository.findMealWithLockById(mealId) } returns meal
+
+        assertBusinessException(MealErrorCode.MEAL_NOT_FOUND) { mealService.retryNutritionAnalysis(userId, mealId) }
+
+        verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
+    }
+
+    @Test
+    fun `다른 사용자의 식사를 재시도하면 FORBIDDEN 예외를 던지고 작업을 쌓지 않는다`() {
         val otherUserId = 2L
         val meal = Meal(status = MealStatus.FAILED, imageKey = imageKey, mealAt = now, userId = otherUserId)
-        every { mealRepository.findMealByIdAndDeletedAtIsNull(mealId) } returns meal
+        every { mealRepository.findMealWithLockById(mealId) } returns meal
 
         assertBusinessException(AuthErrorCode.FORBIDDEN) { mealService.retryNutritionAnalysis(userId, mealId) }
 
-        verify(exactly = 0) { analysisService.analyzeNutrition(any()) }
+        verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
     }
 
     @Test
-    fun `FAILED가 아닌 식사를 재시도하면 ANALYSIS_NOT_RETRYABLE 예외를 던지고 분석하지 않는다`() {
+    fun `FAILED가 아닌 식사를 재시도하면 ANALYSIS_NOT_RETRYABLE 예외를 던지고 작업을 쌓지 않는다`() {
         val notRetryableStatuses = MealStatus.entries - MealStatus.FAILED
 
         notRetryableStatuses.forEach { status ->
             val meal = Meal(status = status, imageKey = imageKey, mealAt = now, userId = userId)
-            every { mealRepository.findMealByIdAndDeletedAtIsNull(mealId) } returns meal
+            every { mealRepository.findMealWithLockById(mealId) } returns meal
 
             assertBusinessException(MealErrorCode.ANALYSIS_NOT_RETRYABLE) {
                 mealService.retryNutritionAnalysis(userId, mealId)
             }
         }
 
-        verify(exactly = 0) { analysisService.analyzeNutrition(any()) }
+        verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
+    }
+
+    // updateMeal
+
+    @Test
+    fun `이름을 바꾸면 잠가 읽은 식사의 이름을 바꾸고 응답에 담는다`() {
+        val meal = Meal(status = MealStatus.COMPLETED, imageKey = imageKey, mealAt = now, userId = userId)
+        every { mealRepository.findMealWithLockById(mealId) } returns meal
+        every { imageService.createImageUrl(imageKey) } returns "https://image"
+        every { analysisFeedbackService.canCreateAnalysisFeedback(meal) } returns false
+
+        val response = mealService.updateMeal(userId, mealId, "비빔밥")
+
+        verify(exactly = 1) { mealRepository.findMealWithLockById(mealId) }
+        assertEquals("비빔밥", meal.name)
+        assertEquals("비빔밥", response.name)
+        assertEquals(MealStatus.COMPLETED, response.status)
+    }
+
+    @Test
+    fun `이름을 바꿀 식사가 없으면 MEAL_NOT_FOUND 예외를 던진다`() {
+        every { mealRepository.findMealWithLockById(mealId) } returns null
+
+        assertBusinessException(MealErrorCode.MEAL_NOT_FOUND) { mealService.updateMeal(userId, mealId, "비빔밥") }
+    }
+
+    @Test
+    fun `이름을 바꿀 식사가 지워졌으면 MEAL_NOT_FOUND 예외를 던지고 이름을 바꾸지 않는다`() {
+        val meal = Meal(status = MealStatus.COMPLETED, imageKey = imageKey, mealAt = now, userId = userId).apply {
+            updateName("김밥")
+            updateDeletedAt(now.minusSeconds(5))
+        }
+        every { mealRepository.findMealWithLockById(mealId) } returns meal
+
+        assertBusinessException(MealErrorCode.MEAL_NOT_FOUND) { mealService.updateMeal(userId, mealId, "비빔밥") }
+
+        assertEquals("김밥", meal.name)
+    }
+
+    @Test
+    fun `다른 사용자의 식사 이름을 바꾸면 FORBIDDEN 예외를 던지고 이름을 바꾸지 않는다`() {
+        val otherUserId = 2L
+        val meal = Meal(status = MealStatus.COMPLETED, imageKey = imageKey, mealAt = now, userId = otherUserId).apply {
+            updateName("김밥")
+        }
+        every { mealRepository.findMealWithLockById(mealId) } returns meal
+
+        assertBusinessException(AuthErrorCode.FORBIDDEN) { mealService.updateMeal(userId, mealId, "비빔밥") }
+
+        assertEquals("김밥", meal.name)
+    }
+
+    // deleteMeal
+
+    @Test
+    fun `식사를 지우면 잠가 읽은 식사에 삭제 시각을 남긴다`() {
+        val meal = Meal(status = MealStatus.ANALYZING, imageKey = imageKey, mealAt = now, userId = userId)
+        every { mealRepository.findMealWithLockById(mealId) } returns meal
+
+        mealService.deleteMeal(userId, mealId)
+
+        verify(exactly = 1) { mealRepository.findMealWithLockById(mealId) }
+        assertNotNull(meal.deletedAt)
+    }
+
+    @Test
+    fun `지울 식사가 없으면 MEAL_NOT_FOUND 예외를 던진다`() {
+        every { mealRepository.findMealWithLockById(mealId) } returns null
+
+        assertBusinessException(MealErrorCode.MEAL_NOT_FOUND) { mealService.deleteMeal(userId, mealId) }
+    }
+
+    @Test
+    fun `이미 지운 식사를 지우면 MEAL_NOT_FOUND 예외를 던지고 삭제 시각을 바꾸지 않는다`() {
+        val deletedAt = now.minusSeconds(5)
+        val meal = Meal(status = MealStatus.COMPLETED, imageKey = imageKey, mealAt = now, userId = userId).apply {
+            updateDeletedAt(deletedAt)
+        }
+        every { mealRepository.findMealWithLockById(mealId) } returns meal
+
+        assertBusinessException(MealErrorCode.MEAL_NOT_FOUND) { mealService.deleteMeal(userId, mealId) }
+
+        assertEquals(deletedAt, meal.deletedAt)
+    }
+
+    @Test
+    fun `다른 사용자의 식사를 지우면 FORBIDDEN 예외를 던지고 지우지 않는다`() {
+        val otherUserId = 2L
+        val meal = Meal(status = MealStatus.COMPLETED, imageKey = imageKey, mealAt = now, userId = otherUserId)
+        every { mealRepository.findMealWithLockById(mealId) } returns meal
+
+        assertBusinessException(AuthErrorCode.FORBIDDEN) { mealService.deleteMeal(userId, mealId) }
+
+        assertNull(meal.deletedAt)
     }
 }

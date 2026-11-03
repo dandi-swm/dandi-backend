@@ -3,21 +3,20 @@ package com.dandi.nyummy.meal.service
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.UserErrorCode
 import com.dandi.nyummy.mail.service.MailService
-import com.dandi.nyummy.meal.dto.NutritionAnalysisResult
 import com.dandi.nyummy.meal.dto.RewardBoxResult
 import com.dandi.nyummy.meal.entity.Meal
-import com.dandi.nyummy.meal.enum.MealStatus
+import com.dandi.nyummy.meal.entity.MealAnalysisJob
+import com.dandi.nyummy.meal.repository.MealAnalysisJobRepository
 import com.dandi.nyummy.meal.repository.MealRepository
 import com.dandi.nyummy.streak.service.StreakService
 import com.dandi.nyummy.user.repository.ProfileRepository
-import com.dandi.nyummy.worker.service.AnalysisService
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
 
 /**
  * 식사 도메인에서 외부 호출(S3·AI)과 분리한 짧은 트랜잭션을 모은다.
- * [MealService.createMeal]과 [AnalysisService.analyzeNutrition]은 외부 호출 때문에 트랜잭션을 열지 않고,
+ * [MealService.createMeal]은 외부 호출 때문에 트랜잭션을 열지 않고,
  * DB에 쓰는 부분만 이 빈을 거쳐 커밋한다. 같은 클래스 안에서 부르면 프록시를 거치지 않아 트랜잭션이 걸리지 않으므로
  * 별도 빈으로 두고, 이 클래스의 메서드끼리도 서로 부르지 않는다.
  */
@@ -26,6 +25,7 @@ class MealTransactionService(
     private val profileRepository: ProfileRepository,
     private val mealAttemptService: MealAttemptService,
     private val mealRepository: MealRepository,
+    private val mealAnalysisJobRepository: MealAnalysisJobRepository,
     private val mailService: MailService,
     private val streakService: StreakService,
 ) {
@@ -34,8 +34,10 @@ class MealTransactionService(
     }
 
     /**
-     * 식사와 보상 상자 우편을 한 트랜잭션으로 저장하고 연속 기록을 갱신한다. 우편 저장이나 연속 기록 갱신이
+     * 식사와 보상 상자 우편, 영양 분석 작업을 한 트랜잭션으로 저장하고 연속 기록을 갱신한다. 우편·작업 저장이나 연속 기록 갱신이
      * 실패하면 식사도 남기지 않는다. 연속 기록은 분석 결과와 상관없이 식사를 만든 날을 인정하므로 여기서 갱신한다.
+     *
+     * 영양 분석은 Worker가 작업을 가져가 따로 처리한다. 식사와 작업을 같은 트랜잭션에 저장하므로, 식사만 남고 분석이 빠지는 일이 없다.
      *
      * 하루 시도 횟수는 [MealService.createMeal]이 이미지 확정 전에 한 번 거르지만, 그 검사와 저장 사이에
      * 같은 사용자의 요청이 동시에 들어오면 둘 다 통과할 수 있다. 그래서 프로필 행을 잠가 같은 사용자의 기록을
@@ -63,6 +65,7 @@ class MealTransactionService(
         mealAttemptService.validateDailyCount(meal.userId)
 
         mealRepository.save(meal)
+        mealAnalysisJobRepository.save(MealAnalysisJob(mealId = meal.id))
         mailService.createRewardBoxMail(
             userId = meal.userId,
             rewardBoxCategory = rewardBox.category,
@@ -72,29 +75,5 @@ class MealTransactionService(
         )
         streakService.updateStreak(meal.userId)
         return meal
-    }
-
-    /**
-     * 식사의 분석 상태를 변경하고 즉시 커밋한다.
-     *
-     * @param meal 상태를 변경할 [Meal]
-     * @param status 변경할 [MealStatus]
-     */
-    @Transactional
-    fun updateStatus(meal: Meal, status: MealStatus) {
-        meal.updateStatus(status)
-        mealRepository.save(meal)
-    }
-
-    /**
-     * 식사의 영양 분석 결과(이름·아이콘·영양)를 저장하고 즉시 커밋한다.
-     *
-     * @param meal 분석 결과를 저장할 [Meal]
-     * @param analysisResult 저장할 [NutritionAnalysisResult]
-     */
-    @Transactional
-    fun updateAnalysisResult(meal: Meal, analysisResult: NutritionAnalysisResult) {
-        meal.updateAnalysisResult(analysisResult)
-        mealRepository.save(meal)
     }
 }
