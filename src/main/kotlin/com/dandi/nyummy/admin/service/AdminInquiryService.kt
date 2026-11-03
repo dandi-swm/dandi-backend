@@ -111,6 +111,7 @@ class AdminInquiryService(
             val result = notificationService.sendServicePush(
                 inquiry.userId,
                 PushMessage(
+                    userId = inquiry.userId,
                     type = PushType.INQUIRY_ANSWERED,
                     notificationId = NotificationId.createInquiryAnswerId(inquiry.id),
                     title = "문의에 답변이 왔다냥 🐾",

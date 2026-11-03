@@ -9,6 +9,7 @@ enum class PushType {
 }
 
 data class PushMessage(
+    val userId: Long,
     val type: PushType,
     val notificationId: String,
     val title: String,

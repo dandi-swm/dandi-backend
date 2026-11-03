@@ -78,6 +78,7 @@ class MealReminderService(
             }
 
             target.token to PushMessage(
+                userId = target.userId,
                 type = PushType.MEAL_REMINDER,
                 notificationId = notificationId,
                 title = "집사, ${mealTime.label}은 먹었어? \uD83D\uDC3E",

@@ -65,7 +65,7 @@ class RetentionBatchService(
             val daysDiff = ChronoUnit.DAYS.between(target.lastMealAt.atZone(ZONE).toLocalDate(), today)
             val notificationId = NotificationId.createRetentionId(target.userId, today)
 
-            convertPushMessage(notificationId, target.catName, daysDiff)
+            convertPushMessage(target.userId, notificationId, target.catName, daysDiff)
                 ?.takeIf { pushDeduplicationRepository.createSentMark(notificationId, DEDUPLICATION_TIME_TO_LIVE) }
                 ?.let { target.token to it }
         }.toMap()
@@ -92,10 +92,16 @@ class RetentionBatchService(
      * 위에서부터 먼저 맞는 하나만 보낸다. 전용 문구가 있는 날은 매일 문구를 대체하고,
      * 15일 이후로는 다시 매일 문구로 돌아간다.
      */
-    private fun convertPushMessage(notificationId: String, catName: String, daysDiff: Long): PushMessage? = when {
+    private fun convertPushMessage(
+        userId: Long,
+        notificationId: String,
+        catName: String,
+        daysDiff: Long,
+    ): PushMessage? = when {
         daysDiff <= 0L -> null
 
         daysDiff == SLEEP_DAYS -> PushMessage(
+            userId = userId,
             type = PushType.RETENTION,
             notificationId = notificationId,
             title = "잠든 $catName 💤",
@@ -104,6 +110,7 @@ class RetentionBatchService(
         )
 
         daysDiff in LOSE_WEIGHT_DAYS -> PushMessage(
+            userId = userId,
             type = PushType.RETENTION,
             notificationId = notificationId,
             title = "$catName 홀쭉해지고 있어요 🐾",
@@ -112,6 +119,7 @@ class RetentionBatchService(
         )
 
         else -> PushMessage(
+            userId = userId,
             type = PushType.RETENTION,
             notificationId = notificationId,
             title = "$catName 밥 챙겨주라냥 🐾",

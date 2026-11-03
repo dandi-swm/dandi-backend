@@ -230,6 +230,7 @@ class AnalysisService(
 
         return when {
             pushResult.status == MealStatus.COMPLETED -> PushMessage(
+                userId = pushResult.userId,
                 type = PushType.ANALYSIS_COMPLETED,
                 notificationId = notificationId,
                 title = "$catName 맛있게 먹었다냥 🐾",
@@ -238,6 +239,7 @@ class AnalysisService(
             )
 
             failureCategory == AnalysisFailureCategory.NOT_FOOD -> PushMessage(
+                userId = pushResult.userId,
                 type = PushType.ANALYSIS_FAILED,
                 notificationId = notificationId,
                 title = "음식 사진이 아닌 것 같다냥 🐾",
@@ -247,6 +249,7 @@ class AnalysisService(
 
             // 재시도까지 다 실패한 일시적인 실패. 사진 탓이 아니므로 잠시 뒤에 다시 하라고 알린다.
             failureCategory == AnalysisFailureCategory.UNAVAILABLE -> PushMessage(
+                userId = pushResult.userId,
                 type = PushType.ANALYSIS_FAILED,
                 notificationId = notificationId,
                 title = "지금은 소화가 안 된다냥 🐾",
@@ -255,6 +258,7 @@ class AnalysisService(
             )
 
             else -> PushMessage(
+                userId = pushResult.userId,
                 type = PushType.ANALYSIS_FAILED,
                 notificationId = notificationId,
                 title = "사진을 못 알아봤다냥 🐾",

@@ -9,6 +9,8 @@ import org.springframework.data.repository.query.Param
 interface DeviceTokenRepository : JpaRepository<DeviceToken, Long> {
     fun findDeviceTokenByUserId(userId: Long): DeviceToken?
 
+    fun findDeviceTokensByTokenIn(tokens: Collection<String>): List<DeviceToken>
+
     @Modifying(clearAutomatically = true)
     @Query("delete from DeviceToken d where d.token = :token and d.userId <> :userId")
     fun deleteByTokenAndNotUserId(@Param("token") token: String, @Param("userId") userId: Long): Int
