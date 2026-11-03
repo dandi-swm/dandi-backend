@@ -23,8 +23,7 @@ class CoinController(private val coinService: CoinService) {
         summary = "코인 내역 조회",
         description = "코인을 얻고 쓴 내역을 최신순으로 조회한다. 무한 스크롤용 cursor 방식이다. " +
             "첫 요청은 cursor 없이 보내고, 다음 요청부터는 직전 응답의 nextCursor를 cursor로 보낸다. " +
-            "hasNext가 false면 마지막 묶음이며 nextCursor는 null이다. quantity는 부호가 있다(+ 획득, − 사용). " +
-            "현재는 요청과 관계없이 고정 응답을 반환한다.",
+            "hasNext가 false면 마지막 묶음이며 nextCursor는 null이다. quantity는 부호가 있다(+ 획득, − 사용).",
     )
     @GetMapping("/histories")
     fun getCoinHistories(
