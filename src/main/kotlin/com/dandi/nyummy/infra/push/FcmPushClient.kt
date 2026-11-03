@@ -2,6 +2,7 @@ package com.dandi.nyummy.infra.push
 
 import com.dandi.nyummy.infra.push.dto.PushMessage
 import com.dandi.nyummy.infra.push.dto.PushResult
+import com.google.firebase.messaging.AndroidConfig
 import com.google.firebase.messaging.BatchResponse
 import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.messaging.FirebaseMessagingException
@@ -35,6 +36,12 @@ class FcmPushClient(
         private const val KEY_APP_LINK = "appLink"
         private const val KEY_SENT_AT = "sentAt"
 
+        // normal 우선순위는 Doze 중인 기기에 늦게 도착할 수 있다. 모든 푸시가 사용자에게 보이는 알림이라 high로 보낸다.
+        // 생략했을 때의 기본값은 FCM 문서마다 설명이 달라 명시한다.
+        private val ANDROID_CONFIG = AndroidConfig.builder()
+            .setPriority(AndroidConfig.Priority.HIGH)
+            .build()
+
         private val logger = LoggerFactory.getLogger(FcmPushClient::class.java)
     }
 
@@ -65,6 +72,7 @@ class FcmPushClient(
                         .build(),
                 )
                 .putAllData(convertData(message))
+                .setAndroidConfig(ANDROID_CONFIG)
                 .build()
         }
 
