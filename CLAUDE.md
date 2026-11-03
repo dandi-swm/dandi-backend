@@ -200,7 +200,7 @@
 - 프로모션 대상 `PromotionCategory`(Target 금지 — 알림 발송 대상과 충돌) — 분류 칩 `ShopCategory`·아이템 분류 `RoomItemCategory`와 다른 enum. 할인율 `discountRate`, 진열 순서 `displayOrder`(마이룸 쌓임 순서 `ZIndex`와 구분)
 - 진행 중이고 사용자가 대상인 프로모션 `Eligible`(`isEligible`, `getEligiblePromotions`) — 대상 종류 `PromotionCategory`와 구분
 - 내부 배치가 하루치로 만드는 오늘의 할인 프로모션 `DailyPromotion`(대상 `DAILY`), 그 할인율 `dailyDiscountRate`(프로모션의 `discountRate`에 넣는 설정값)
-- 신입 집사로 보는 기간 `newUserTimeToLive`, 신규 태그를 붙이는 기간 `newProductTimeToLive`
+- 신입 집사로 보는 기간 `newUserTimeToLive`, 신규 태그를 붙이는 기간 `newProductTimeToLive`, 구매를 최근 판매량으로 세는 기간 `salesCountTimeToLive`
 - 앱(Remote Config)이 정한 A/B 그룹 `Variant`(Test·Group·Bucket 금지). 추천 탭 배치 그룹은 헤더 `X-Shop-Layout-Variant`로 받는다
 - 상점 구매 `ItemPurchase`(`itemPurchaseId`, Order 금지) — 1개 결제가 `purchasePrice`와 다른 개념. 재시도를 알아보는 키는 헤더 `Idempotency-Key`(RequestId·Nonce 금지)
 - 구매 안의 상품 1개 `ItemPurchaseProduct`(환불 단위), 그 구성품 하나 `ItemPurchaseLine`(판매 구성 `ProductItem`과 다른 것, Component·Part 금지)
