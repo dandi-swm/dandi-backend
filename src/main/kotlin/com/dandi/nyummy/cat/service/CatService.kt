@@ -6,6 +6,7 @@ import com.dandi.nyummy.cat.config.CatProperties
 import com.dandi.nyummy.cat.dto.CatAnimationResponse
 import com.dandi.nyummy.cat.dto.CatResponse
 import com.dandi.nyummy.cat.dto.CreateCatRequest
+import com.dandi.nyummy.cat.dto.UpdateCatRequest
 import com.dandi.nyummy.cat.entity.Cat
 import com.dandi.nyummy.cat.enum.CatWeight
 import com.dandi.nyummy.cat.mapper.toCat
@@ -100,6 +101,28 @@ class CatService(
         val cat = updateCatWeight(userId)
 
         return cat.toCatResponse()
+    }
+
+    /**
+     * 고양이 정보를 바꾼다. 요청에 담기지 않은 항목(null)은 건드리지 않는다.
+     *
+     * 체형은 평가하지 않는다([updateCatWeight]를 거치지 않는다). 응답에 체형을 담지 않으므로 다음 조회가 평가한다.
+     *
+     * 이름 길이는 생성과 같이 고양이가 있는지보다 먼저 검사한다. 입력 오류를 먼저 알린다.
+     *
+     * @param userId 고양이를 바꾸는 사용자 ID
+     * @throws BusinessException [CatErrorCode.NAME_TOO_LONG] 이름이 [Cat.NAME_MAX_LENGTH]자를 넘는 경우
+     * @throws BusinessException [CatErrorCode.CAT_NOT_FOUND] 사용자의 고양이가 없는 경우
+     */
+    @Transactional
+    fun updateCat(userId: Long, request: UpdateCatRequest) {
+        val name = request.name
+        if (name != null && name.length > Cat.NAME_MAX_LENGTH) throw BusinessException(CatErrorCode.NAME_TOO_LONG)
+
+        val cat = catRepository.findByUserId(userId)
+            ?: throw BusinessException(CatErrorCode.CAT_NOT_FOUND)
+
+        name?.let { cat.updateName(it) }
     }
 
     /**

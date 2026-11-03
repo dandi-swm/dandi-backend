@@ -6,6 +6,7 @@ import jakarta.validation.constraints.AssertTrue
 import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
 import jakarta.validation.constraints.NotBlank
+import jakarta.validation.constraints.Pattern
 
 data class CreateCatRequest(
     // 길이는 앱이 구분할 수 있게 서비스에서 검사한다(api.cat.nameTooLong). @Size는 api.common.invalidInputValue로 나간다.
@@ -34,6 +35,16 @@ data class CreateCatRequest(
         get() = listOfNotNull(breakfastHour, lunchHour, dinnerHour)
             .let { it.size == it.toSet().size }
 }
+
+/**
+ * 고양이 변경 요청. 바꾸려는 항목만 담고 나머지는 생략한다(생략 = null = 유지).
+ */
+data class UpdateCatRequest(
+    // @NotBlank는 null도 거부해 생략을 막는다. @Pattern은 null을 통과시키고 공백만 있는 이름을 거부한다.
+    // 길이는 생성과 같이 서비스에서 검사한다(api.cat.nameTooLong).
+    @field:Pattern(regexp = "(?s).*\\S.*", message = "고양이 이름은 공백일 수 없습니다.")
+    val name: String? = null,
+)
 
 data class CatResponse(
     val id: Long,

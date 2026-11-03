@@ -3,6 +3,7 @@ package com.dandi.nyummy.cat.controller
 import com.dandi.nyummy.cat.dto.CatAnimationResponse
 import com.dandi.nyummy.cat.dto.CatResponse
 import com.dandi.nyummy.cat.dto.CreateCatRequest
+import com.dandi.nyummy.cat.dto.UpdateCatRequest
 import com.dandi.nyummy.cat.entity.Cat
 import com.dandi.nyummy.cat.service.CatService
 import com.dandi.nyummy.config.openapi.ApiErrorCodes
@@ -24,7 +25,7 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
-@Tag(name = "Cat", description = "고양이 캐릭터 정보 및 체형별 애니메이션 조회 API")
+@Tag(name = "Cat", description = "고양이 캐릭터 정보 조회 · 이름 변경 및 체형별 애니메이션 조회 API")
 @RestController
 @RequestMapping("/api/v1/cats")
 class CatController(private val catService: CatService) {
@@ -54,6 +55,19 @@ class CatController(private val catService: CatService) {
     @ApiErrorCodes(cat = [CatErrorCode.CAT_NOT_FOUND])
     @GetMapping
     fun getCat(@CurrentUser user: AuthUser): CatResponse = catService.getCat(user.userId)
+
+    @Operation(
+        summary = "고양이 변경",
+        description = "바꾸려는 항목만 담아 보낸다 — 생략하거나 null로 보낸 항목은 유지된다. 지금은 이름만 바꿀 수 있다. " +
+            "이름은 생성과 같이 ${Cat.NAME_MAX_LENGTH}자 이하이고(String 길이, 이모지는 2자 이상), " +
+            "넘으면 api.cat.nameTooLong, 공백만 있으면 api.common.invalidInputValue다.",
+    )
+    @ApiResponse(responseCode = "200", description = "변경 완료")
+    @ApiErrorCodes(cat = [CatErrorCode.NAME_TOO_LONG, CatErrorCode.CAT_NOT_FOUND])
+    @PatchMapping
+    fun updateCat(@CurrentUser user: AuthUser, @Valid @RequestBody request: UpdateCatRequest) {
+        catService.updateCat(user.userId, request)
+    }
 
     @Operation(
         summary = "고양이 애니메이션 조회",

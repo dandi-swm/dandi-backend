@@ -16,8 +16,16 @@ import org.hamcrest.Matchers.oneOf
 import org.hamcrest.Matchers.startsWith
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class CatE2eTest {
+    companion object {
+        // main의 Cat.NAME_MAX_LENGTH를 쓰지 않는다. 계약이 바뀌면 테스트가 같이 바뀌기 때문이다.
+        private const val NAME_MAX_LENGTH = 8
+        private const val FIRST_CAT_NAME = "초코"
+        private const val SECOND_CAT_NAME = "나비"
+    }
+
     @Test
     fun `고양이 정보를 조회한다`() {
         Given {
@@ -88,6 +96,41 @@ class CatE2eTest {
         assertEquals(name, getCatName(), "거부된 요청이 고양이 이름을 바꿨습니다")
     }
 
+    @Test
+    fun `고양이 이름을 바꾼다`() {
+        val before = getCatName()
+        // 8자를 넘는 옛 이름은 변경 API로 되돌릴 수 없다. 바꾸기 전에 멈춰 고정 계정을 망가뜨리지 않는다.
+        assertTrue(before.length <= NAME_MAX_LENGTH, "고정 계정의 고양이 이름이 ${NAME_MAX_LENGTH}자를 넘어 되돌릴 수 없습니다: $before")
+        // 현재 이름과 같은 이름으로 바꾸면 서버가 아무것도 안 해도 통과하므로, 현재 이름과 다른 후보를 고른다.
+        val requested = if (before == FIRST_CAT_NAME) SECOND_CAT_NAME else FIRST_CAT_NAME
+
+        try {
+            updateCat(mapOf("name" to requested)).statusCode(200)
+            assertEquals(requested, getCatName())
+        } finally {
+            updateCat(mapOf("name" to before))
+        }
+    }
+
+    @Test
+    fun `고양이 이름을 생략하면 그대로 둔다`() {
+        val name = getCatName()
+
+        updateCat(emptyMap()).statusCode(200)
+
+        assertEquals(name, getCatName())
+    }
+
+    @Test
+    fun `바꿀 이름이 8자를 넘거나 공백뿐이면 거부하고 이름을 유지한다`() {
+        val name = getCatName()
+
+        updateCat(mapOf("name" to "가나다라마바사아자")).validateError(400, "api.cat.nameTooLong")
+        updateCat(mapOf("name" to "  ")).validateError(400, "api.common.invalidInputValue")
+
+        assertEquals(name, getCatName(), "거부된 요청이 고양이 이름을 바꿨습니다")
+    }
+
     private fun getCatName(): String = Given {
         spec(RequestSpecs.createAuthorizedSpec())
     } When {
@@ -103,6 +146,15 @@ class CatE2eTest {
         body(mapOf("name" to name))
     } When {
         post("/api/v1/cats")
+    } Then {
+        // 응답 검증은 호출하는 쪽에서 한다
+    }
+
+    private fun updateCat(body: Map<String, Any?>): ValidatableResponse = Given {
+        spec(RequestSpecs.createAuthorizedSpec())
+        body(body)
+    } When {
+        patch("/api/v1/cats")
     } Then {
         // 응답 검증은 호출하는 쪽에서 한다
     }
