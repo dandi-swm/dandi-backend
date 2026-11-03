@@ -167,14 +167,14 @@ class AnalysisServiceTest {
     }
 
     @Test
-    fun `일시적인 실패가 마지막 시도면 실패로 끝내고 실패 알림을 보낸다`() {
+    fun `일시적인 실패가 마지막 시도면 실패로 끝내고 잠시 뒤에 다시 하라고 알린다`() {
         givenAnalysisFailure(lastJob, AnalysisFailureCategory.UNAVAILABLE)
 
         analysisService.analyzeMealAnalysisJob(lastJob)
 
         verify(exactly = 0) { mealAnalysisJobTransactionService.retryMealAnalysis(any()) }
         verify(exactly = 1) { mealAnalysisJobTransactionService.failMealAnalysis(lastJob) }
-        assertFailedPushSent(title = "사진을 못 알아봤다냥 🐾", body = "다시 시도해줄래?")
+        assertFailedPushSent(title = "지금은 소화가 안 된다냥 🐾", body = "잠시 뒤에 다시 시도해줄래?")
     }
 
     @Test
@@ -186,7 +186,7 @@ class AnalysisServiceTest {
 
         verify(exactly = 0) { nutritionAnalysisClient.analyzeNutrition(any()) }
         verify(exactly = 1) { mealAnalysisJobTransactionService.failMealAnalysis(lastJob) }
-        assertFailedPushSent(title = "사진을 못 알아봤다냥 🐾", body = "다시 시도해줄래?")
+        assertFailedPushSent(title = "지금은 소화가 안 된다냥 🐾", body = "잠시 뒤에 다시 시도해줄래?")
     }
 
     @Test
@@ -238,13 +238,14 @@ class AnalysisServiceTest {
     // 분류에 없는 예외
 
     @Test
-    fun `분석 중 분류에 없는 예외가 나면 다시 시도할 수 있어도 실패로 끝낸다`() {
+    fun `분석 중 분류에 없는 예외가 나면 다시 시도할 수 있어도 실패로 끝내고 실패 알림을 보낸다`() {
         every { nutritionAnalysisClient.analyzeNutrition(retryableJob.imageKey) } throws IllegalStateException("예상 밖")
 
         analysisService.analyzeMealAnalysisJob(retryableJob)
 
         verify(exactly = 0) { mealAnalysisJobTransactionService.retryMealAnalysis(any()) }
         verify(exactly = 1) { mealAnalysisJobTransactionService.failMealAnalysis(retryableJob) }
+        assertFailedPushSent(title = "사진을 못 알아봤다냥 🐾", body = "다시 시도해줄래?")
     }
 
     @Test
