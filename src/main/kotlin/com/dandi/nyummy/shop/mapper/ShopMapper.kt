@@ -75,7 +75,7 @@ fun createPriceText(listPrice: Int, purchasePrice: Int): List<RichTextResponse> 
 
     val discountRate = (listPrice - purchasePrice) * 100 / listPrice
     return listOf(
-        RichTextResponse(text = "$discountRate%", typeScale = "numberS", color = "contentPromo"),
+        RichTextResponse(text = "$discountRate%", typeScale = "numberS", color = "contentDanger"),
         coin,
         RichTextResponse(
             text = "${convertCoinToText(purchasePrice)} ",

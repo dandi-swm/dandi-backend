@@ -309,6 +309,7 @@ class ShopServiceTest {
         val item = getRecommendPage().componentOf<ItemListComponentResponse>().content.items.single()
 
         assertEquals(listOf("40%", null, "600 ", "1,000"), item.price.map { it.text })
+        assertEquals("contentDanger", item.price.first().color)
         assertEquals("할인", item.tag?.text)
     }
 
