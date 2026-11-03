@@ -76,6 +76,18 @@ class Profile(
     val isTutorialCompleted: Boolean
         get() = tutorialCompletedAt != null
 
+    /**
+     * 닉네임과 신체 정보를 바꾼다. **null인 항목은 비우지 않고 그대로 둔다** — 프로필 변경 API(PATCH)의 규칙이다.
+     * 값을 실제로 비우는 건 탈퇴 익명화([anonymize])뿐이다.
+     */
+    fun updateProfile(nickname: String?, birth: LocalDate?, gender: Gender?, height: Int?, weight: Int?) {
+        this.nickname = nickname ?: this.nickname
+        this.birth = birth ?: this.birth
+        this.gender = gender ?: this.gender
+        this.height = height ?: this.height
+        this.weight = weight ?: this.weight
+    }
+
     fun updateServicePushEnabled(isServicePushEnabled: Boolean) {
         this.isServicePushEnabled = isServicePushEnabled
     }

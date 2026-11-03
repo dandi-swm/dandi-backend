@@ -18,6 +18,16 @@ Authorization: Bearer {{accessToken}}
 GET {{url}}/api/v1/users/me
 Authorization: Bearer {{accessToken}}
 
+### 프로필 변경 API - 보낸 항목만 바뀐다
+PATCH {{url}}/api/v1/users/me
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "nickname": "냥집사",
+  "weight": 60
+}
+
 ### 알림 수신 설정 조회 API
 GET {{url}}/api/v1/users/me/push
 Authorization: Bearer {{accessToken}}

@@ -8,7 +8,9 @@ import jakarta.validation.constraints.AssertTrue
 import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
 import jakarta.validation.constraints.NotBlank
+import jakarta.validation.constraints.Past
 import jakarta.validation.constraints.Pattern
+import jakarta.validation.constraints.Positive
 import jakarta.validation.constraints.Size
 import java.time.LocalDate
 
@@ -27,6 +29,28 @@ data class UserResponse(
 )
 
 data class HomeUserResponse(val coin: Int, val isTutorialCompleted: Boolean)
+
+/**
+ * 프로필 변경 요청. 바꾸려는 항목만 담고 나머지는 생략한다(생략 = null = 유지).
+ * 그래서 한 번 넣은 값은 이 요청으로 비울 수 없다. 검증은 가입(SignUpRequest)과 같다.
+ */
+data class UpdateProfileRequest(
+    // @NotBlank는 null도 거부해 생략을 막는다. @Pattern은 null을 통과시키고 공백만 있는 닉네임을 거부한다.
+    @field:Pattern(regexp = "(?s).*\\S.*", message = "닉네임은 공백일 수 없습니다.")
+    @field:Size(max = 100)
+    val nickname: String? = null,
+
+    @field:Past
+    val birth: LocalDate? = null,
+
+    val gender: Gender? = null,
+
+    @field:Positive
+    val height: Int? = null,
+
+    @field:Positive
+    val weight: Int? = null,
+)
 
 data class UpdatePasswordRequest(
     @field:NotBlank
