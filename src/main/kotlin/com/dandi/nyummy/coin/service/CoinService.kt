@@ -1,25 +1,30 @@
 package com.dandi.nyummy.coin.service
 
 import com.dandi.nyummy.coin.dto.CoinHistoriesResponse
-import com.dandi.nyummy.coin.dto.CoinHistoryResponse
 import com.dandi.nyummy.coin.entity.Coin
 import com.dandi.nyummy.coin.entity.CoinHistory
 import com.dandi.nyummy.coin.enum.CoinHistoryCategory
+import com.dandi.nyummy.coin.mapper.toCoinHistoryResponse
 import com.dandi.nyummy.coin.repository.CoinHistoryRepository
 import com.dandi.nyummy.coin.repository.CoinRepository
+import com.dandi.nyummy.shop.repository.ItemPurchaseProductRepository
 import org.slf4j.LoggerFactory
+import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
-import java.time.Instant
 
 @Service
 class CoinService(
     private val coinRepository: CoinRepository,
     private val coinHistoryRepository: CoinHistoryRepository,
+    private val itemPurchaseProductRepository: ItemPurchaseProductRepository,
 ) {
     companion object {
         private val logger = LoggerFactory.getLogger(CoinService::class.java)
+        private const val MAIL_CLAIM_TITLE = "우편 받기"
+        private const val ITEM_PURCHASE_TITLE = "상점 구매"
+        private const val IN_APP_PURCHASE_TITLE = "코인 구매"
     }
 
     /**
@@ -121,38 +126,51 @@ class CoinService(
     /**
      * 사용자의 코인 내역을 최신순으로 [size]개씩 조회한다. 무한 스크롤용 cursor 방식이다.
      *
-     * 지금은 해피케이스라 요청과 관계없이 고정 내역을 반환한다. 실제 조회는 coin_histories의 (user_id, id) 인덱스로 붙인다.
+     * 구매 내역의 문구에 상품 이름이 들어가므로, 묶음에 든 구매의 상품 이름을 한 번의 쿼리로 읽는다.
+     * 문구는 조회할 때 만들어 운영자가 상품 이름을 바꾸면 지난 내역의 문구도 바뀐다.
      *
      * @param cursor 직전 묶음의 마지막 coinHistoryId. null이면 가장 최신 내역부터 조회한다
      */
-    fun getCoinHistories(userId: Long, cursor: Long?, size: Int): CoinHistoriesResponse = CoinHistoriesResponse(
-        coinHistories = listOf(
-            CoinHistoryResponse(
-                coinHistoryId = 511,
-                category = CoinHistoryCategory.ROOM_ITEM_PURCHASE,
-                title = "발바닥 방석 외 2개 구매",
-                quantity = -1620,
-                balanceAfter = 860,
-                createdAt = Instant.parse("2026-10-23T06:00:00Z"),
-            ),
-            CoinHistoryResponse(
-                coinHistoryId = 498,
-                category = CoinHistoryCategory.MAIL_CLAIM,
-                title = "우편 받기",
-                quantity = 300,
-                balanceAfter = 2480,
-                createdAt = Instant.parse("2026-10-22T09:00:00Z"),
-            ),
-            CoinHistoryResponse(
-                coinHistoryId = 476,
-                category = CoinHistoryCategory.MAIL_CLAIM,
-                title = "우편 받기",
-                quantity = 150,
-                balanceAfter = 2180,
-                createdAt = Instant.parse("2026-10-21T12:00:00Z"),
-            ),
-        ),
-        nextCursor = null,
-        hasNext = false,
-    )
+    @Transactional(readOnly = true)
+    fun getCoinHistories(userId: Long, cursor: Long?, size: Int): CoinHistoriesResponse {
+        val coinHistories = coinHistoryRepository.findByUserIdAndIdLessThanOrderByIdDesc(
+            userId = userId,
+            cursor = cursor ?: Long.MAX_VALUE,
+            pageable = PageRequest.of(0, size),
+        )
+        val productNames = getItemPurchaseProductNames(coinHistories.content)
+
+        return CoinHistoriesResponse(
+            coinHistories = coinHistories.content.map { coinHistory ->
+                coinHistory.toCoinHistoryResponse(title = createTitle(coinHistory, productNames))
+            },
+            nextCursor = if (coinHistories.hasNext()) coinHistories.content.last().id else null,
+            hasNext = coinHistories.hasNext(),
+        )
+    }
+
+    // 구매 id별 구매 상품 이름. 묶음에 구매가 없으면 쿼리하지 않는다.
+    private fun getItemPurchaseProductNames(coinHistories: List<CoinHistory>): Map<Long, List<String>> {
+        val itemPurchaseIds = coinHistories
+            .filter { it.category == CoinHistoryCategory.ROOM_ITEM_PURCHASE }
+            .mapNotNull { it.sourceId }
+        if (itemPurchaseIds.isEmpty()) return emptyMap()
+
+        return itemPurchaseProductRepository.findItemPurchaseProductNames(itemPurchaseIds)
+            .groupBy({ it.itemPurchaseId }, { it.name })
+    }
+
+    private fun createTitle(coinHistory: CoinHistory, productNames: Map<Long, List<String>>): String =
+        when (coinHistory.category) {
+            CoinHistoryCategory.MAIL_CLAIM -> MAIL_CLAIM_TITLE
+            CoinHistoryCategory.ROOM_ITEM_PURCHASE -> createItemPurchaseTitle(productNames[coinHistory.sourceId])
+            CoinHistoryCategory.IN_APP_PURCHASE -> IN_APP_PURCHASE_TITLE
+        }
+
+    // 상품 1개는 "발바닥 방석 구매", 여러 개는 같은 상품이어도 1개당 한 행이라 "발바닥 방석 외 2개 구매"다
+    private fun createItemPurchaseTitle(productNames: List<String>?): String = when {
+        productNames.isNullOrEmpty() -> ITEM_PURCHASE_TITLE
+        productNames.size == 1 -> "${productNames.first()} 구매"
+        else -> "${productNames.first()} 외 ${productNames.size - 1}개 구매"
+    }
 }

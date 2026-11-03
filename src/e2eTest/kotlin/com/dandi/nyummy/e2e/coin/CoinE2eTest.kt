@@ -2,12 +2,15 @@ package com.dandi.nyummy.e2e.coin
 
 import com.dandi.nyummy.e2e.support.RequestSpecs
 import com.dandi.nyummy.e2e.support.Smoke
+import io.restassured.module.kotlin.extensions.Extract
 import io.restassured.module.kotlin.extensions.Given
 import io.restassured.module.kotlin.extensions.Then
 import io.restassured.module.kotlin.extensions.When
 import org.hamcrest.Matchers.hasItems
 import org.hamcrest.Matchers.instanceOf
+import org.junit.jupiter.api.Assumptions.abort
 import org.junit.jupiter.api.Test
+import kotlin.test.assertTrue
 
 class CoinE2eTest {
     // 조회만 하므로 prod에서도 돌린다. 계정에 내역이 없어도 통과해야 하므로 원소 구조는 보지 않는다.
@@ -24,4 +27,31 @@ class CoinE2eTest {
             body("coinHistories", instanceOf<Any>(List::class.java))
         }
     }
+
+    // 계정에 내역이 두 건 이상일 때만 다음 묶음을 볼 수 있어, 없으면 실패가 아니라 건너뛴다.
+    @Smoke
+    @Test
+    fun `nextCursor로 다음 묶음을 조회하면 더 오래된 내역을 받는다`() {
+        val firstPage = getCoinHistories(mapOf("size" to 1))
+        val nextCursor = firstPage["nextCursor"] as Number? ?: abort("코인 내역이 두 건보다 적어 건너뜁니다")
+
+        val secondPage = getCoinHistories(mapOf("size" to 1, "cursor" to nextCursor))
+
+        assertTrue(firstPage.coinHistoryId() > secondPage.coinHistoryId(), "다음 묶음이 더 오래된 내역이 아닙니다")
+    }
+
+    private fun getCoinHistories(params: Map<String, Any>): Map<String, Any?> = Given {
+        spec(RequestSpecs.createAuthorizedSpec())
+        queryParams(params)
+    } When {
+        get("/api/v1/coins/histories")
+    } Then {
+        statusCode(200)
+    } Extract {
+        path("")
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun Map<String, Any?>.coinHistoryId(): Long =
+        ((getValue("coinHistories") as List<Map<String, Any?>>).first().getValue("coinHistoryId") as Number).toLong()
 }
