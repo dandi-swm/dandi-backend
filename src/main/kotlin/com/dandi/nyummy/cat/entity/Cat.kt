@@ -8,11 +8,21 @@ import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.Table
+import org.hibernate.annotations.DynamicUpdate
 import org.springframework.data.annotation.LastModifiedDate
 import org.springframework.data.jpa.domain.support.AuditingEntityListener
 import java.time.Instant
 
+/**
+ * 사용자의 고양이. 사용자당 한 행이다.
+ *
+ * [DynamicUpdate]로 바뀐 컬럼만 UPDATE한다. 이 행은 여러 경로가 서로 다른 컬럼을 동시에 쓴다 —
+ * Worker는 [lastMealAt], 고양이 조회는 체형([weight] · [weightUpdatedAt]).
+ * Hibernate 기본값은 처음 읽어 온 값으로 모든 컬럼을 다시 써서, 나중에 커밋한 쪽이 먼저 커밋한 쪽의 값을
+ * 조용히 되돌린다. 경로마다 쓰는 컬럼이 겹치지 않는 동안만 막히므로, 같은 컬럼을 쓰는 경로를 늘릴 때는 잠금을 따로 검토한다.
+ */
 @Entity
+@DynamicUpdate
 @EntityListeners(AuditingEntityListener::class)
 @Table(name = "cats")
 class Cat(
