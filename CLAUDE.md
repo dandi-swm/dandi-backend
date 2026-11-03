@@ -212,3 +212,4 @@
 - 관측 `Observation`(Tracing·Instrumentation 금지). 우리가 만드는 관측·메트릭 이름은 `nyummy.`로 시작하고 점으로 구분한다(라이브러리 이름은 그대로)
 - 트랜잭션 span `Transaction`(Tx 단독 금지, span 이름 접두 `tx`만 예외), 처리 결과 태그 `Outcome`(Result·Status 금지)
 - 앱이 요청을 받을 준비가 되기 전 구간 `Startup`(Boot·Init 금지)
+- 분석 작업이 쌓인 때부터 결과(COMPLETED·FAILED)까지 걸린 시간 `Elapsed`(Latency·Duration·Turnaround 금지 — 시도 한 번에 걸린 시간과 구분), 가져갈 수 있는 작업 중 가장 오래 기다린 시간 `OldestWait`(Age·Lag 금지)

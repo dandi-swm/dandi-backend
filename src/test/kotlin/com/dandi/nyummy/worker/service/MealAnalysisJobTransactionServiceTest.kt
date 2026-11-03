@@ -40,6 +40,7 @@ class MealAnalysisJobTransactionServiceTest {
 
     private val now = Instant.parse("2026-11-02T03:00:00Z")
     private val clock = Clock.fixed(now, ZoneOffset.UTC)
+    private val jobCreatedAt = now.minusSeconds(30)
     private val limit = 50
 
     private val mealAnalysisJobRepository = mockk<MealAnalysisJobRepository>()
@@ -66,6 +67,7 @@ class MealAnalysisJobTransactionServiceTest {
         every { this@mockk.id } returns id
         every { this@mockk.mealId } returns mealId
         every { this@mockk.leaseCount } returns leaseCount
+        every { this@mockk.createdAt } returns jobCreatedAt
     }
 
     private fun createMeal(id: Long, deletedAt: Instant? = null): Meal = mockk {
@@ -139,6 +141,7 @@ class MealAnalysisJobTransactionServiceTest {
                     leaseCount = 1,
                     imageKey = "meals/1/2026/11/02/meal-10.jpg",
                     canRetry = true,
+                    createdAt = jobCreatedAt,
                 ),
                 MealAnalysisJobResult(
                     jobId = 2L,
@@ -146,6 +149,7 @@ class MealAnalysisJobTransactionServiceTest {
                     leaseCount = 2,
                     imageKey = "meals/1/2026/11/02/meal-20.jpg",
                     canRetry = false,
+                    createdAt = jobCreatedAt,
                 ),
             ),
             results,
@@ -203,6 +207,7 @@ class MealAnalysisJobTransactionServiceTest {
             leaseCount = 2,
             imageKey = "meals/1/meal-10.jpg",
             canRetry = false,
+            createdAt = jobCreatedAt,
         )
     private val analysisResult = NutritionAnalysisResult(
         name = "김치찌개",

@@ -13,6 +13,7 @@ import io.mockk.verify
 import org.springframework.core.task.TaskRejectedException
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor
 import java.time.Duration
+import java.time.Instant
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import kotlin.test.Test
@@ -57,6 +58,7 @@ class MealAnalysisJobPollerTest {
         leaseCount = 1,
         imageKey = "meals/1/meal-$jobId.jpg",
         canRetry = true,
+        createdAt = Instant.parse("2026-11-02T03:00:00Z"),
     )
 
     private fun givenActiveCount(activeCount: Int) {

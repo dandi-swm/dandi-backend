@@ -13,6 +13,8 @@ import com.dandi.nyummy.notification.service.NotificationService
 import com.dandi.nyummy.worker.config.ConditionalOnWorkerEnabled
 import com.dandi.nyummy.worker.dto.AnalysisPushResult
 import com.dandi.nyummy.worker.dto.MealAnalysisJobResult
+import io.micrometer.core.instrument.MeterRegistry
+import io.micrometer.core.instrument.Timer
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.time.Clock
@@ -27,6 +29,7 @@ class AnalysisService(
     private val catRepository: CatRepository,
     private val notificationService: NotificationService,
     private val appLinkProperties: AppLinkProperties,
+    private val meterRegistry: MeterRegistry,
     private val clock: Clock,
 ) {
     companion object {
@@ -34,6 +37,15 @@ class AnalysisService(
 
         // 설정 오류로 되돌린 작업을 다시 가져가기까지 기다리는 시간. 설정이 고장 난 동안 Gemini를 1초마다 부르지 않게 한다.
         private val MISCONFIGURED_DELAY = Duration.ofMinutes(1)
+
+        // 분석 시도 한 번의 결과와 걸린 시간(S3 다운로드 + Gemini + 결과 저장).
+        private const val ANALYSIS_METER = "nyummy.meal.analysis"
+
+        // 작업이 쌓인 때부터 COMPLETED·FAILED로 끝날 때까지 걸린 시간. 사용자가 결과를 기다린 시간이다.
+        private const val ANALYSIS_ELAPSED_METER = "nyummy.meal.analysis.elapsed"
+
+        // 분류된 실패가 아닌 예외의 category 태그 값
+        private const val UNKNOWN_CATEGORY = "unknown"
     }
 
     /**
@@ -54,16 +66,20 @@ class AnalysisService(
 
         try {
             val analysisResult = nutritionAnalysisClient.analyzeNutrition(job.imageKey)
-            sendAnalysisPush(
-                mealAnalysisJobTransactionService.confirmMealAnalysis(job, analysisResult),
-                null,
-                analyzedAt,
-            )
+            val pushResult = mealAnalysisJobTransactionService.confirmMealAnalysis(job, analysisResult)
+            if (pushResult != null) {
+                recordAnalysis(job, AnalysisOutcome.COMPLETED, null, analyzedAt)
+            }
+            sendAnalysisPush(pushResult, null, analyzedAt)
         } catch (e: AnalysisFailureException) {
             handleAnalysisFailure(job, e, analyzedAt)
         } catch (e: RuntimeException) {
             logger.error("영양 분석 중 예상하지 못한 오류로 실패합니다: mealId={}, leaseCount={}", job.mealId, job.leaseCount, e)
-            sendAnalysisPush(mealAnalysisJobTransactionService.failMealAnalysis(job), null, analyzedAt)
+            val pushResult = mealAnalysisJobTransactionService.failMealAnalysis(job)
+            if (pushResult != null) {
+                recordAnalysis(job, AnalysisOutcome.FAILED, UNKNOWN_CATEGORY, analyzedAt)
+            }
+            sendAnalysisPush(pushResult, null, analyzedAt)
         }
     }
 
@@ -94,7 +110,9 @@ class AnalysisService(
                         job.leaseCount,
                         failure.message,
                     )
-                    mealAnalysisJobTransactionService.retryMealAnalysis(job)
+                    if (mealAnalysisJobTransactionService.retryMealAnalysis(job)) {
+                        recordAnalysis(job, AnalysisOutcome.RETRIED, failure.category, analyzedAt)
+                    }
                     return
                 } else {
                     logger.error("영양 분석이 재시도 후에도 실패했습니다: mealId={}, leaseCount={}", job.mealId, job.leaseCount, failure)
@@ -113,11 +131,51 @@ class AnalysisService(
                     job.leaseCount,
                     failure,
                 )
-                mealAnalysisJobTransactionService.cancelMealAnalysis(job, MISCONFIGURED_DELAY)
+                if (mealAnalysisJobTransactionService.cancelMealAnalysis(job, MISCONFIGURED_DELAY)) {
+                    recordAnalysis(job, AnalysisOutcome.DELAYED, failure.category, analyzedAt)
+                }
                 return
             }
         }
-        sendAnalysisPush(mealAnalysisJobTransactionService.failMealAnalysis(job), failure.category, analyzedAt)
+        val pushResult = mealAnalysisJobTransactionService.failMealAnalysis(job)
+        if (pushResult != null) {
+            recordAnalysis(job, AnalysisOutcome.FAILED, failure.category, analyzedAt)
+        }
+        sendAnalysisPush(pushResult, failure.category, analyzedAt)
+    }
+
+    private fun recordAnalysis(
+        job: MealAnalysisJobResult,
+        outcome: AnalysisOutcome,
+        category: AnalysisFailureCategory?,
+        analyzedAt: Instant,
+    ) {
+        recordAnalysis(job, outcome, category?.name?.lowercase() ?: "none", analyzedAt)
+    }
+
+    /**
+     * 이 Worker가 결과를 실제로 남긴 시도만 기록한다. 다른 Worker가 가져가 아무것도 쓰지 못한 시도는 세지 않는다.
+     * COMPLETED·FAILED로 끝났으면 작업이 쌓인 때부터 걸린 시간도 기록한다.
+     */
+    private fun recordAnalysis(
+        job: MealAnalysisJobResult,
+        outcome: AnalysisOutcome,
+        category: String,
+        analyzedAt: Instant,
+    ) {
+        val now = Instant.now(clock)
+        Timer.builder(ANALYSIS_METER)
+            .tag("outcome", outcome.tagValue)
+            .tag("category", category)
+            .register(meterRegistry)
+            .record(Duration.between(analyzedAt, now))
+
+        if (outcome.isFinal) {
+            Timer.builder(ANALYSIS_ELAPSED_METER)
+                .tag("outcome", outcome.tagValue)
+                .register(meterRegistry)
+                .record(Duration.between(job.createdAt, now))
+        }
     }
 
     /**
@@ -205,4 +263,16 @@ class AnalysisService(
             )
         }
     }
+}
+
+/**
+ * 분석 시도 한 번이 어떻게 끝났는지. 지표의 outcome 태그 값이다.
+ *
+ * @property isFinal 식사가 COMPLETED·FAILED로 끝났는지. 재시도·미룸은 작업이 큐에 남아 아직 끝나지 않았다
+ */
+private enum class AnalysisOutcome(val tagValue: String, val isFinal: Boolean) {
+    COMPLETED("completed", true),
+    RETRIED("retried", false),
+    DELAYED("delayed", false),
+    FAILED("failed", true),
 }

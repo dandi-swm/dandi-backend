@@ -73,6 +73,10 @@ management:
         # 소수점 표기(1.5s)는 바인딩되지 않아 ms로 쓴다.
         "[http.client.requests]": 250ms,500ms,1s,1500ms,2s,2500ms,3s,4s,5s,6s,7s,8s,10s,12s,15s,20s,25s,30s
         "[http.client.requests.active]": ""
+        # 분석 시도 한 번(S3 + Gemini + 저장)은 Gemini와 같은 구간으로 본다.
+        "[nyummy.meal.analysis]": 250ms,500ms,1s,1500ms,2s,2500ms,3s,4s,5s,6s,7s,8s,10s,12s,15s,20s,25s,30s
+        # 쌓인 때부터 결과까지는 큐 대기·재시도(lease 60초)가 더해져 분 단위까지 본다. 키가 앞부분으로 매칭돼 위 구간이 붙지 않게 더 긴 키로 따로 준다.
+        "[nyummy.meal.analysis.elapsed]": 1s,2s,3s,5s,7s,10s,15s,20s,30s,45s,60s,90s,120s,180s,300s,600s
     enable:
       # 트랜잭션 관측은 span으로만 본다(이름별 집계는 Tempo의 TraceQL로). 메트릭만 막히고 span은 그대로 남는다.
       "[nyummy.transaction]": false
