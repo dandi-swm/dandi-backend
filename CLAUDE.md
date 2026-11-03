@@ -126,6 +126,7 @@
 
 - 고양이 `Cat`, 재화 `Coin`, 애정도 `Love`, 경험치 `Exp`
 - 코인 잔액 `Balance` — 우편의 지급 개수 `Quantity`, 여러 우편 보상의 합 `Total`과 다른 뜻
+- 충전 수요를 알아보려고 주는 선물 코인 `CoinGift`(받기는 `claim`, Charge 금지 — 실제 결제용으로 남긴다), 충전 화면에 보이는 패키지 `CoinPackage`(`coinPackageId`), 가격 그룹은 헤더 `X-Coin-Package-Variant`로 받는다
 - 고양이 체형 `CatWeight` — 사용자 몸무게 `Profile.weight`와 단어가 겹쳐 Cat·Profile 맥락으로 구분. 체형이 움직이는 칸 수 `Step`(Delta·Diff 금지)
 
 ### 식사·영양
