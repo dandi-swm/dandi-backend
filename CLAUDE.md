@@ -205,6 +205,7 @@
 - 구매 안의 상품 1개 `ItemPurchaseProduct`(환불 단위), 그 구성품 하나 `ItemPurchaseLine`(판매 구성 `ProductItem`과 다른 것, Component·Part 금지)
 - 구매 시도 기록 `ItemPurchaseAttempt`, 그 결과 `ItemPurchaseOutcome`(Result·Status 금지)
 - 상품을 지금 살 수 있는지 `ProductAvailabilityResult`, 1인 구매 한도까지 남은 개수 `remainingPurchaseLimit`, 상품별 산 개수 `PurchasedProductCountResult`
+- 구매 상품 1개의 상품 이름 `ItemPurchaseProductNameResult`(코인 내역 문구에 쓴다. 구매 상품 `ItemPurchaseProduct`와 다른 것)
 - 보유 아이템으로 지급할 아이템 하나 `GrantedRoomItem`(보유 아이템 `OwnedRoomItem`과 다른 것)
 
 ### 관측
