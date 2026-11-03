@@ -5,6 +5,7 @@ import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.UserErrorCode
 import com.dandi.nyummy.inquiry.repository.InquiryRepository
 import com.dandi.nyummy.notification.repository.DeviceTokenRepository
+import com.dandi.nyummy.notification.repository.PushHistoryRepository
 import com.dandi.nyummy.user.repository.ProfileRepository
 import com.dandi.nyummy.user.repository.UserRepository
 import org.springframework.data.repository.findByIdOrNull
@@ -21,6 +22,7 @@ class UserWithdrawalTransactionService(
     private val refreshTokenRepository: RefreshTokenRepository,
     private val deviceTokenRepository: DeviceTokenRepository,
     private val inquiryRepository: InquiryRepository,
+    private val pushHistoryRepository: PushHistoryRepository,
 ) {
     @Transactional
     fun withdrawUser(userId: Long) {
@@ -39,5 +41,6 @@ class UserWithdrawalTransactionService(
         refreshTokenRepository.deleteByUserId(user.id)
         deviceTokenRepository.deleteByUserId(userId)
         inquiryRepository.deleteByUserId(userId)
+        pushHistoryRepository.deleteByUserId(userId)
     }
 }
