@@ -2,6 +2,7 @@ package com.dandi.nyummy.internal.batch.controller
 
 import com.dandi.nyummy.internal.batch.service.DailyPromotionService
 import com.dandi.nyummy.internal.batch.service.MealReminderService
+import com.dandi.nyummy.internal.batch.service.ProductSalesCountService
 import com.dandi.nyummy.internal.batch.service.RetentionBatchService
 import io.swagger.v3.oas.annotations.Hidden
 import org.springframework.format.annotation.DateTimeFormat
@@ -18,6 +19,7 @@ class InternalBatchController(
     private val mealReminderService: MealReminderService,
     private val retentionBatchService: RetentionBatchService,
     private val dailyPromotionService: DailyPromotionService,
+    private val productSalesCountService: ProductSalesCountService,
 ) {
 
     // 매시 정각 호출
@@ -38,5 +40,11 @@ class InternalBatchController(
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) date: LocalDate?,
     ) {
         dailyPromotionService.createDailyPromotion(date)
+    }
+
+    // 매일 23:40 호출
+    @PostMapping("/shop/sales-counts")
+    fun triggerSalesCountUpdate() {
+        productSalesCountService.updateSalesCounts()
     }
 }

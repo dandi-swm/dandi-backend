@@ -3,9 +3,11 @@ package com.dandi.nyummy.shop.repository
 import com.dandi.nyummy.room.enum.RoomItemCategory
 import com.dandi.nyummy.shop.entity.Product
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
+import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
 
 @Repository
@@ -37,4 +39,14 @@ interface ProductRepository : JpaRepository<Product, Long> {
         """,
     )
     fun findOnSaleProducts(@Param("now") now: Instant): List<Product>
+
+    /**
+     * 상품 하나의 최근 판매량을 바꾸고 바로 커밋한다.
+     *
+     * 엔티티로 저장하면 모든 컬럼을 덮어써 같은 순간의 어드민 수정을 지울 수 있어 이 컬럼만 고친다.
+     */
+    @Transactional
+    @Modifying
+    @Query("update Product as p set p.salesCount = :salesCount where p.id = :productId")
+    fun updateSalesCount(@Param("productId") productId: Long, @Param("salesCount") salesCount: Int): Int
 }
