@@ -36,4 +36,8 @@ class MailItem(
 
     @Column(name = "revoked_at")
     var revokedAt: Instant? = null
+
+    fun revoke(revokedAt: Instant) {
+        this.revokedAt = revokedAt
+    }
 }

@@ -13,6 +13,17 @@ import java.time.Instant
 interface ItemPurchaseProductRepository : JpaRepository<ItemPurchaseProduct, Long> {
     fun findByItemPurchaseId(itemPurchaseId: Long): List<ItemPurchaseProduct>
 
+    /** 구매 상품을 산 사용자 id. 구매 상품이 없으면 null이다. */
+    @Query(
+        """
+        select ip.userId
+        from ItemPurchaseProduct as ipp
+            join ItemPurchase as ip on ip.id = ipp.itemPurchaseId
+        where ipp.id = :itemPurchaseProductId
+    """,
+    )
+    fun findUserIdById(@Param("itemPurchaseProductId") itemPurchaseProductId: Long): Long?
+
     /** 구매들의 구매 상품 이름을 구매 상품 id 순서로 조회한다. 코인 내역 문구를 한 번의 쿼리로 만드는 데 쓴다. */
     @Query(
         """
