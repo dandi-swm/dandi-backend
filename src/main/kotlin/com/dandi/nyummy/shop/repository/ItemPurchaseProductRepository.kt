@@ -13,6 +13,8 @@ import java.time.Instant
 interface ItemPurchaseProductRepository : JpaRepository<ItemPurchaseProduct, Long> {
     fun findByItemPurchaseId(itemPurchaseId: Long): List<ItemPurchaseProduct>
 
+    fun findByItemPurchaseIdInOrderByIdAsc(itemPurchaseIds: Collection<Long>): List<ItemPurchaseProduct>
+
     /** 구매 상품을 산 사용자 id. 구매 상품이 없으면 null이다. */
     @Query(
         """

@@ -7,4 +7,6 @@ import org.springframework.stereotype.Repository
 @Repository
 interface ItemPurchaseLineRepository : JpaRepository<ItemPurchaseLine, Long> {
     fun findByItemPurchaseProductId(itemPurchaseProductId: Long): List<ItemPurchaseLine>
+
+    fun findByItemPurchaseProductIdInOrderByIdAsc(itemPurchaseProductIds: Collection<Long>): List<ItemPurchaseLine>
 }
