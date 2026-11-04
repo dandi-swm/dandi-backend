@@ -11,6 +11,7 @@ import com.dandi.nyummy.user.dto.PushSettingResponse
 import com.dandi.nyummy.user.dto.UpdateMealTimeRequest
 import com.dandi.nyummy.user.dto.UpdatePasswordRequest
 import com.dandi.nyummy.user.dto.UpdatePasswordResponse
+import com.dandi.nyummy.user.dto.UpdateProfileRequest
 import com.dandi.nyummy.user.dto.UpdatePushSettingRequest
 import com.dandi.nyummy.user.dto.UserResponse
 import com.dandi.nyummy.user.entity.Profile
@@ -54,6 +55,18 @@ class UserService(
         val coin = coinService.getBalance(user.id)
 
         return user.toUserResponse(profile, coin)
+    }
+
+    /**
+     * 닉네임과 신체 정보를 바꾼다. 요청에 담기지 않은 항목(null)은 건드리지 않는다.
+     *
+     * @throws BusinessException [UserErrorCode.PROFILE_NOT_FOUND] 프로필이 없는 경우
+     */
+    @Transactional
+    fun updateProfile(userId: Long, request: UpdateProfileRequest) {
+        val profile = getProfile(userId)
+
+        profile.updateProfile(request.nickname, request.birth, request.gender, request.height, request.weight)
     }
 
     /**

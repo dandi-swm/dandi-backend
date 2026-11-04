@@ -8,6 +8,7 @@ import com.dandi.nyummy.user.dto.PushSettingResponse
 import com.dandi.nyummy.user.dto.UpdateMealTimeRequest
 import com.dandi.nyummy.user.dto.UpdatePasswordRequest
 import com.dandi.nyummy.user.dto.UpdatePasswordResponse
+import com.dandi.nyummy.user.dto.UpdateProfileRequest
 import com.dandi.nyummy.user.dto.UpdatePushSettingRequest
 import com.dandi.nyummy.user.dto.UserResponse
 import com.dandi.nyummy.user.service.UserService
@@ -26,7 +27,7 @@ import org.springframework.web.bind.annotation.RestController
 
 @Tag(
     name = "User",
-    description = "내 프로필 조회 · 비밀번호 변경 · 알림 수신 설정 · 끼니 시각 설정 · 회원 탈퇴 API",
+    description = "내 프로필 조회 · 변경 · 비밀번호 변경 · 알림 수신 설정 · 끼니 시각 설정 · 회원 탈퇴 API",
 )
 @RestController
 @RequestMapping("/api/v1/users")
@@ -40,6 +41,19 @@ class UserController(private val userService: UserService) {
     @ApiErrorCodes(user = [UserErrorCode.USER_NOT_FOUND])
     @GetMapping("/me")
     fun getMe(@CurrentUser user: AuthUser): UserResponse = userService.getMe(user.userId)
+
+    @Operation(
+        summary = "내 프로필 변경",
+        description = "닉네임 · 생년월일 · 성별 · 키 · 몸무게 중 바꾸려는 항목만 담아 보낸다 — 생략하거나 null로 보낸 항목은 유지된다. " +
+            "그래서 한 번 넣은 값은 비울 수 없다. 검증은 가입과 같고, 어긋나면 api.common.invalidInputValue다. " +
+            "끼니 시각은 `PUT /me/meal-time`, 알림 수신 설정은 `PATCH /me/push`로 바꾼다.",
+    )
+    @ApiResponse(responseCode = "200", description = "변경 완료")
+    @ApiErrorCodes(user = [UserErrorCode.PROFILE_NOT_FOUND])
+    @PatchMapping("/me")
+    fun updateMe(@CurrentUser user: AuthUser, @Valid @RequestBody request: UpdateProfileRequest) {
+        userService.updateProfile(user.userId, request)
+    }
 
     @Operation(
         summary = "비밀번호 변경",
