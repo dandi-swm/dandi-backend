@@ -62,6 +62,9 @@ class ShopService(
     companion object {
         private const val LAYOUT_B = "B"
         const val DAILY_PRODUCT_COUNT = 3
+
+        /** 오늘의 할인이 끝나기까지 이 기간 안이면 남은 시간을 빨간색으로 정확히 보여 준다 */
+        private val DAILY_IMMINENT_TIME_TO_LIVE = Duration.ofHours(3)
         private const val POPULAR_PRODUCT_COUNT = 4
     }
 
@@ -285,17 +288,35 @@ class ShopService(
     // CDN 주소 + S3 키
     private fun createImageUrl(imageKey: String): String = "${shopProperties.cdnBaseUrl}/$imageKey"
 
-    // "N시간 후 바뀌어요". 남은 시간은 시간 단위로 올린다(1시간 10분 → 2시간).
+    // 임박하면 빨간색 "N시간 M분 남았어요"(분 단위로 올림), 그 전에는 "N시간 후 바뀌어요"(시간 단위로 올림)
     private fun createRemainingTimeTrailing(endsAt: Instant, now: Instant): SectionHeaderTrailingResponse {
-        val remainingHours = (Duration.between(now, endsAt).seconds + 3599) / 3600
+        val remainingSeconds = Duration.between(now, endsAt).seconds
+        val isImminent = remainingSeconds <= DAILY_IMMINENT_TIME_TO_LIVE.seconds
+        val color = if (isImminent) "contentDanger" else "contentTertiary"
+        val text = if (isImminent) {
+            "${createRemainingTimeText((remainingSeconds + 59) / 60)} 남았어요"
+        } else {
+            "${(remainingSeconds + 3599) / 3600}시간 후 바뀌어요"
+        }
 
         return SectionHeaderTrailingResponse(
             content = listOf(
-                RichTextResponse(icon = "clock", color = "contentTertiary"),
-                RichTextResponse(text = "${remainingHours}시간 후 바뀌어요", typeScale = "labelS", color = "contentTertiary"),
+                RichTextResponse(icon = "clock", color = color),
+                RichTextResponse(text = text, typeScale = "labelS", color = color),
             ),
             action = null,
         )
+    }
+
+    // 0인 단위는 쓰지 않는다. 2시간 / 2시간 14분 / 47분
+    private fun createRemainingTimeText(remainingMinutes: Long): String {
+        val hours = remainingMinutes / 60
+        val minutes = remainingMinutes % 60
+
+        return listOfNotNull(
+            "${hours}시간".takeIf { hours > 0 },
+            "${minutes}분".takeIf { minutes > 0 },
+        ).joinToString(" ")
     }
 
     // 상품이 없으면 그 위 제목 줄까지 같이 뺀다. 앱은 빈 칸을 받지 않는다.
