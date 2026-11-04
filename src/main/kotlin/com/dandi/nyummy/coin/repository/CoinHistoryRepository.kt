@@ -1,6 +1,7 @@
 package com.dandi.nyummy.coin.repository
 
 import com.dandi.nyummy.coin.entity.CoinHistory
+import com.dandi.nyummy.coin.enum.CoinHistoryCategory
 import org.springframework.data.domain.Pageable
 import org.springframework.data.domain.Slice
 import org.springframework.data.jpa.repository.JpaRepository
@@ -15,4 +16,6 @@ interface CoinHistoryRepository : JpaRepository<CoinHistory, Long> {
      * Slice는 size + 1개를 읽어 다음 묶음이 있는지 판단한다.
      */
     fun findByUserIdAndIdLessThanOrderByIdDesc(userId: Long, cursor: Long, pageable: Pageable): Slice<CoinHistory>
+
+    fun existsByUserIdAndCategory(userId: Long, category: CoinHistoryCategory): Boolean
 }
