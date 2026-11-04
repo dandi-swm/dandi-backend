@@ -1,8 +1,12 @@
 package com.dandi.nyummy.coin.service
 
 import com.dandi.nyummy.auth.enum.AuthProvider
+import com.dandi.nyummy.coin.dto.ClaimCoinGiftRequest
 import com.dandi.nyummy.coin.entity.Coin
+import com.dandi.nyummy.coin.repository.CoinHistoryRepository
 import com.dandi.nyummy.coin.repository.CoinRepository
+import com.dandi.nyummy.exception.BusinessException
+import com.dandi.nyummy.exception.errorcode.CoinErrorCode
 import com.dandi.nyummy.mail.enum.RewardBoxCategory
 import com.dandi.nyummy.mail.service.MailService
 import com.dandi.nyummy.user.entity.User
@@ -35,6 +39,8 @@ import kotlin.test.assertTrue
 @ActiveProfiles("test")
 class CoinLockConcurrencyTest @Autowired constructor(
     private val coinService: CoinService,
+    private val coinGiftService: CoinGiftService,
+    private val coinHistoryRepository: CoinHistoryRepository,
     private val mailService: MailService,
     private val userRepository: UserRepository,
     private val coinRepository: CoinRepository,
@@ -122,6 +128,44 @@ class CoinLockConcurrencyTest @Autowired constructor(
 
         // 잠금 뒤에 조회하므로 앞 트랜잭션이 만든 우편까지 받는다.
         assertEquals(20, coinRepository.findByUserId(userId)?.balance)
+    }
+
+    @Test
+    fun `선물 코인을 동시에 두 번 요청해도 한 번만 받고 나머지는 거부한다`() {
+        val userId = createUserWithCoin("coin-gift@nyummy.co.kr")
+        val locked = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(3)
+        val holder = executor.submit {
+            transactionTemplate.executeWithoutResult {
+                coinService.lockCoin(userId)
+                locked.countDown()
+                release.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            }
+        }
+        assertTrue(locked.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+
+        val requests = List(2) {
+            executor.submit<Result<Int>> {
+                runCatching {
+                    coinGiftService.claimCoinGift(userId, "A", ClaimCoinGiftRequest(coinPackageId = 1)).balance
+                }
+            }
+        }
+
+        // 두 요청이 잠금 대기에 들어갈 시간을 준다. 잠금 없이 내역부터 읽는 코드면 둘 다 받은 적이 없다고 보고 두 번 넣는다.
+        Thread.sleep(500)
+        release.countDown()
+
+        holder.get(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        val results = requests.map { it.get(TIMEOUT_SECONDS, TimeUnit.SECONDS) }
+        executor.shutdown()
+
+        assertEquals(listOf(3000), results.mapNotNull { it.getOrNull() })
+        val rejected = results.mapNotNull { it.exceptionOrNull() }.single() as BusinessException
+        assertEquals(CoinErrorCode.COIN_GIFT_ALREADY_CLAIMED, rejected.errorCode)
+        assertEquals(3000, coinRepository.findByUserId(userId)?.balance)
+        assertEquals(1, coinHistoryRepository.findAll().count { it.userId == userId })
     }
 
     private fun createUserWithCoin(email: String): Long {
