@@ -26,6 +26,7 @@ class CoinService(
         private const val ITEM_PURCHASE_TITLE = "상점 구매"
         private const val IN_APP_PURCHASE_TITLE = "코인 구매"
         private const val COIN_GIFT_TITLE = "코인 선물"
+        private const val ITEM_PURCHASE_REFUND_TITLE = "상점 환불"
     }
 
     /**
@@ -167,6 +168,7 @@ class CoinService(
             CoinHistoryCategory.ROOM_ITEM_PURCHASE -> createItemPurchaseTitle(productNames[coinHistory.sourceId])
             CoinHistoryCategory.IN_APP_PURCHASE -> IN_APP_PURCHASE_TITLE
             CoinHistoryCategory.COIN_GIFT -> COIN_GIFT_TITLE
+            CoinHistoryCategory.ITEM_PURCHASE_REFUND -> ITEM_PURCHASE_REFUND_TITLE
         }
 
     // 상품 1개는 "발바닥 방석 구매", 여러 개는 같은 상품이어도 1개당 한 행이라 "발바닥 방석 외 2개 구매"다
