@@ -206,6 +206,8 @@
 - 앱(Remote Config)이 정한 A/B 그룹 `Variant`(Test·Group·Bucket 금지). 추천 탭 배치 그룹은 헤더 `X-Shop-Layout-Variant`로 받는다
 - 상점 구매 `ItemPurchase`(`itemPurchaseId`, Order 금지) — 1개 결제가 `purchasePrice`와 다른 개념. 재시도를 알아보는 키는 헤더 `Idempotency-Key`(RequestId·Nonce 금지)
 - 구매 안의 상품 1개 `ItemPurchaseProduct`(환불 단위), 그 구성품 하나 `ItemPurchaseLine`(판매 구성 `ProductItem`과 다른 것, Component·Part 금지)
+- 환불에 포함된 구성품 `ItemPurchaseRefundLine`(구매 구성품 `ItemPurchaseLine`과 다른 것)
+- 환불로 우편 아이템·보유 아이템을 거둬들이는 것 `Revoke`(`revokedAt`, Reclaim·Recall 금지) — 사용자가 지운 `deletedAt`과 다른 것
 - 구매 시도 기록 `ItemPurchaseAttempt`, 그 결과 `ItemPurchaseOutcome`(Result·Status 금지)
 - 상품을 지금 살 수 있는지 `ProductAvailabilityResult`, 1인 구매 한도까지 남은 개수 `remainingPurchaseLimit`, 상품별 산 개수 `PurchasedProductCountResult`
 - 구매 상품 1개의 상품 이름 `ItemPurchaseProductNameResult`(코인 내역 문구에 쓴다. 구매 상품 `ItemPurchaseProduct`와 다른 것)
