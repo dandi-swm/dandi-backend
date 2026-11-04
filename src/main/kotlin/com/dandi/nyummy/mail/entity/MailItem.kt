@@ -6,11 +6,13 @@ import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.Table
+import java.time.Instant
 
 /**
  * 우편에 든 아이템 한 줄. 받으면 [quantity]만큼 보유 아이템이 생긴다.
  *
  * @property itemPurchaseLineId 구매한 구성품이면 그 id이고, 이때 [quantity]는 1이다. 보상이면 null이다
+ * @property revokedAt 받기 전에 환불되어 회수한 시각. 받기에서 이 아이템을 건너뛴다
  */
 @Entity
 @Table(name = "mail_items")
@@ -31,4 +33,7 @@ class MailItem(
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id", nullable = false)
     val id: Long = 0L
+
+    @Column(name = "revoked_at")
+    var revokedAt: Instant? = null
 }

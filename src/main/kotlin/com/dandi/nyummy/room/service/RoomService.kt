@@ -140,7 +140,9 @@ class RoomService(
             throw BusinessException(RoomErrorCode.DUPLICATE_OWNED_ROOM_ITEM)
         }
 
-        val ownedRoomItems = ownedRoomItemRepository.findOwnedRoomItemsByUserIdAndDeletedAtIsNull(userId)
+        val ownedRoomItems = ownedRoomItemRepository.findOwnedRoomItemsByUserIdAndDeletedAtIsNullAndRevokedAtIsNull(
+            userId,
+        )
         validateMissingOwnedRoomItems(userId, requestItems.keys - ownedRoomItems.map { it.id }.toSet())
 
         val now = Instant.now(clock)
@@ -177,12 +179,12 @@ class RoomService(
      * 이미 삭제된 보유 아이템도 그대로 성공한다(멱등). 삭제를 두 번 눌러도 결과가 같게 하기 위함이다.
      * 이때 삭제 시각은 다시 삭제한 시각으로 바뀐다.
      *
-     * @throws BusinessException [RoomErrorCode.OWNED_ROOM_ITEM_NOT_FOUND] 보유 아이템이 없는 경우
+     * @throws BusinessException [RoomErrorCode.OWNED_ROOM_ITEM_NOT_FOUND] 보유 아이템이 없거나 회수된 경우
      * @throws BusinessException [AuthErrorCode.FORBIDDEN] 다른 사용자의 보유 아이템인 경우
      */
     @Transactional
     fun deleteOwnedRoomItem(userId: Long, ownedRoomItemId: Long) {
-        val ownedRoomItem = ownedRoomItemRepository.findByIdOrNull(ownedRoomItemId)
+        val ownedRoomItem = ownedRoomItemRepository.findByIdOrNull(ownedRoomItemId)?.takeUnless { it.isRevoked }
             ?: throw BusinessException(RoomErrorCode.OWNED_ROOM_ITEM_NOT_FOUND)
 
         ownedRoomItem.validateOwnership(userId)
@@ -198,12 +200,12 @@ class RoomService(
      * 삭제되지 않은 보유 아이템도 그대로 성공한다(멱등). 되돌리기를 여러 번 눌러도 결과가 같게 하기 위함이다.
      * deletedAt이 이미 null이면 같은 값을 넣어도 변경 감지에 걸리지 않아 UPDATE가 나가지 않으므로 따로 분기하지 않는다.
      *
-     * @throws BusinessException [RoomErrorCode.OWNED_ROOM_ITEM_NOT_FOUND] 보유 아이템이 없는 경우
+     * @throws BusinessException [RoomErrorCode.OWNED_ROOM_ITEM_NOT_FOUND] 보유 아이템이 없거나 회수된 경우
      * @throws BusinessException [AuthErrorCode.FORBIDDEN] 다른 사용자의 보유 아이템인 경우
      */
     @Transactional
     fun restoreOwnedRoomItem(userId: Long, ownedRoomItemId: Long) {
-        val ownedRoomItem = ownedRoomItemRepository.findByIdOrNull(ownedRoomItemId)
+        val ownedRoomItem = ownedRoomItemRepository.findByIdOrNull(ownedRoomItemId)?.takeUnless { it.isRevoked }
             ?: throw BusinessException(RoomErrorCode.OWNED_ROOM_ITEM_NOT_FOUND)
 
         ownedRoomItem.validateOwnership(userId)

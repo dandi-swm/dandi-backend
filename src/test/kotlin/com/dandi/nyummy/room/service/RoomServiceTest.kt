@@ -73,7 +73,8 @@ class RoomServiceTest {
         EquippedRoomItemRequest(ownedRoomItemId = ownedRoomItemId, x = x, y = 20f, zIndex = 3, scale = 0.5f)
 
     private fun givenOwnedRoomItemsToUpdate(vararg items: OwnedRoomItem) {
-        every { ownedRoomItemRepository.findOwnedRoomItemsByUserIdAndDeletedAtIsNull(userId) } returns items.toList()
+        every { ownedRoomItemRepository.findOwnedRoomItemsByUserIdAndDeletedAtIsNullAndRevokedAtIsNull(userId) } returns
+            items.toList()
     }
 
     private fun assertBusinessException(expected: ErrorCode, block: () -> Unit) {
@@ -223,7 +224,8 @@ class RoomServiceTest {
     @Test
     fun `장착하면 현재 시각을 처음 장착한 시각으로 남긴다`() {
         val item = ownedRoomItem(id = 5L, isEquipped = false)
-        every { ownedRoomItemRepository.findOwnedRoomItemsByUserIdAndDeletedAtIsNull(userId) } returns listOf(item)
+        every { ownedRoomItemRepository.findOwnedRoomItemsByUserIdAndDeletedAtIsNullAndRevokedAtIsNull(userId) } returns
+            listOf(item)
 
         roomService.updateEquippedRoomItems(userId, UpdateEquippedRoomItemsRequest(listOf(equippedRoomItemRequest(5L))))
 
@@ -277,7 +279,9 @@ class RoomServiceTest {
         assertBusinessException(RoomErrorCode.DUPLICATE_OWNED_ROOM_ITEM) {
             roomService.updateEquippedRoomItems(userId, request)
         }
-        verify(exactly = 0) { ownedRoomItemRepository.findOwnedRoomItemsByUserIdAndDeletedAtIsNull(any()) }
+        verify(exactly = 0) {
+            ownedRoomItemRepository.findOwnedRoomItemsByUserIdAndDeletedAtIsNullAndRevokedAtIsNull(any())
+        }
     }
 
     @Test
