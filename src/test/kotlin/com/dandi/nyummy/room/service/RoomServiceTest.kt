@@ -21,6 +21,7 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
+import io.mockk.verifyOrder
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.SliceImpl
 import org.springframework.data.repository.findByIdOrNull
@@ -279,6 +280,18 @@ class RoomServiceTest {
     }
 
     @Test
+    fun `장착을 저장할 때 코인 행을 잠근 뒤에 보유 아이템을 읽는다`() {
+        givenOwnedRoomItemsToUpdate()
+
+        roomService.updateEquippedRoomItems(userId, UpdateEquippedRoomItemsRequest(emptyList()))
+
+        verifyOrder {
+            coinService.lockCoin(userId)
+            ownedRoomItemRepository.findOwnedRoomItemsByUserIdAndDeletedAtIsNullAndRevokedAtIsNull(userId)
+        }
+    }
+
+    @Test
     fun `같은 보유 아이템이 두 번 있으면 보유 아이템을 조회하지 않고 거부한다`() {
         val request = UpdateEquippedRoomItemsRequest(listOf(equippedRoomItemRequest(5L), equippedRoomItemRequest(5L)))
 
@@ -342,6 +355,19 @@ class RoomServiceTest {
     // deleteOwnedRoomItem
 
     @Test
+    fun `삭제할 때 코인 행을 잠근 뒤에 보유 아이템을 읽는다`() {
+        val item = ownedRoomItem(id = 5L, isEquipped = false)
+        every { ownedRoomItemRepository.findByIdOrNull(5L) } returns item
+
+        roomService.deleteOwnedRoomItem(userId, 5L)
+
+        verifyOrder {
+            coinService.lockCoin(userId)
+            ownedRoomItemRepository.findByIdOrNull(5L)
+        }
+    }
+
+    @Test
     fun `장착 중인 보유 아이템을 삭제하면 장착을 해제하고 삭제 시각을 기록한다`() {
         val item = ownedRoomItem(id = 5L, isEquipped = true).apply { x = 76f }
         every { ownedRoomItemRepository.findByIdOrNull(5L) } returns item
@@ -394,6 +420,19 @@ class RoomServiceTest {
     }
 
     // restoreOwnedRoomItem
+
+    @Test
+    fun `복구할 때 코인 행을 잠근 뒤에 보유 아이템을 읽는다`() {
+        val item = ownedRoomItem(id = 5L, isEquipped = false)
+        every { ownedRoomItemRepository.findByIdOrNull(5L) } returns item
+
+        roomService.restoreOwnedRoomItem(userId, 5L)
+
+        verifyOrder {
+            coinService.lockCoin(userId)
+            ownedRoomItemRepository.findByIdOrNull(5L)
+        }
+    }
 
     @Test
     fun `삭제한 보유 아이템을 복구하면 장착하지 않은 채로 돌아온다`() {

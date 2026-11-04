@@ -459,6 +459,51 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
         }
     }
 
+    @Test
+    fun `회수와 장착 저장이 겹쳐도 회수 시각이 지워지지 않는다`() {
+        val userId = createUser()
+        val product = createProduct(price = 500)
+        createCartItem(userId, product, quantity = 2)
+        purchase(userId, listOf(product to 2))
+        mailService.claimMails(userId)
+        val revokedId = getFirstOwnedRoomItemId(userId)
+        val remainingId = roomService.getOwnedRoomItems(userId, RoomItemCategory.BED, null, 10)
+            .ownedRoomItems.map { it.ownedRoomItemId }.single { it != revokedId }
+        roomService.updateEquippedRoomItems(userId, createEquippedRoomItemsRequest(revokedId, remainingId))
+        val revoked = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(2)
+
+        // 환불과 같은 순서로 코인을 잠그고 회수한 뒤 커밋을 미룬다
+        val revoker = executor.submit {
+            transactionTemplate.executeWithoutResult {
+                coinService.lockCoin(userId)
+                revokeRow("owned_room_items", revokedId)
+                revoked.countDown()
+                release.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            }
+        }
+        assertTrue(revoked.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+        val saver = executor.submit {
+            roomService.updateEquippedRoomItems(userId, createEquippedRoomItemsRequest(remainingId))
+        }
+
+        // 저장이 잠금 대기에 들어갈 시간을 준다. 잠그지 않는 코드면 회수 전 행을 읽고 UPDATE에서 기다리다가,
+        // 회수가 커밋된 뒤 전체 컬럼을 써서 revoked_at을 지운다.
+        Thread.sleep(500)
+        release.countDown()
+
+        revoker.get(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        saver.get(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        executor.shutdown()
+
+        assertEquals(
+            1,
+            queryForInt("select count(*) from owned_room_items where id = ? and revoked_at is not null", revokedId),
+        )
+        assertEquals(listOf(remainingId), roomService.getEquippedRoomItems(userId).map { it.ownedRoomItemId })
+    }
+
     private fun now(): Instant = Instant.now(clock)
 
     private fun createUser(): Long {
