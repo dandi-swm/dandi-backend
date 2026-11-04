@@ -37,7 +37,7 @@ data class HomeUserResponse(val coin: Int, val isTutorialCompleted: Boolean)
 data class UpdateProfileRequest(
     // @NotBlank는 null도 거부해 생략을 막는다. @Pattern은 null을 통과시키고 공백만 있는 닉네임을 거부한다.
     @field:Pattern(regexp = "(?s).*\\S.*", message = "닉네임은 공백일 수 없습니다.")
-    @field:Size(max = 100)
+    @field:Size(max = 8, message = "닉네임은 8자 이하여야 합니다.")
     val nickname: String? = null,
 
     @field:Past
@@ -46,9 +46,11 @@ data class UpdateProfileRequest(
     val gender: Gender? = null,
 
     @field:Positive
+    @field:Max(value = 220, message = "키는 220 이하여야 합니다.")
     val height: Int? = null,
 
     @field:Positive
+    @field:Max(value = 200, message = "몸무게는 200 이하여야 합니다.")
     val weight: Int? = null,
 )
 

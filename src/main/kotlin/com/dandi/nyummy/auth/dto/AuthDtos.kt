@@ -6,6 +6,7 @@ import com.dandi.nyummy.user.enum.Gender
 import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.validation.constraints.AssertTrue
 import jakarta.validation.constraints.Email
+import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Past
 import jakarta.validation.constraints.Pattern
@@ -31,7 +32,7 @@ data class SignUpRequest(
     val confirmPassword: String? = null,
 
     @field:NotBlank
-    @field:Size(max = 100)
+    @field:Size(max = 8, message = "닉네임은 8자 이하여야 합니다.")
     val nickname: String,
 
     val gender: Gender? = null,
@@ -40,9 +41,11 @@ data class SignUpRequest(
     val birth: LocalDate? = null,
 
     @field:Positive
+    @field:Max(value = 220, message = "키는 220 이하여야 합니다.")
     val height: Int? = null,
 
     @field:Positive
+    @field:Max(value = 200, message = "몸무게는 200 이하여야 합니다.")
     val weight: Int? = null,
 ) {
     @get:AssertTrue(message = "비밀번호가 일치하지 않습니다.")

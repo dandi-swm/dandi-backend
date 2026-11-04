@@ -65,7 +65,10 @@ class UserE2eTest {
 
         listOf(
             mapOf("height" to 0),
+            mapOf("height" to 221),
+            mapOf("weight" to 201),
             mapOf("nickname" to "  "),
+            mapOf("nickname" to "가".repeat(9)),
             mapOf("birth" to "2999-01-01"),
         ).forEach { body ->
             updateProfile(body).statusCode(400).body("code", equalTo("api.common.invalidInputValue"))
