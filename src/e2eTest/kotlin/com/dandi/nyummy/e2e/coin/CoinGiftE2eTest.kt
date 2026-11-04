@@ -7,23 +7,33 @@ import io.restassured.module.kotlin.extensions.Then
 import io.restassured.module.kotlin.extensions.When
 import io.restassured.response.ValidatableResponse
 import org.hamcrest.Matchers.equalTo
-import org.hamcrest.Matchers.instanceOf
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 
 // 받기를 실제로 저장하면 prod에 코인이 남으므로 @Smoke를 붙이지 않는다.
-// 고정 계정은 한 번만 코인을 받으므로 잔액 값은 보지 않고 구조와 선물 코인 수만 본다.
+// 고정 계정은 한 번만 받고 되돌리는 API가 없어, 첫 실행에서만 코인이 3000 늘고 이후 실행은 거부부터 받는다.
+// 받았을 때의 잔액과 내역은 단위 테스트와 CoinLockConcurrencyTest에서 항상 확인한다.
 class CoinGiftE2eTest {
 
     @Test
-    fun `어떤 그룹의 패키지를 골라도 3000코인을 받는다`() {
-        listOf("A", "B").forEach { variant ->
-            postCoinGift(variant, mapOf("coinPackageId" to 3)) Then {
-                statusCode(200)
-                body("coinQuantity", equalTo(3000))
-                body("balance", instanceOf<Any>(Number::class.java))
-            }
+    fun `선물 코인은 한 번만 받고 다른 그룹과 패키지로 다시 요청해도 거부한다`() {
+        val balanceBefore = getBalance()
+
+        val firstResponse = postCoinGift("A", mapOf("coinPackageId" to 3))
+        val expectedBalance = if (firstResponse.statusCode == 200) {
+            firstResponse.then().body("coinQuantity", equalTo(3000))
+            firstResponse.then().body("balance", equalTo(balanceBefore + 3000))
+            balanceBefore + 3000
+        } else {
+            firstResponse.then().validateError(409, "api.coin.coinGiftAlreadyClaimed")
+            balanceBefore
         }
+
+        postCoinGift("B", mapOf("coinPackageId" to 1)) Then {
+            validateError(409, "api.coin.coinGiftAlreadyClaimed")
+        }
+
+        assertEquals(expectedBalance, getBalance(), "거부된 요청이 잔액을 바꿨습니다")
     }
 
     @Test

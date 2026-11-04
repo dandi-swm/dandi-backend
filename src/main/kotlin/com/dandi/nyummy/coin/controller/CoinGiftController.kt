@@ -31,10 +31,9 @@ class CoinGiftController(private val coinGiftService: CoinGiftService) {
             "A/B 그룹은 앱이 Remote Config에서 받은 값을 X-Coin-Package-Variant 헤더(A 또는 B)로 보낸다. " +
             "헤더가 없거나 다른 값이면 400이다. coinPackageId는 화면의 패키지 번호(1~3)이고, " +
             "A 그룹은 1,000원·5,000원·10,000원, B 그룹은 1,500원·7,500원·15,000원이다. " +
-            "코인은 사용자당 한 번만 받으며, 다시 요청하면 코인을 더 주지 않고 200으로 현재 잔액을 준다. " +
-            "현재는 저장하지 않고 고정 응답을 반환한다.",
+            "코인은 사용자당 한 번만 받으며, 다시 요청하면 그룹과 패키지에 관계없이 409다.",
     )
-    @ApiErrorCodes(coin = [CoinErrorCode.COIN_PACKAGE_NOT_FOUND])
+    @ApiErrorCodes(coin = [CoinErrorCode.COIN_PACKAGE_NOT_FOUND, CoinErrorCode.COIN_GIFT_ALREADY_CLAIMED])
     @PostMapping("/gifts")
     fun claimCoinGift(
         @CurrentUser user: AuthUser,
