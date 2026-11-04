@@ -48,6 +48,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -250,7 +251,7 @@ class ShopServiceTest {
     }
 
     @Test
-    fun `오늘의 할인은 진열 순서대로 3개까지 주고 남은 시간은 시간 단위로 올린다`() {
+    fun `오늘의 할인은 진열 순서대로 3개까지 준다`() {
         products = (101L..104L).map { product(it) }
         productItems = products.map { single(it) }
         promotions = listOf(promotion(3, PromotionCategory.DAILY, endsAt = now.plus(Duration.ofMinutes(70))))
@@ -262,8 +263,40 @@ class ShopServiceTest {
 
         val items = page.componentOf<ItemListComponentResponse>().content.items
         assertEquals(listOf(104L, 103L, 102L), items.map { it.productId })
-        val header = page.sduiComponents.filterIsInstance<SectionHeaderComponentResponse>().first().content
-        assertEquals("2시간 후 바뀌어요", header.trailing?.content?.last()?.text)
+    }
+
+    @Test
+    fun `오늘의 할인이 끝나기까지 3시간이 넘으면 시간 단위로 올려 회색으로 보여 준다`() {
+        assertRemainingTime(Duration.ofHours(3).plusSeconds(1), "4시간 후 바뀌어요", "contentTertiary")
+        assertRemainingTime(Duration.ofHours(10), "10시간 후 바뀌어요", "contentTertiary")
+    }
+
+    @Test
+    fun `오늘의 할인이 끝나기까지 3시간 이하면 분 단위로 올려 빨간색으로 보여 준다`() {
+        assertRemainingTime(Duration.ofHours(3), "3시간 남았어요", "contentDanger")
+        assertRemainingTime(Duration.ofHours(2).plusMinutes(13).plusSeconds(20), "2시간 14분 남았어요", "contentDanger")
+        assertRemainingTime(Duration.ofMinutes(70), "1시간 10분 남았어요", "contentDanger")
+        assertRemainingTime(Duration.ofMinutes(47), "47분 남았어요", "contentDanger")
+        assertRemainingTime(Duration.ofSeconds(20), "1분 남았어요", "contentDanger")
+    }
+
+    // 시계 아이콘과 글자가 같은 색인지도 함께 본다
+    private fun assertRemainingTime(remainingTime: Duration, text: String, color: String) {
+        products = listOf(product(101))
+        productItems = products.map { single(it) }
+        promotions = listOf(promotion(3, PromotionCategory.DAILY, endsAt = now.plus(remainingTime)))
+        promotionProducts = listOf(PromotionProduct(3, 101L, 0))
+
+        val header = getRecommendPage().sduiComponents
+            .filterIsInstance<SectionHeaderComponentResponse>()
+            .first()
+            .content
+        val (icon, label) = assertNotNull(header.trailing).content
+
+        assertEquals(text, label.text)
+        assertEquals(color, label.color)
+        assertEquals("clock", icon.icon)
+        assertEquals(color, icon.color)
     }
 
     @Test
