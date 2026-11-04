@@ -25,6 +25,7 @@ import com.dandi.nyummy.shop.dto.ItemPurchaseProductRequest
 import com.dandi.nyummy.shop.entity.CartItem
 import com.dandi.nyummy.shop.entity.Product
 import com.dandi.nyummy.shop.entity.ProductItem
+import com.dandi.nyummy.shop.enum.ItemPurchaseLineStatus
 import com.dandi.nyummy.shop.enum.RefundPolicyExceptionCategory
 import com.dandi.nyummy.shop.repository.CartItemRepository
 import com.dandi.nyummy.shop.repository.ProductItemRepository
@@ -56,6 +57,7 @@ import kotlin.test.assertNull
 
 /**
  * 환불을 실제 MySQL에서 구매부터 끝까지 돌린다. 회수가 앱의 조회와 우편 받기에 반영되는지와 코인 잠금 위의 경합을 확인한다.
+ * 어드민 구매 내역도 같은 흐름으로 만든 데이터에서 구성품 상태를 제대로 판단하는지 확인한다.
  */
 @Testcontainers
 @SpringBootTest(
@@ -68,6 +70,7 @@ import kotlin.test.assertNull
 @ActiveProfiles("test")
 class AdminItemPurchaseRefundIntegrationTest @Autowired constructor(
     private val adminItemPurchaseRefundService: AdminItemPurchaseRefundService,
+    private val adminItemPurchaseService: AdminItemPurchaseService,
     private val itemPurchaseService: ItemPurchaseService,
     private val mailService: MailService,
     private val coinService: CoinService,
@@ -257,6 +260,93 @@ class AdminItemPurchaseRefundIntegrationTest @Autowired constructor(
             assertEquals(STARTING_BALANCE, getBalance(userId))
             assertEquals(0, countActiveOwnedRoomItems(userId, lineIds.single()))
         }
+    }
+
+    @Test
+    fun `구매 내역은 구성품마다 받기 전과 받음과 장착과 환불 상태를 알려 준다`() {
+        val userId = createUser()
+        purchase(userId, createProduct(listOf(500, 300, 200), purchasePrice = 1000))
+        mailService.claimMails(userId)
+        val (refundedLineId, equippedLineId, claimedLineId) = getItemPurchaseLineIds(userId)
+        equip(userId, getOwnedRoomItemId(userId, equippedLineId))
+        createRefund(listOf(refundedLineId))
+        purchase(userId, createProduct(listOf(400)))
+
+        val response = adminItemPurchaseService.getItemPurchases(userId, null, 10)
+
+        val (newest, oldest) = response.itemPurchases
+        val notClaimedLine = newest.products.single().lines.single()
+        assertEquals(ItemPurchaseLineStatus.NOT_CLAIMED, notClaimedLine.status)
+        assertFalse(notClaimedLine.isEquipped)
+        val product = oldest.products.single()
+        assertEquals("상품", product.productName)
+        assertEquals(listOf(refundedLineId, equippedLineId, claimedLineId), product.lines.map { it.itemPurchaseLineId })
+        assertEquals(
+            listOf(
+                ItemPurchaseLineStatus.REFUNDED,
+                ItemPurchaseLineStatus.CLAIMED,
+                ItemPurchaseLineStatus.CLAIMED,
+            ),
+            product.lines.map { it.status },
+        )
+        assertEquals(listOf(false, true, false), product.lines.map { it.isEquipped })
+        assertEquals("아이템", product.lines.first().itemName)
+        val refund = product.refunds.single()
+        assertEquals(500, refund.coinQuantity)
+        assertEquals("실수 구매", refund.reason)
+    }
+
+    @Test
+    fun `구매 내역에서 장착한 채 환불한 구성품은 장착이 아니고 사용자가 지운 아이템은 받은 상태다`() {
+        val userId = createUser()
+        purchase(userId, createProduct(listOf(500)), quantity = 2)
+        mailService.claimMails(userId)
+        val (equippedLineId, deletedLineId) = getItemPurchaseLineIds(userId)
+        equip(userId, getOwnedRoomItemId(userId, equippedLineId))
+        roomService.deleteOwnedRoomItem(userId, getOwnedRoomItemId(userId, deletedLineId))
+        adminItemPurchaseRefundService.createRefund(
+            adminId,
+            getItemPurchaseProductId(equippedLineId),
+            CreateItemPurchaseRefundRequest(listOf(equippedLineId), "실수 구매", isPolicyException = true),
+        )
+
+        val lines = adminItemPurchaseService.getItemPurchases(userId, null, 10)
+            .itemPurchases.single().products.flatMap { it.lines }
+
+        assertEquals(
+            listOf(ItemPurchaseLineStatus.REFUNDED, ItemPurchaseLineStatus.CLAIMED),
+            lines.map { it.status },
+        )
+        assertEquals(listOf(false, false), lines.map { it.isEquipped })
+    }
+
+    @Test
+    fun `구매 내역은 최신순으로 커서를 따라 조회하고 다른 사용자의 구매는 섞이지 않는다`() {
+        val userId = createUser()
+        val otherUserId = createUser()
+        repeat(3) { purchase(userId, createProduct(listOf(100))) }
+        purchase(otherUserId, createProduct(listOf(100)))
+
+        val firstPage = adminItemPurchaseService.getItemPurchases(userId, null, 2)
+        val secondPage = adminItemPurchaseService.getItemPurchases(userId, firstPage.nextCursor, 2)
+
+        val itemPurchaseIds = firstPage.itemPurchases.map { it.itemPurchaseId } +
+            secondPage.itemPurchases.map { it.itemPurchaseId }
+        assertEquals(3, itemPurchaseIds.size)
+        assertEquals(itemPurchaseIds.sortedDescending(), itemPurchaseIds)
+        assertEquals(true, firstPage.hasNext)
+        assertEquals(firstPage.itemPurchases.last().itemPurchaseId, firstPage.nextCursor)
+        assertFalse(secondPage.hasNext)
+        assertNull(secondPage.nextCursor)
+        assertEquals(1, adminItemPurchaseService.getItemPurchases(otherUserId, null, 10).itemPurchases.size)
+    }
+
+    @Test
+    fun `구매가 없는 사용자의 구매 내역은 비어 있다`() {
+        val response = adminItemPurchaseService.getItemPurchases(createUser(), null, 10)
+
+        assertEquals(emptyList(), response.itemPurchases)
+        assertFalse(response.hasNext)
     }
 
     private val adminId: Long by lazy {
