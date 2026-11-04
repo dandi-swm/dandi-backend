@@ -3,6 +3,7 @@ package com.dandi.nyummy.cat.service
 import com.dandi.nyummy.cat.config.CatProperties
 import com.dandi.nyummy.cat.dto.CatAnimationResponse
 import com.dandi.nyummy.cat.dto.CreateCatRequest
+import com.dandi.nyummy.cat.dto.UpdateCatRequest
 import com.dandi.nyummy.cat.entity.Cat
 import com.dandi.nyummy.cat.enum.CatWeight
 import com.dandi.nyummy.cat.repository.CatAnimationLoader
@@ -521,6 +522,66 @@ class CatServiceTest {
 
         // then
         assertEquals("가나다라마바사아", saved.captured.name)
+    }
+
+    // ---------------------------------------------------------------- 고양이 변경
+
+    @Test
+    fun `이름을 바꾼다`() {
+        // given
+        val cat = givenCat(evaluatedDaysAgo = 0)
+
+        // when
+        catService.updateCat(userId, UpdateCatRequest(name = "가나다라마바사아"))
+
+        // then
+        assertEquals("가나다라마바사아", cat.name)
+    }
+
+    @Test
+    fun `이름을 생략하면 그대로 둔다`() {
+        // given
+        val cat = givenCat(evaluatedDaysAgo = 0)
+
+        // when
+        catService.updateCat(userId, UpdateCatRequest(name = null))
+
+        // then
+        assertEquals("나비", cat.name)
+    }
+
+    @Test
+    fun `이름을 바꿔도 체형은 평가하지 않는다`() {
+        // given: 어제 굶었으니 평가했다면 한 단계 내려간다.
+        val cat = givenCat(evaluatedDaysAgo = 1)
+
+        // when
+        catService.updateCat(userId, UpdateCatRequest(name = "초코"))
+
+        // then
+        assertEquals(0, cat.weight)
+        assertEquals(midnight(1), cat.weightUpdatedAt)
+        verify(exactly = 0) { mealRepository.findMealsByUserIdAndPeriod(any(), any(), any()) }
+    }
+
+    @Test
+    fun `바꿀 이름이 8자를 넘으면 고양이를 조회하지 않고 거부한다`() {
+        // when & then
+        assertBusinessException(CatErrorCode.NAME_TOO_LONG) {
+            catService.updateCat(userId, UpdateCatRequest(name = "가나다라마바사아자"))
+        }
+        verify(exactly = 0) { catRepository.findByUserId(any()) }
+    }
+
+    @Test
+    fun `바꿀 고양이가 없으면 CAT_NOT_FOUND를 던진다`() {
+        // given
+        every { catRepository.findByUserId(userId) } returns null
+
+        // when & then
+        assertBusinessException(CatErrorCode.CAT_NOT_FOUND) {
+            catService.updateCat(userId, UpdateCatRequest(name = "초코"))
+        }
     }
 
     // ---------------------------------------------------------------- 픽스처

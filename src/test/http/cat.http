@@ -14,6 +14,15 @@ Content-Type: application/json
 GET {{url}}/api/v1/cats
 Authorization: Bearer {{accessToken}}
 
+### 고양이 변경 API
+PATCH {{url}}/api/v1/cats
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "name": "나비"
+}
+
 ### 고양이 애니메이션 API
 GET {{url}}/api/v1/cats/animations
 Authorization: Bearer {{accessToken}}
