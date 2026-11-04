@@ -28,6 +28,22 @@ class FcmPushClientTest {
 
     @Test
     fun `Android 우선순위를 high로 보낸다`() {
+        val json = sendPushAndCaptureJson(createPushMessage())
+        val android = json["android"] as Map<*, *>
+
+        assertEquals("high", android["priority"])
+    }
+
+    @Test
+    fun `알림 종류를 FCM 분석 라벨로 보낸다`() {
+        val json = sendPushAndCaptureJson(createPushMessage(type = PushType.RETENTION))
+        val fcmOptions = json["fcm_options"] as Map<*, *>
+
+        assertEquals("RETENTION", fcmOptions["analytics_label"])
+    }
+
+    /** Message에 공개 게터가 없어 FCM으로 나가는 JSON 그대로 확인한다 */
+    private fun sendPushAndCaptureJson(message: PushMessage): GenericJson {
         val messages = slot<List<Message>>()
         val response = mockk<BatchResponse> {
             every { responses } returns emptyList()
@@ -35,19 +51,15 @@ class FcmPushClientTest {
         }
         every { firebaseMessaging.sendEach(capture(messages), false) } returns response
 
-        pushClient.sendPushes(mapOf("token" to createPushMessage()))
+        pushClient.sendPushes(mapOf("token" to message))
 
-        // Message에 공개 게터가 없어 FCM으로 나가는 JSON 그대로 확인한다
         val jsonFactory = GsonFactory.getDefaultInstance()
-        val json = jsonFactory.fromString(jsonFactory.toString(messages.captured.single()), GenericJson::class.java)
-        val android = json["android"] as Map<*, *>
-
-        assertEquals("high", android["priority"])
+        return jsonFactory.fromString(jsonFactory.toString(messages.captured.single()), GenericJson::class.java)
     }
 
-    private fun createPushMessage() = PushMessage(
+    private fun createPushMessage(type: PushType = PushType.MEAL_REMINDER) = PushMessage(
         userId = 1L,
-        type = PushType.MEAL_REMINDER,
+        type = type,
         notificationId = "meal-reminder:1:2026-11-03:LUNCH",
         title = "집사, 점심은 먹었어?",
         body = "사진 한 장만 찍어줘!",
