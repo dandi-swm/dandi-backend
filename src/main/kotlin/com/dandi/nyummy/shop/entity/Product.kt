@@ -29,7 +29,7 @@ import java.time.Instant
  *   구성품 정가와 어긋나지 않게 바꾸지 않는다(정가를 바꾸려면 판매를 멈추고 새 상품을 만든다)
  * @property saleStartsAt 판매 시작 시각이자 신상순 정렬 기준. 미래 시각이면 예약 등록이다
  * @property saleEndsAt 판매 종료 시각. null이면 종료일이 없다
- * @property purchaseLimit 1인 구매 한도. null이면 무제한이고, 환불한 구매는 세지 않는다
+ * @property purchaseLimit 1인 구매 한도. null이면 무제한이고, 구성품을 모두 환불한 구매는 세지 않는다
  * @property salesCount 최근 판매량. Internal 배치가 갱신하고 판매량순 정렬과 인기 순위에 쓴다
  */
 @Entity
