@@ -1,5 +1,6 @@
 package com.dandi.nyummy.room.service
 
+import com.dandi.nyummy.coin.service.CoinService
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.AuthErrorCode
 import com.dandi.nyummy.exception.errorcode.CommonErrorCode
@@ -26,6 +27,7 @@ import java.time.Instant
 
 @Service
 class RoomService(
+    private val coinService: CoinService,
     private val ownedRoomItemRepository: OwnedRoomItemRepository,
     private val roomProperties: RoomProperties,
     private val clock: Clock,
@@ -125,9 +127,9 @@ class RoomService(
      * 사용자의 삭제되지 않은 보유 아이템을 모두 읽고 바뀐 행만 변경 감지로 UPDATE한다.
      * 이미 해제된 아이템에 [OwnedRoomItem.unequip]을 불러도 값이 같아 UPDATE가 나가지 않으므로 따로 분기하지 않는다.
      *
-     * 잠그지 않는다. 그래서 알고 남겨 둔 문제가 두 가지 있다.
-     * - 같은 사용자가 동시에 저장하면 서로 다른 행만 바꿀 때 기다리지 않아, 결과가 두 요청의 장착을 합친 상태가 될 수 있다.
-     * - 저장이 읽은 뒤 삭제가 먼저 커밋되면, 모든 컬럼을 쓰는 UPDATE가 deleted_at을 null로 되돌려 지운 아이템이 살아난다.
+     * 보유 아이템 UPDATE는 모든 컬럼을 쓰므로, 읽은 뒤 다른 트랜잭션이 커밋한 값을 되돌릴 수 있다. 그래서 읽기 전에
+     * 코인 행을 사용자 단위 자물쇠로 잠근다([CoinService.lockCoin]). 잠그지 않으면 지운 아이템이 살아나거나, 환불로
+     * 회수한 아이템의 revoked_at이 지워져 코인과 아이템을 둘 다 갖게 된다. 같은 사용자의 삭제·복구도 같은 자물쇠를 쓴다.
      *
      * @throws BusinessException [RoomErrorCode.DUPLICATE_OWNED_ROOM_ITEM] 같은 ownedRoomItemId가 두 번 이상 있는 경우
      * @throws BusinessException [RoomErrorCode.OWNED_ROOM_ITEM_NOT_FOUND] 없거나 삭제된 보유 아이템이 있는 경우
@@ -140,6 +142,7 @@ class RoomService(
             throw BusinessException(RoomErrorCode.DUPLICATE_OWNED_ROOM_ITEM)
         }
 
+        coinService.lockCoin(userId)
         val ownedRoomItems = ownedRoomItemRepository.findOwnedRoomItemsByUserIdAndDeletedAtIsNullAndRevokedAtIsNull(
             userId,
         )
@@ -184,6 +187,7 @@ class RoomService(
      */
     @Transactional
     fun deleteOwnedRoomItem(userId: Long, ownedRoomItemId: Long) {
+        coinService.lockCoin(userId)
         val ownedRoomItem = ownedRoomItemRepository.findByIdOrNull(ownedRoomItemId)?.takeUnless { it.isRevoked }
             ?: throw BusinessException(RoomErrorCode.OWNED_ROOM_ITEM_NOT_FOUND)
 
@@ -205,6 +209,7 @@ class RoomService(
      */
     @Transactional
     fun restoreOwnedRoomItem(userId: Long, ownedRoomItemId: Long) {
+        coinService.lockCoin(userId)
         val ownedRoomItem = ownedRoomItemRepository.findByIdOrNull(ownedRoomItemId)?.takeUnless { it.isRevoked }
             ?: throw BusinessException(RoomErrorCode.OWNED_ROOM_ITEM_NOT_FOUND)
 

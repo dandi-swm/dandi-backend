@@ -1,5 +1,7 @@
 package com.dandi.nyummy.room.service
 
+import com.dandi.nyummy.coin.entity.Coin
+import com.dandi.nyummy.coin.service.CoinService
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.AuthErrorCode
 import com.dandi.nyummy.exception.errorcode.CommonErrorCode
@@ -39,6 +41,9 @@ class RoomServiceTest {
     private val now = Instant.parse("2026-10-19T03:00:00Z")
     private val clock = Clock.fixed(now, ZoneOffset.UTC)
 
+    private val coinService = mockk<CoinService> {
+        every { lockCoin(any()) } returns Coin(userId = userId)
+    }
     private val ownedRoomItemRepository = mockk<OwnedRoomItemRepository>()
     private val roomProperties = RoomProperties(
         defaultRoomItems = listOf(
@@ -48,6 +53,7 @@ class RoomServiceTest {
     )
 
     private val roomService = RoomService(
+        coinService = coinService,
         ownedRoomItemRepository = ownedRoomItemRepository,
         roomProperties = roomProperties,
         clock = clock,
