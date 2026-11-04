@@ -6,14 +6,18 @@ import com.dandi.nyummy.coin.repository.CoinRepository
 import com.dandi.nyummy.coin.service.CoinService
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.ErrorCode
+import com.dandi.nyummy.exception.errorcode.RoomErrorCode
 import com.dandi.nyummy.exception.errorcode.ShopErrorCode
 import com.dandi.nyummy.item.entity.Item
 import com.dandi.nyummy.item.repository.ItemRepository
 import com.dandi.nyummy.mail.enum.RewardBoxCategory
 import com.dandi.nyummy.mail.service.MailService
+import com.dandi.nyummy.room.dto.EquippedRoomItemRequest
+import com.dandi.nyummy.room.dto.UpdateEquippedRoomItemsRequest
 import com.dandi.nyummy.room.entity.RoomItem
 import com.dandi.nyummy.room.enum.RoomItemCategory
 import com.dandi.nyummy.room.repository.RoomItemRepository
+import com.dandi.nyummy.room.service.RoomService
 import com.dandi.nyummy.shop.dto.CreateCartItemRequest
 import com.dandi.nyummy.shop.dto.CreateItemPurchaseRequest
 import com.dandi.nyummy.shop.dto.ItemPurchaseProductRequest
@@ -51,6 +55,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -65,6 +70,7 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
     private val mailService: MailService,
     private val coinService: CoinService,
     private val shopItemService: ShopItemService,
+    private val roomService: RoomService,
     private val userRepository: UserRepository,
     private val coinRepository: CoinRepository,
     private val itemRepository: ItemRepository,
@@ -390,6 +396,69 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
         assertTrue(shopItemService.getEligiblePromotions(userId, now()).none { it.id == promotion.id })
     }
 
+    @Test
+    fun `받기 전에 회수한 아이템은 보유 개수에서 빠지고 우편을 받아도 생기지 않는다`() {
+        val userId = createUser()
+        val product = createProduct(price = 500)
+        createCartItem(userId, product, quantity = 2)
+        purchase(userId, listOf(product to 2))
+        assertEquals(2, getOwnedCount(userId, product))
+
+        revokeRow("mail_items", getFirstMailItemId(userId))
+
+        assertEquals(1, getOwnedCount(userId, product))
+
+        val reward = mailService.claimMails(userId)
+
+        assertEquals(1, reward.items?.single()?.quantity)
+        assertEquals(1, queryForInt("select count(*) from owned_room_items where user_id = ?", userId))
+        assertEquals(1, getOwnedCount(userId, product))
+    }
+
+    @Test
+    fun `회수한 방 배경은 우편을 받기 전이나 받은 뒤나 다시 살 수 있다`() {
+        val userId = createUser()
+        val background = createProduct(price = 500, category = RoomItemCategory.BACKGROUND)
+        val otherUserId = createUser()
+        createCartItem(userId, background, quantity = 1)
+        createCartItem(otherUserId, background, quantity = 1)
+        purchase(userId, listOf(background to 1))
+        purchase(otherUserId, listOf(background to 1))
+        mailService.claimMails(otherUserId)
+        assertEquals(ShopErrorCode.ALREADY_OWNED, getUnavailableErrorCode(userId, background))
+        assertEquals(ShopErrorCode.ALREADY_OWNED, getUnavailableErrorCode(otherUserId, background))
+
+        revokeRow("mail_items", getFirstMailItemId(userId))
+        revokeRow("owned_room_items", getFirstOwnedRoomItemId(otherUserId))
+
+        assertNull(getUnavailableErrorCode(userId, background))
+        assertNull(getUnavailableErrorCode(otherUserId, background))
+    }
+
+    @Test
+    fun `받은 뒤 회수한 아이템은 장착 중이었어도 마이룸과 보유 개수에서 빠지고 장착 저장을 거부한다`() {
+        val userId = createUser()
+        val product = createProduct(price = 500)
+        createCartItem(userId, product, quantity = 2)
+        purchase(userId, listOf(product to 2))
+        mailService.claimMails(userId)
+        val revokedId = getFirstOwnedRoomItemId(userId)
+        val remainingId = roomService.getOwnedRoomItems(userId, RoomItemCategory.BED, null, 10)
+            .ownedRoomItems.map { it.ownedRoomItemId }.single { it != revokedId }
+        roomService.updateEquippedRoomItems(userId, createEquippedRoomItemsRequest(revokedId, remainingId))
+
+        // 장착 해제는 환불이 하지만, 조회는 장착 상태와 관계없이 회수된 행을 빼야 한다
+        revokeRow("owned_room_items", revokedId)
+
+        val ownedRoomItems = roomService.getOwnedRoomItems(userId, RoomItemCategory.BED, null, 10).ownedRoomItems
+        assertEquals(listOf(remainingId), ownedRoomItems.map { it.ownedRoomItemId })
+        assertEquals(listOf(remainingId), roomService.getEquippedRoomItems(userId).map { it.ownedRoomItemId })
+        assertEquals(1, getOwnedCount(userId, product))
+        assertBusinessException(RoomErrorCode.OWNED_ROOM_ITEM_NOT_FOUND) {
+            roomService.updateEquippedRoomItems(userId, createEquippedRoomItemsRequest(revokedId))
+        }
+    }
+
     private fun now(): Instant = Instant.now(clock)
 
     private fun createUser(): Long {
@@ -446,6 +515,28 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
 
     private fun getOwnedCount(userId: Long, product: Product): Int =
         shopItemService.createShopItems(userId, listOf(product), emptyMap(), now()).getValue(product.id).ownedCount
+
+    private fun getUnavailableErrorCode(userId: Long, product: Product): ErrorCode? =
+        shopItemService.getProductAvailabilities(userId, listOf(product), now())
+            .getValue(product.id)
+            .getUnavailableErrorCode(1)
+
+    private fun getFirstMailItemId(userId: Long): Long = queryForInt(
+        "select min(mi.id) from mail_items mi join mails m on m.id = mi.mail_id where m.user_id = ?",
+        userId,
+    ).toLong()
+
+    private fun getFirstOwnedRoomItemId(userId: Long): Long =
+        queryForInt("select min(id) from owned_room_items where user_id = ?", userId).toLong()
+
+    // 환불 코드가 아직 없어 회수 시각을 직접 넣는다
+    private fun revokeRow(table: String, id: Long) {
+        jdbcTemplate.update("update $table set revoked_at = current_timestamp where id = ?", id)
+    }
+
+    private fun createEquippedRoomItemsRequest(vararg ownedRoomItemIds: Long) = UpdateEquippedRoomItemsRequest(
+        ownedRoomItemIds.map { EquippedRoomItemRequest(it, x = 10f, y = 10f, zIndex = 0, scale = 1f) },
+    )
 
     private fun getBalance(userId: Long): Int = assertNotNull(coinRepository.findByUserId(userId)).balance
 

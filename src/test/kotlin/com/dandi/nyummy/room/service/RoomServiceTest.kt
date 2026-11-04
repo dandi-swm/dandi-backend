@@ -358,6 +358,17 @@ class RoomServiceTest {
     }
 
     @Test
+    fun `회수된 보유 아이템은 없는 것으로 보고 삭제하지 않는다`() {
+        val item = ownedRoomItem(id = 5L, isEquipped = false).apply { revokedAt = now.minusSeconds(60) }
+        every { ownedRoomItemRepository.findByIdOrNull(5L) } returns item
+
+        assertBusinessException(RoomErrorCode.OWNED_ROOM_ITEM_NOT_FOUND) {
+            roomService.deleteOwnedRoomItem(userId, 5L)
+        }
+        assertNull(item.deletedAt)
+    }
+
+    @Test
     fun `없는 보유 아이템은 삭제할 수 없다`() {
         every { ownedRoomItemRepository.findByIdOrNull(99L) } returns null
 
@@ -398,6 +409,21 @@ class RoomServiceTest {
 
         assertNull(item.deletedAt)
         assertTrue(item.isEquipped)
+    }
+
+    @Test
+    fun `회수된 보유 아이템은 없는 것으로 보고 복구하지 않는다`() {
+        val deletedAt = now.minusSeconds(600)
+        val item = ownedRoomItem(id = 5L, isEquipped = false).apply {
+            this.deletedAt = deletedAt
+            revokedAt = now.minusSeconds(60)
+        }
+        every { ownedRoomItemRepository.findByIdOrNull(5L) } returns item
+
+        assertBusinessException(RoomErrorCode.OWNED_ROOM_ITEM_NOT_FOUND) {
+            roomService.restoreOwnedRoomItem(userId, 5L)
+        }
+        assertEquals(deletedAt, item.deletedAt)
     }
 
     @Test
