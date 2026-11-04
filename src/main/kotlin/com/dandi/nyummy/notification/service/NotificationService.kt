@@ -5,15 +5,22 @@ import com.dandi.nyummy.infra.push.dto.PushMessage
 import com.dandi.nyummy.infra.push.dto.PushResult
 import com.dandi.nyummy.notification.dto.CreateDeviceTokenRequest
 import com.dandi.nyummy.notification.entity.DeviceToken
+import com.dandi.nyummy.notification.entity.PushHistory
+import com.dandi.nyummy.notification.enum.PushOutcome
 import com.dandi.nyummy.notification.repository.DeviceTokenRepository
+import com.dandi.nyummy.notification.repository.PushHistoryRepository
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.time.Clock
+import java.time.Instant
 
 @Service
 class NotificationService(
     private val deviceTokenRepository: DeviceTokenRepository,
+    private val pushHistoryRepository: PushHistoryRepository,
     private val pushClient: PushClient,
+    private val clock: Clock,
 ) {
     companion object {
         private val logger = LoggerFactory.getLogger(NotificationService::class.java)
@@ -57,7 +64,7 @@ class NotificationService(
     }
 
     /**
-     * 발송만 하고 결과를 돌려준다. 무효 토큰 정리는 호출자가 [deleteInvalidDeviceTokens]로 한다.
+     * 발송하고 전송 내역을 남긴 뒤 결과를 돌려준다. 무효 토큰 정리는 호출자가 [deleteInvalidDeviceTokens]로 한다.
      *
      * 트랜잭션을 걸지 않는다. FCM 호출은 수 초 걸리는 외부 I/O라, 트랜잭션 안에서 하면
      * 그만큼 DB 커넥션을 잡고 있는다.
@@ -67,7 +74,54 @@ class NotificationService(
             return PushResult.EMPTY
         }
 
-        return pushClient.sendPushes(messagesByToken)
+        val sentAt = Instant.now(clock)
+        val result = pushClient.sendPushes(messagesByToken)
+
+        createPushHistories(messagesByToken, result, sentAt)
+
+        return result
+    }
+
+    /**
+     * 발송 결과를 전송 내역으로 남긴다.
+     *
+     * 저장에 실패해도 로그만 남긴다. 발송은 이미 끝났고, 예외를 올리면 호출자의 무효 토큰 정리와
+     * 재시도 표시 삭제까지 건너뛴다.
+     */
+    private fun createPushHistories(messagesByToken: Map<String, PushMessage>, result: PushResult, sentAt: Instant) {
+        try {
+            val platformsByToken = deviceTokenRepository.findDeviceTokensByTokenIn(messagesByToken.keys)
+                .associate { it.token to it.platform }
+            val invalidTokens = result.invalidTokens.toSet()
+            val retryableTokens = result.retryableTokens.toSet()
+
+            pushHistoryRepository.saveAll(
+                messagesByToken.map { (token, message) ->
+                    PushHistory(
+                        userId = message.userId,
+                        notificationId = message.notificationId,
+                        category = message.type,
+                        platform = platformsByToken[token],
+                        title = message.title,
+                        body = message.body,
+                        outcome = convertPushOutcome(token, invalidTokens, retryableTokens),
+                        sentAt = sentAt,
+                    )
+                },
+            )
+        } catch (e: RuntimeException) {
+            logger.error("푸시 전송 내역 저장 실패: messageCount={}", messagesByToken.size, e)
+        }
+    }
+
+    private fun convertPushOutcome(
+        token: String,
+        invalidTokens: Set<String>,
+        retryableTokens: Set<String>,
+    ): PushOutcome = when (token) {
+        in invalidTokens -> PushOutcome.INVALID_TOKEN
+        in retryableTokens -> PushOutcome.RETRYABLE
+        else -> PushOutcome.SUCCESS
     }
 
     /**

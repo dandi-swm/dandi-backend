@@ -46,6 +46,7 @@ class FcmPushClientTest {
     }
 
     private fun createPushMessage() = PushMessage(
+        userId = 1L,
         type = PushType.MEAL_REMINDER,
         notificationId = "meal-reminder:1:2026-11-03:LUNCH",
         title = "집사, 점심은 먹었어?",

@@ -138,6 +138,7 @@ class AnalysisServiceTest {
         verify(exactly = 1) { mealAnalysisJobTransactionService.confirmMealAnalysis(retryableJob, analysisResult) }
         assertEquals(
             PushMessage(
+                userId = userId,
                 type = PushType.ANALYSIS_COMPLETED,
                 notificationId = NotificationId.createAnalysisId(mealId, MealStatus.COMPLETED, now),
                 title = "나비 맛있게 먹었다냥 🐾",

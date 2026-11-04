@@ -159,6 +159,7 @@
 - 수신 설정 `PushSetting`(PushConfig·PushPreference·PushOption 금지), 광고 수신 동의 `Agreed`(`marketingAgreedAt`, Consent·Approval·Accept 금지)
 - 기기 토큰 `DeviceToken`, 기기 플랫폼 `DevicePlatform`
 - 발송 대상 `Target`(영양의 목표 섭취량 Target과 다른 뜻), Redis 중복 발송 방지 표시 `SentMark`
+- 푸시 전송 내역 한 건 `PushHistory`(테이블 `push_histories`, PushLog·SendLog 금지) — 중복 발송 방지 표시 `SentMark`와 다른 것. FCM 접수 결과 `PushOutcome`(Result·Status 금지) — 기기 도착 여부와 다른 것
 
 ### 문의
 
