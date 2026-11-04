@@ -1,5 +1,7 @@
 package com.dandi.nyummy.shop.service
 
+import com.dandi.nyummy.admin.entity.Admin
+import com.dandi.nyummy.admin.repository.AdminRepository
 import com.dandi.nyummy.auth.enum.AuthProvider
 import com.dandi.nyummy.coin.entity.Coin
 import com.dandi.nyummy.coin.repository.CoinRepository
@@ -72,6 +74,7 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
     private val shopItemService: ShopItemService,
     private val roomService: RoomService,
     private val userRepository: UserRepository,
+    private val adminRepository: AdminRepository,
     private val coinRepository: CoinRepository,
     private val itemRepository: ItemRepository,
     private val roomItemRepository: RoomItemRepository,
@@ -397,6 +400,38 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
     }
 
     @Test
+    fun `세트는 구성품을 모두 환불해야 1인 구매 한도에서 빠진다`() {
+        val userId = createUser()
+        val set = createProduct(price = 1000, itemCount = 2, purchaseLimit = 1)
+        createCartItem(userId, set, quantity = 1)
+        purchase(userId, listOf(set to 1))
+        val (firstLineId, secondLineId) = getItemPurchaseLineIds(userId)
+        assertEquals(ShopErrorCode.PURCHASE_LIMIT_EXCEEDED, getUnavailableErrorCode(userId, set))
+
+        refundLine(firstLineId)
+
+        assertEquals(ShopErrorCode.PURCHASE_LIMIT_EXCEEDED, getUnavailableErrorCode(userId, set))
+
+        refundLine(secondLineId)
+
+        assertNull(getUnavailableErrorCode(userId, set))
+    }
+
+    @Test
+    fun `같은 상품을 여러 개 사면 환불한 개수만큼만 1인 구매 한도가 돌아온다`() {
+        val userId = createUser()
+        val limited = createProduct(price = 1000, purchaseLimit = 2)
+        createCartItem(userId, limited, quantity = 2)
+        purchase(userId, listOf(limited to 2))
+        assertEquals(ShopErrorCode.PURCHASE_LIMIT_EXCEEDED, getUnavailableErrorCode(userId, limited))
+
+        refundLine(getItemPurchaseLineIds(userId).first())
+
+        assertNull(getUnavailableErrorCode(userId, limited))
+        assertEquals(ShopErrorCode.PURCHASE_LIMIT_EXCEEDED, getUnavailableErrorCode(userId, limited, quantity = 2))
+    }
+
+    @Test
     fun `받기 전에 회수한 아이템은 보유 개수에서 빠지고 우편을 받아도 생기지 않는다`() {
         val userId = createUser()
         val product = createProduct(price = 500)
@@ -561,10 +596,46 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
     private fun getOwnedCount(userId: Long, product: Product): Int =
         shopItemService.createShopItems(userId, listOf(product), emptyMap(), now()).getValue(product.id).ownedCount
 
-    private fun getUnavailableErrorCode(userId: Long, product: Product): ErrorCode? =
+    private fun getUnavailableErrorCode(userId: Long, product: Product, quantity: Int = 1): ErrorCode? =
         shopItemService.getProductAvailabilities(userId, listOf(product), now())
             .getValue(product.id)
-            .getUnavailableErrorCode(1)
+            .getUnavailableErrorCode(quantity)
+
+    private fun getItemPurchaseLineIds(userId: Long): List<Long> = jdbcTemplate.queryForList(
+        """
+        select l.id from item_purchase_lines l
+            join item_purchase_products p on p.id = l.item_purchase_product_id
+            join item_purchases ip on ip.id = p.item_purchase_id
+        where ip.user_id = ?
+        order by l.id
+        """,
+        Long::class.javaObjectType,
+        userId,
+    ).filterNotNull()
+
+    // 환불 코드가 아직 없어 환불 기록을 직접 넣는다
+    private fun refundLine(itemPurchaseLineId: Long) {
+        val adminId = adminRepository.save(Admin(email = "${UUID.randomUUID()}@nyummy.co.kr", name = "운영자")).id
+        val itemPurchaseProductId = queryForInt(
+            "select item_purchase_product_id from item_purchase_lines where id = ?",
+            itemPurchaseLineId,
+        )
+        jdbcTemplate.update(
+            """
+            insert into item_purchase_refunds (item_purchase_product_id, admin_id, coin_quantity, reason)
+            values (?, ?, 0, '테스트')
+            """,
+            itemPurchaseProductId,
+            adminId,
+        )
+        jdbcTemplate.update(
+            """
+            insert into item_purchase_refund_lines (item_purchase_refund_id, item_purchase_line_id)
+            values ((select max(id) from item_purchase_refunds), ?)
+            """,
+            itemPurchaseLineId,
+        )
+    }
 
     private fun getFirstMailItemId(userId: Long): Long = queryForInt(
         "select min(mi.id) from mail_items mi join mails m on m.id = mi.mail_id where m.user_id = ?",
