@@ -93,8 +93,8 @@ class AdminItemPurchaseRefundTransactionServiceTest {
             this.isEquipped = isEquipped
         }
 
-    private fun request(lineIds: List<Long>, isPolicyException: Boolean = false) =
-        CreateItemPurchaseRefundRequest(lineIds, "  실수 구매  ", isPolicyException)
+    private fun request(lineIds: List<Long>, expectedCoinQuantity: Int = 800, isPolicyException: Boolean = false) =
+        CreateItemPurchaseRefundRequest(lineIds, "  실수 구매  ", expectedCoinQuantity, isPolicyException)
 
     private fun givenRefundTarget(
         purchasePrice: Int = 800,
@@ -256,7 +256,7 @@ class AdminItemPurchaseRefundTransactionServiceTest {
         givenRefundTarget(purchasePrice = 500, balance = 1000)
         givenRefundSaved()
 
-        val response = createRefund(request(listOf(2L), isPolicyException = true))
+        val response = createRefund(request(listOf(2L), expectedCoinQuantity = 0, isPolicyException = true))
 
         assertEquals(0, response.coinQuantity)
         assertEquals(1000, response.balance)
@@ -318,7 +318,7 @@ class AdminItemPurchaseRefundTransactionServiceTest {
         every { mailItemRepository.findByItemPurchaseLineIdIn(setOf(1L)) } returns listOf(mailItem)
         every { mailItemRepository.existsByMailIdAndRevokedAtIsNull(50L) } returns true
 
-        createRefund(request(listOf(1L)))
+        createRefund(request(listOf(1L), expectedCoinQuantity = 500))
 
         assertEquals(now, mailItem.revokedAt)
         verify(exactly = 1) { mailRepository.findAllById(emptyList()) }

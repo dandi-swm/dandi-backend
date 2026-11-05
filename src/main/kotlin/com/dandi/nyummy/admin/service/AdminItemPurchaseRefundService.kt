@@ -41,6 +41,7 @@ class AdminItemPurchaseRefundService(
      * @throws BusinessException [AdminErrorCode.ITEM_PURCHASE_PRODUCT_NOT_FOUND] 구매 상품이 없는 경우
      * @throws BusinessException [AdminErrorCode.ITEM_PURCHASE_LINE_NOT_FOUND] 이 구매 상품의 구성품이 아닌 것이 있는 경우
      * @throws BusinessException [AdminErrorCode.ALREADY_REFUNDED] 이미 환불한 구성품이 있는 경우
+     * @throws BusinessException [AdminErrorCode.REFUND_COIN_QUANTITY_CHANGED] 돌려줄 코인이 화면에서 본 금액과 다른 경우
      * @throws BusinessException [AdminErrorCode.REFUND_POLICY_EXCEPTION_REQUIRED] 정책에 어긋나는데 예외로 표시하지 않은 경우
      */
     fun createRefund(

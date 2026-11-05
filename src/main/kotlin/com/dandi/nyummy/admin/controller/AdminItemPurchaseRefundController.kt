@@ -38,7 +38,7 @@ class AdminItemPurchaseRefundController(private val adminItemPurchaseRefundServi
         summary = "환불 미리 보기",
         description = "구성품을 환불하면 돌려줄 코인과 정책에 어긋나는 이유를 계산한다. 아무것도 바꾸지 않는다. " +
             "policyExceptions는 환불 전체의 이유이고, lines[].policyExceptions는 구성품별 이유다. " +
-            "ZERO_COIN은 환불 한 건에 하나라 전체에만 있다. 실행할 때 다시 계산하므로 결과가 달라질 수 있다.",
+            "ZERO_COIN은 환불 한 건에 하나라 전체에만 있다. 실행할 때는 coinQuantity를 expectedCoinQuantity로 보낸다.",
     )
     @ApiErrorCodes(
         admin = [
@@ -60,6 +60,7 @@ class AdminItemPurchaseRefundController(private val adminItemPurchaseRefundServi
     @Operation(
         summary = "환불 실행",
         description = "구성품을 회수하고 코인을 돌려준다. 받은 구성품은 보유 아이템에서 빠지고(장착 해제), 받기 전 구성품은 우편에서 빠진다. " +
+            "다시 계산한 코인이 expectedCoinQuantity와 다르면 409로 거부한다. 그사이 같은 세트의 다른 구성품을 환불한 경우다. " +
             "미리 보기와 같은 정책 예외가 있으면 isPolicyException이 true일 때만 환불하고, 아니면 409로 거부한다. " +
             "돌려줄 코인이 0이면 코인 내역을 남기지 않는다.",
     )
@@ -68,6 +69,7 @@ class AdminItemPurchaseRefundController(private val adminItemPurchaseRefundServi
             AdminErrorCode.ITEM_PURCHASE_PRODUCT_NOT_FOUND,
             AdminErrorCode.ITEM_PURCHASE_LINE_NOT_FOUND,
             AdminErrorCode.ALREADY_REFUNDED,
+            AdminErrorCode.REFUND_COIN_QUANTITY_CHANGED,
             AdminErrorCode.REFUND_POLICY_EXCEPTION_REQUIRED,
         ],
         common = [CommonErrorCode.REQUEST_CONFLICT],

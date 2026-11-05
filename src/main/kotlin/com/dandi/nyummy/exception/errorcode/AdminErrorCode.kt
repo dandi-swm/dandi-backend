@@ -23,6 +23,11 @@ enum class AdminErrorCode(override val status: HttpStatus, override val code: St
         "이 구매 상품의 구성품이 아닌 itemPurchaseLineId가 있습니다.",
     ),
     ALREADY_REFUNDED(HttpStatus.CONFLICT, "api.admin.alreadyRefunded", "이미 환불한 구성품이 있습니다."),
+    REFUND_COIN_QUANTITY_CHANGED(
+        HttpStatus.CONFLICT,
+        "api.admin.refundCoinQuantityChanged",
+        "돌려줄 코인이 바뀌었습니다. 금액을 다시 확인해 주세요.",
+    ),
     REFUND_POLICY_EXCEPTION_REQUIRED(
         HttpStatus.CONFLICT,
         "api.admin.refundPolicyExceptionRequired",

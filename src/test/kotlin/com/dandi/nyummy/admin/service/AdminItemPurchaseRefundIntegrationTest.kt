@@ -1,6 +1,7 @@
 package com.dandi.nyummy.admin.service
 
 import com.dandi.nyummy.admin.dto.CreateItemPurchaseRefundRequest
+import com.dandi.nyummy.admin.dto.ItemPurchaseRefundResponse
 import com.dandi.nyummy.admin.entity.Admin
 import com.dandi.nyummy.admin.repository.AdminRepository
 import com.dandi.nyummy.auth.enum.AuthProvider
@@ -180,12 +181,17 @@ class AdminItemPurchaseRefundIntegrationTest @Autowired constructor(
         val equippedRefund = adminItemPurchaseRefundService.createRefund(
             adminId,
             getItemPurchaseProductId(equippedLineId),
-            CreateItemPurchaseRefundRequest(listOf(equippedLineId), "실수 구매", isPolicyException = true),
+            CreateItemPurchaseRefundRequest(
+                listOf(equippedLineId),
+                "실수 구매",
+                expectedCoinQuantity = 500,
+                isPolicyException = true,
+            ),
         )
         val deletedRefund = adminItemPurchaseRefundService.createRefund(
             adminId,
             getItemPurchaseProductId(deletedLineId),
-            CreateItemPurchaseRefundRequest(listOf(deletedLineId), "실수 구매"),
+            CreateItemPurchaseRefundRequest(listOf(deletedLineId), "실수 구매", expectedCoinQuantity = 500),
         )
 
         assertEquals(500, equippedRefund.coinQuantity)
@@ -307,7 +313,12 @@ class AdminItemPurchaseRefundIntegrationTest @Autowired constructor(
         adminItemPurchaseRefundService.createRefund(
             adminId,
             getItemPurchaseProductId(equippedLineId),
-            CreateItemPurchaseRefundRequest(listOf(equippedLineId), "실수 구매", isPolicyException = true),
+            CreateItemPurchaseRefundRequest(
+                listOf(equippedLineId),
+                "실수 구매",
+                expectedCoinQuantity = 500,
+                isPolicyException = true,
+            ),
         )
 
         val lines = adminItemPurchaseService.getItemPurchases(userId, null, 10)
@@ -393,11 +404,17 @@ class AdminItemPurchaseRefundIntegrationTest @Autowired constructor(
         )
     }
 
-    private fun createRefund(itemPurchaseLineIds: List<Long>) = adminItemPurchaseRefundService.createRefund(
-        adminId,
-        getItemPurchaseProductId(itemPurchaseLineIds.first()),
-        CreateItemPurchaseRefundRequest(itemPurchaseLineIds, "실수 구매"),
-    )
+    // 어드민 화면처럼 미리 본 금액을 그대로 보낸다
+    private fun createRefund(itemPurchaseLineIds: List<Long>): ItemPurchaseRefundResponse {
+        val itemPurchaseProductId = getItemPurchaseProductId(itemPurchaseLineIds.first())
+        val preview = adminItemPurchaseRefundService.getRefundPreview(itemPurchaseProductId, itemPurchaseLineIds)
+
+        return adminItemPurchaseRefundService.createRefund(
+            adminId,
+            itemPurchaseProductId,
+            CreateItemPurchaseRefundRequest(itemPurchaseLineIds, "실수 구매", preview.coinQuantity),
+        )
+    }
 
     private fun equip(userId: Long, ownedRoomItemId: Long) {
         roomService.updateEquippedRoomItems(

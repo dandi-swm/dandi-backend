@@ -67,6 +67,7 @@ class AdminItemPurchaseRefundTransactionService(
     /**
      * 코인 행 잠금이 첫 쿼리다. 우편 받기·구매·마이룸 쓰기가 같은 잠금을 쓰므로, 환불은 그 사이에 끼지 않고 최신 행을 본다.
      * 같은 구성품을 동시에 환불해도 뒤 요청은 앞 요청의 기록을 보고 거부되고, 유니크 제약이 한 번 더 막는다.
+     * 같은 세트의 다른 구성품을 먼저 환불하면 금액이 달라지므로, 운영자가 본 금액과 다르면 지급하지 않는다.
      */
     @Transactional
     fun createRefund(
@@ -78,6 +79,9 @@ class AdminItemPurchaseRefundTransactionService(
         val coin = coinService.lockCoin(userId)
         val itemPurchaseLineIds = request.itemPurchaseLineIds.toSet()
         val calculation = calculateRefund(getItemPurchaseProduct(itemPurchaseProductId), itemPurchaseLineIds)
+        if (calculation.coinQuantity != request.expectedCoinQuantity) {
+            throw BusinessException(AdminErrorCode.REFUND_COIN_QUANTITY_CHANGED)
+        }
         if (calculation.policyExceptions.isNotEmpty() && !request.isPolicyException) {
             throw BusinessException(AdminErrorCode.REFUND_POLICY_EXCEPTION_REQUIRED)
         }
