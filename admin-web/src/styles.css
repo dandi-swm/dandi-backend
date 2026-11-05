@@ -618,3 +618,21 @@ button.secondary:disabled {
   color: var(--muted);
   font-size: 13px;
 }
+
+.refund-panel {
+  margin-top: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.refund-panel p,
+.refund-panel ul {
+  margin: 0;
+}
+
+.refund-panel ul {
+  padding-left: 20px;
+  color: var(--error);
+  font-size: 14px;
+}

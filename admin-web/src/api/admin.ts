@@ -427,3 +427,45 @@ export function getItemPurchases(userId: number, cursor: number | null, size = 2
 
   return request<AdminItemPurchases>(`${PREFIX}/item-purchases?${params}`);
 }
+
+export type RefundPolicyExceptionCategory = "PERIOD_EXPIRED" | "EQUIPPED" | "ZERO_COIN";
+
+export const REFUND_POLICY_EXCEPTION_LABELS: Record<RefundPolicyExceptionCategory, string> = {
+  PERIOD_EXPIRED: "환불 기간이 지남",
+  EQUIPPED: "장착한 적 있음",
+  ZERO_COIN: "돌려줄 코인이 0",
+};
+
+export type ItemPurchaseRefundLinePreview = {
+  itemPurchaseLineId: number;
+  policyExceptions: RefundPolicyExceptionCategory[];
+};
+
+export type ItemPurchaseRefundPreview = {
+  coinQuantity: number;
+  policyExceptions: RefundPolicyExceptionCategory[];
+  lines: ItemPurchaseRefundLinePreview[];
+};
+
+export type CreateItemPurchaseRefundInput = {
+  itemPurchaseLineIds: number[];
+  reason: string;
+  isPolicyException: boolean;
+};
+
+export type ItemPurchaseRefund = { itemPurchaseRefundId: number; coinQuantity: number; balance: number };
+
+// 백엔드 CreateItemPurchaseRefundRequest와 같은 값
+export const REFUND_REASON_MAX = 255;
+
+export function getRefundPreview(itemPurchaseProductId: number, itemPurchaseLineIds: number[]) {
+  const params = new URLSearchParams(itemPurchaseLineIds.map((id) => ["itemPurchaseLineIds", String(id)]));
+
+  return request<ItemPurchaseRefundPreview>(`${PREFIX}/item-purchase-products/${itemPurchaseProductId}/refund-preview?${params}`);
+}
+
+export const createRefund = (itemPurchaseProductId: number, input: CreateItemPurchaseRefundInput) =>
+  request<ItemPurchaseRefund>(`${PREFIX}/item-purchase-products/${itemPurchaseProductId}/refunds`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });

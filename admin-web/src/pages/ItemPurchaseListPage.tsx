@@ -1,11 +1,15 @@
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   type AdminItemPurchaseProduct,
+  createRefund,
   getItemPurchases,
+  getRefundPreview,
   ITEM_PURCHASE_LINE_STATUS_LABELS,
   type ItemPurchaseLineStatus,
+  REFUND_POLICY_EXCEPTION_LABELS,
+  REFUND_REASON_MAX,
 } from "../api/admin";
 import { formatDateTime } from "../format";
 
@@ -99,18 +103,93 @@ export function ItemPurchaseListPage() {
   );
 }
 
+/**
+ * 구매 상품 하나와 그 환불. 환불은 구매 상품 단위라 구성품 선택과 미리 보기도 여기서 관리한다.
+ */
 function ItemPurchaseProductSection({ product }: { product: AdminItemPurchaseProduct }) {
+  const queryClient = useQueryClient();
+  const productId = product.itemPurchaseProductId;
+  const [checkedLineIds, setCheckedLineIds] = useState<number[]>([]);
+  const [reason, setReason] = useState("");
+  const [isPolicyException, setIsPolicyException] = useState(false);
+  const [refundedMessage, setRefundedMessage] = useState<string | null>(null);
+
+  // 다른 운영자가 먼저 환불하면 목록을 다시 읽었을 때 그 구성품을 선택에서 뺀다. 환불한 구성품은 체크를 풀 수 없어 그대로 두면 막힌다.
+  const selectedLineIds = checkedLineIds.filter((id) =>
+    product.lines.some((line) => line.itemPurchaseLineId === id && line.status !== "REFUNDED"),
+  );
+
+  // 환불 금액을 보여 주는 값이라, 예전 결과를 잠깐이라도 보이지 않도록 캐시에 남기지 않는다.
+  const preview = useQuery({
+    queryKey: ["refundPreview", productId, selectedLineIds],
+    queryFn: () => getRefundPreview(productId, selectedLineIds),
+    enabled: selectedLineIds.length > 0,
+    gcTime: 0,
+  });
+  const hasPolicyExceptions = (preview.data?.policyExceptions.length ?? 0) > 0;
+
+  const refund = useMutation({
+    mutationFn: () =>
+      createRefund(productId, {
+        itemPurchaseLineIds: selectedLineIds,
+        reason: reason.trim(),
+        isPolicyException: hasPolicyExceptions && isPolicyException,
+      }),
+    onSuccess: (result) => {
+      setRefundedMessage(`${result.coinQuantity} 코인을 돌려줬습니다. 사용자 잔액은 ${result.balance} 코인입니다.`);
+      setCheckedLineIds([]);
+      setReason("");
+      setIsPolicyException(false);
+      queryClient.invalidateQueries({ queryKey: ["itemPurchases"] });
+    },
+    // 다른 운영자가 먼저 환불했거나 사용자가 그사이 장착했을 수 있어 화면을 최신 상태로 다시 읽는다.
+    onError: () => {
+      queryClient.invalidateQueries({ queryKey: ["itemPurchases"] });
+      queryClient.invalidateQueries({ queryKey: ["refundPreview", productId] });
+    },
+  });
+
+  // 구성품이 바뀌면 경고도 바뀌므로, 앞서 확인한 예외 표시를 이어 쓰지 않는다.
+  const toggleLine = (itemPurchaseLineId: number) => {
+    setCheckedLineIds((current) =>
+      current.includes(itemPurchaseLineId)
+        ? current.filter((id) => id !== itemPurchaseLineId)
+        : [...current, itemPurchaseLineId].sort((a, b) => a - b),
+    );
+    setIsPolicyException(false);
+    setRefundedMessage(null);
+    refund.reset();
+  };
+
+  const handleRefund = () => {
+    if (!preview.data) return;
+    const message = `"${product.productName}"의 구성품 ${selectedLineIds.length}개를 환불하고 ${preview.data.coinQuantity} 코인을 돌려줍니다. 되돌릴 수 없습니다.`;
+    if (window.confirm(message)) refund.mutate();
+  };
+
+  const canRefund =
+    preview.isSuccess &&
+    !preview.isFetching &&
+    reason.trim().length > 0 &&
+    (!hasPolicyExceptions || isPolicyException) &&
+    !refund.isPending;
+
+  const lineExceptions = (preview.data?.lines ?? []).filter((line) => line.policyExceptions.length > 0);
+  // 구성품에 붙지 않는 예외(돌려줄 코인 0)는 환불 전체의 경고로 따로 보여 준다.
+  const overallExceptions = (preview.data?.policyExceptions ?? []).filter(
+    (category) => !lineExceptions.some((line) => line.policyExceptions.includes(category)),
+  );
+
   return (
     <div className="purchase-product">
       <h3>
         {product.productName}
-        <span className="price">
-          결제 {product.purchasePrice} 코인 · 정가 {product.listPrice} 코인
-        </span>
+        <span className="price">결제 {product.purchasePrice} 코인</span>
       </h3>
       <table className="table">
         <thead>
           <tr>
+            <th>환불</th>
             <th>구성품</th>
             <th>정가</th>
             <th>상태</th>
@@ -120,6 +199,15 @@ function ItemPurchaseProductSection({ product }: { product: AdminItemPurchasePro
         <tbody>
           {product.lines.map((line) => (
             <tr key={line.itemPurchaseLineId}>
+              <td>
+                <input
+                  type="checkbox"
+                  aria-label={`${line.itemName} 환불 선택`}
+                  checked={selectedLineIds.includes(line.itemPurchaseLineId)}
+                  disabled={line.status === "REFUNDED" || refund.isPending}
+                  onChange={() => toggleLine(line.itemPurchaseLineId)}
+                />
+              </td>
               <td className="title">{line.itemName}</td>
               <td>{line.listPrice} 코인</td>
               <td>
@@ -139,6 +227,58 @@ function ItemPurchaseProductSection({ product }: { product: AdminItemPurchasePro
             </li>
           ))}
         </ul>
+      )}
+      {refundedMessage && <p className="success">{refundedMessage}</p>}
+      {refund.error && <p className="error">{refund.error.message}</p>}
+      {selectedLineIds.length > 0 && (
+        <div className="refund-panel form">
+          {preview.isPending && <p className="muted">계산하는 중…</p>}
+          {preview.error && <p className="error">{preview.error.message}</p>}
+          {preview.isSuccess && (
+            <>
+              <p>
+                돌려줄 코인: <strong>{preview.data.coinQuantity} 코인</strong>
+              </p>
+              {hasPolicyExceptions && (
+                <ul>
+                  {lineExceptions.map((linePreview) => (
+                    <li key={linePreview.itemPurchaseLineId}>
+                      {product.lines.find((line) => line.itemPurchaseLineId === linePreview.itemPurchaseLineId)?.itemName}:{" "}
+                      {linePreview.policyExceptions.map((category) => REFUND_POLICY_EXCEPTION_LABELS[category]).join(", ")}
+                    </li>
+                  ))}
+                  {overallExceptions.map((category) => (
+                    <li key={category}>{REFUND_POLICY_EXCEPTION_LABELS[category]}</li>
+                  ))}
+                </ul>
+              )}
+              <label>
+                환불 이유
+                <input
+                  type="text"
+                  maxLength={REFUND_REASON_MAX}
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                />
+              </label>
+              {hasPolicyExceptions && (
+                <label className="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={isPolicyException}
+                    onChange={(e) => setIsPolicyException(e.target.checked)}
+                  />
+                  위 내용을 확인했고 정책 예외로 환불합니다
+                </label>
+              )}
+              <div className="actions">
+                <button type="button" className="primary" disabled={!canRefund} onClick={handleRefund}>
+                  {refund.isPending ? "환불하는 중…" : "환불"}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       )}
     </div>
   );
