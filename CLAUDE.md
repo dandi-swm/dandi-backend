@@ -207,7 +207,7 @@
 - 상점 구매 `ItemPurchase`(`itemPurchaseId`, Order 금지) — 1개 결제가 `purchasePrice`와 다른 개념. 재시도를 알아보는 키는 헤더 `Idempotency-Key`(RequestId·Nonce 금지)
 - 구매 안의 상품 1개 `ItemPurchaseProduct`(환불 단위), 그 구성품 하나 `ItemPurchaseLine`(판매 구성 `ProductItem`과 다른 것, Component·Part 금지)
 - 구성품이 지금 어떤 상태인지 `ItemPurchaseLineStatus`(`status`) — 구매 시도의 결과 `ItemPurchaseOutcome`과 다른 것
-- 상점 환불 `ItemPurchaseRefund`(`itemPurchaseRefundId`), 환불 전에 돌려줄 코인과 정책 예외를 계산해 보여 주는 것 `RefundPreview`(`getRefundPreview`, 구성품별 응답 `ItemPurchaseRefundLinePreviewResponse`), 미리 보기와 실행이 함께 쓰는 계산 결과 `ItemPurchaseRefundCalculationResult`
+- 상점 환불 `ItemPurchaseRefund`(`itemPurchaseRefundId`), 환불 전에 돌려줄 코인과 정책 예외를 계산해 보여 주는 것 `RefundPreview`(`getRefundPreview`, 구성품별 응답 `ItemPurchaseRefundLinePreviewResponse`), 미리 보기와 실행이 함께 쓰는 계산 결과 `ItemPurchaseRefundCalculationResult`, 운영자가 미리 보기에서 본 돌려줄 코인 `expectedCoinQuantity`
 - 환불 정책에 어긋나는 이유 `RefundPolicyExceptionCategory`(`policyExceptions`) — 운영자가 적는 환불 이유 `reason`과 다른 것. 어긋나도 환불한다는 운영자 확인 `isPolicyException`
 - 구매 후 환불 정책 안으로 보는 기간 `refundTimeToLive`
 - 환불에 포함된 구성품 `ItemPurchaseRefundLine`(구매 구성품 `ItemPurchaseLine`과 다른 것)
