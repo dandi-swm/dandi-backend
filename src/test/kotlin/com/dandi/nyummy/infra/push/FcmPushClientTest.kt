@@ -6,7 +6,10 @@ import com.google.api.client.json.GenericJson
 import com.google.api.client.json.gson.GsonFactory
 import com.google.firebase.messaging.BatchResponse
 import com.google.firebase.messaging.FirebaseMessaging
+import com.google.firebase.messaging.FirebaseMessagingException
 import com.google.firebase.messaging.Message
+import com.google.firebase.messaging.MessagingErrorCode
+import com.google.firebase.messaging.SendResponse
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
@@ -52,6 +55,27 @@ class FcmPushClientTest {
         val fcmOptions = json["fcm_options"] as Map<*, *>
 
         assertEquals("RETENTION", fcmOptions["analytics_label"])
+    }
+
+    @Test
+    fun `APNs 인증에 실패한 토큰은 지우지 않고 재시도 대상으로 둔다`() {
+        val authException = mockk<FirebaseMessagingException> {
+            every { messagingErrorCode } returns MessagingErrorCode.THIRD_PARTY_AUTH_ERROR
+        }
+        val sendResponse = mockk<SendResponse> {
+            every { isSuccessful } returns false
+            every { exception } returns authException
+        }
+        val response = mockk<BatchResponse> {
+            every { responses } returns listOf(sendResponse)
+            every { successCount } returns 0
+        }
+        every { firebaseMessaging.sendEach(any<List<Message>>(), false) } returns response
+
+        val result = pushClient.sendPushes(mapOf("token" to createPushMessage()))
+
+        assertEquals(emptyList<String>(), result.invalidTokens)
+        assertEquals(listOf("token"), result.retryableTokens)
     }
 
     /** Message에 공개 게터가 없어 FCM으로 나가는 JSON 그대로 확인한다 */

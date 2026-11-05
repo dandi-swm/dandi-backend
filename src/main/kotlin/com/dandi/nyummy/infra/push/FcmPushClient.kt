@@ -135,6 +135,7 @@ class FcmPushClient(
     private fun convertPushResult(entries: List<Pair<String, PushMessage>>, response: BatchResponse): PushResult {
         val invalidTokens = mutableListOf<String>()
         val retryableTokens = mutableListOf<String>()
+        var thirdPartyAuthErrorCount = 0
 
         response.responses.forEachIndexed { index, sendResponse ->
             if (sendResponse.isSuccessful) {
@@ -149,8 +150,18 @@ class FcmPushClient(
                 MessagingErrorCode.SENDER_ID_MISMATCH, // 다른 Firebase 프로젝트의 토큰
                 -> invalidTokens.add(token)
 
+                MessagingErrorCode.THIRD_PARTY_AUTH_ERROR -> { // APNs 키가 없거나 잘못됐다. 토큰은 멀쩡하다
+                    thirdPartyAuthErrorCount++
+                    retryableTokens.add(token)
+                }
+
                 else -> retryableTokens.add(token) // UNAVAILABLE / INTERNAL / QUOTA_EXCEEDED
             }
+        }
+
+        // 키가 잘못되면 iOS 토큰 전부가 실패하므로 토큰마다 찍지 않고 청크당 한 줄만 남긴다
+        if (thirdPartyAuthErrorCount > 0) {
+            logger.error("APNs 인증 실패, Firebase의 APNs 키를 확인해야 합니다: count={}", thirdPartyAuthErrorCount)
         }
 
         logger.info(
