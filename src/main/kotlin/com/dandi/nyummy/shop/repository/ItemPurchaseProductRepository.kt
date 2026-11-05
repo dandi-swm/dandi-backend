@@ -39,7 +39,10 @@ interface ItemPurchaseProductRepository : JpaRepository<ItemPurchaseProduct, Lon
     )
     fun findSalesCounts(@Param("startsAt") startsAt: Instant): List<PurchasedProductCountResult>
 
-    /** 사용자가 상품마다 산 개수. 한 번도 사지 않은 상품은 결과에 없다. */
+    /**
+     * 사용자가 상품마다 산 개수. 한 번도 사지 않은 상품은 결과에 없다.
+     * 구성품을 모두 환불한 구매 상품은 세지 않고, 세트를 일부만 환불했으면 남은 구성품이 있어 센다.
+     */
     @Query(
         """
         select new com.dandi.nyummy.shop.dto.PurchasedProductCountResult(ipp.productId, count(ipp))
@@ -47,6 +50,16 @@ interface ItemPurchaseProductRepository : JpaRepository<ItemPurchaseProduct, Lon
             join ItemPurchase as ip on ip.id = ipp.itemPurchaseId
         where ip.userId = :userId
             and ipp.productId in :productIds
+            and exists (
+                select 1
+                from ItemPurchaseLine as ipl
+                where ipl.itemPurchaseProductId = ipp.id
+                    and not exists (
+                        select 1
+                        from ItemPurchaseRefundLine as iprl
+                        where iprl.itemPurchaseLineId = ipl.id
+                    )
+            )
         group by ipp.productId
     """,
     )

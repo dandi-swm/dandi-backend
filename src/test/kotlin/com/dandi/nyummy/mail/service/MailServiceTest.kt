@@ -641,6 +641,26 @@ class MailServiceTest {
     }
 
     @Test
+    fun `안 받았는데 삭제된 우편은 환불로 숨긴 우편이라 복구하지 않는다`() {
+        val deletedAt = now.minusSeconds(60)
+        val mail = mail(id = mailId).apply { this.deletedAt = deletedAt }
+        givenMailById(mail)
+
+        assertBusinessException(MailErrorCode.MAIL_NOT_FOUND) { mailService.restoreMail(userId, mailId) }
+        assertEquals(deletedAt, mail.deletedAt)
+    }
+
+    @Test
+    fun `안 받았고 삭제되지 않은 우편은 복구해도 거부하지 않고 그대로 둔다`() {
+        val mail = mail(id = mailId)
+        givenMailById(mail)
+
+        mailService.restoreMail(userId, mailId)
+
+        assertNull(mail.deletedAt)
+    }
+
+    @Test
     fun `없는 우편은 복구할 수 없다`() {
         givenMailById(null)
 

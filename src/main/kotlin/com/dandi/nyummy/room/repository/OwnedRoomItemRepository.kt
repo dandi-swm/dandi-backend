@@ -16,15 +16,15 @@ import org.springframework.stereotype.Repository
 interface OwnedRoomItemRepository : JpaRepository<OwnedRoomItem, Long> {
 
     /**
-     * 사용자의 보유 아이템 하나를 조회한다. 삭제된 아이템도 포함한다.
+     * 사용자의 보유 아이템 하나를 조회한다. 삭제되거나 회수된 아이템도 포함한다.
      * 목록 커서의 정렬 위치(장착 여부·id)를 알아내는 데 쓴다.
      */
     fun findOwnedRoomItemByIdAndUserId(id: Long, userId: Long): OwnedRoomItem?
 
     /**
-     * 사용자의 삭제되지 않은 보유 아이템을 모두 조회한다. 꾸민 방 저장에서 장착·해제할 대상을 고르는 데 쓴다.
+     * 사용자의 삭제·회수되지 않은 보유 아이템을 모두 조회한다. 꾸민 방 저장에서 장착·해제할 대상을 고르는 데 쓴다.
      */
-    fun findOwnedRoomItemsByUserIdAndDeletedAtIsNull(userId: Long): List<OwnedRoomItem>
+    fun findOwnedRoomItemsByUserIdAndDeletedAtIsNullAndRevokedAtIsNull(userId: Long): List<OwnedRoomItem>
 
     /**
      * 한 카테고리의 보유 아이템을 장착한 것 먼저, 같은 장착 여부 안에서는 최신순(id 내림차순)으로 조회한다.
@@ -43,6 +43,7 @@ interface OwnedRoomItemRepository : JpaRepository<OwnedRoomItem, Long> {
             join Item as i on i.id = o.itemId
         where o.userId = :userId
             and o.deletedAt is null
+            and o.revokedAt is null
             and r.category = :category
             and (
                 (:cursorIsEquipped = true and o.isEquipped = false)
@@ -60,7 +61,7 @@ interface OwnedRoomItemRepository : JpaRepository<OwnedRoomItem, Long> {
     ): Slice<OwnedRoomItemResult>
 
     /**
-     * 사용자가 장착한 아이템을 그리는 순서(zIndex 오름차순)로 조회한다. 삭제된 아이템은 제외한다.
+     * 사용자가 장착한 아이템을 그리는 순서(zIndex 오름차순)로 조회한다. 삭제되거나 회수된 아이템은 제외한다.
      */
     @Query(
         """
@@ -71,6 +72,7 @@ interface OwnedRoomItemRepository : JpaRepository<OwnedRoomItem, Long> {
             join RoomItem as r on r.itemId = o.itemId
         where o.userId = :userId
             and o.deletedAt is null
+            and o.revokedAt is null
             and o.isEquipped = true
         order by o.zIndex asc, o.id asc
     """,
@@ -84,6 +86,7 @@ interface OwnedRoomItemRepository : JpaRepository<OwnedRoomItem, Long> {
             where o.userId = :userId
                 and o.itemId in :itemIds
                 and o.deletedAt is null
+                and o.revokedAt is null
             group by o.itemId
         """,
     )

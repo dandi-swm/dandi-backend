@@ -1,19 +1,25 @@
 package com.dandi.nyummy.shop.service
 
+import com.dandi.nyummy.admin.entity.Admin
+import com.dandi.nyummy.admin.repository.AdminRepository
 import com.dandi.nyummy.auth.enum.AuthProvider
 import com.dandi.nyummy.coin.entity.Coin
 import com.dandi.nyummy.coin.repository.CoinRepository
 import com.dandi.nyummy.coin.service.CoinService
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.ErrorCode
+import com.dandi.nyummy.exception.errorcode.RoomErrorCode
 import com.dandi.nyummy.exception.errorcode.ShopErrorCode
 import com.dandi.nyummy.item.entity.Item
 import com.dandi.nyummy.item.repository.ItemRepository
 import com.dandi.nyummy.mail.enum.RewardBoxCategory
 import com.dandi.nyummy.mail.service.MailService
+import com.dandi.nyummy.room.dto.EquippedRoomItemRequest
+import com.dandi.nyummy.room.dto.UpdateEquippedRoomItemsRequest
 import com.dandi.nyummy.room.entity.RoomItem
 import com.dandi.nyummy.room.enum.RoomItemCategory
 import com.dandi.nyummy.room.repository.RoomItemRepository
+import com.dandi.nyummy.room.service.RoomService
 import com.dandi.nyummy.shop.dto.CreateCartItemRequest
 import com.dandi.nyummy.shop.dto.CreateItemPurchaseRequest
 import com.dandi.nyummy.shop.dto.ItemPurchaseProductRequest
@@ -51,6 +57,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -65,7 +72,9 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
     private val mailService: MailService,
     private val coinService: CoinService,
     private val shopItemService: ShopItemService,
+    private val roomService: RoomService,
     private val userRepository: UserRepository,
+    private val adminRepository: AdminRepository,
     private val coinRepository: CoinRepository,
     private val itemRepository: ItemRepository,
     private val roomItemRepository: RoomItemRepository,
@@ -390,6 +399,146 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
         assertTrue(shopItemService.getEligiblePromotions(userId, now()).none { it.id == promotion.id })
     }
 
+    @Test
+    fun `세트는 구성품을 모두 환불해야 1인 구매 한도에서 빠진다`() {
+        val userId = createUser()
+        val set = createProduct(price = 1000, itemCount = 2, purchaseLimit = 1)
+        createCartItem(userId, set, quantity = 1)
+        purchase(userId, listOf(set to 1))
+        val (firstLineId, secondLineId) = getItemPurchaseLineIds(userId)
+        assertEquals(ShopErrorCode.PURCHASE_LIMIT_EXCEEDED, getUnavailableErrorCode(userId, set))
+
+        refundLine(firstLineId)
+
+        assertEquals(ShopErrorCode.PURCHASE_LIMIT_EXCEEDED, getUnavailableErrorCode(userId, set))
+
+        refundLine(secondLineId)
+
+        assertNull(getUnavailableErrorCode(userId, set))
+    }
+
+    @Test
+    fun `같은 상품을 여러 개 사면 환불한 개수만큼만 1인 구매 한도가 돌아온다`() {
+        val userId = createUser()
+        val limited = createProduct(price = 1000, purchaseLimit = 2)
+        createCartItem(userId, limited, quantity = 2)
+        purchase(userId, listOf(limited to 2))
+        assertEquals(ShopErrorCode.PURCHASE_LIMIT_EXCEEDED, getUnavailableErrorCode(userId, limited))
+
+        refundLine(getItemPurchaseLineIds(userId).first())
+
+        assertNull(getUnavailableErrorCode(userId, limited))
+        assertEquals(ShopErrorCode.PURCHASE_LIMIT_EXCEEDED, getUnavailableErrorCode(userId, limited, quantity = 2))
+    }
+
+    @Test
+    fun `받기 전에 회수한 아이템은 보유 개수에서 빠지고 우편을 받아도 생기지 않는다`() {
+        val userId = createUser()
+        val product = createProduct(price = 500)
+        createCartItem(userId, product, quantity = 2)
+        purchase(userId, listOf(product to 2))
+        assertEquals(2, getOwnedCount(userId, product))
+
+        revokeRow("mail_items", getFirstMailItemId(userId))
+
+        assertEquals(1, getOwnedCount(userId, product))
+
+        val reward = mailService.claimMails(userId)
+
+        assertEquals(1, reward.items?.single()?.quantity)
+        assertEquals(1, queryForInt("select count(*) from owned_room_items where user_id = ?", userId))
+        assertEquals(1, getOwnedCount(userId, product))
+    }
+
+    @Test
+    fun `회수한 방 배경은 우편을 받기 전이나 받은 뒤나 다시 살 수 있다`() {
+        val userId = createUser()
+        val background = createProduct(price = 500, category = RoomItemCategory.BACKGROUND)
+        val otherUserId = createUser()
+        createCartItem(userId, background, quantity = 1)
+        createCartItem(otherUserId, background, quantity = 1)
+        purchase(userId, listOf(background to 1))
+        purchase(otherUserId, listOf(background to 1))
+        mailService.claimMails(otherUserId)
+        assertEquals(ShopErrorCode.ALREADY_OWNED, getUnavailableErrorCode(userId, background))
+        assertEquals(ShopErrorCode.ALREADY_OWNED, getUnavailableErrorCode(otherUserId, background))
+
+        revokeRow("mail_items", getFirstMailItemId(userId))
+        revokeRow("owned_room_items", getFirstOwnedRoomItemId(otherUserId))
+
+        assertNull(getUnavailableErrorCode(userId, background))
+        assertNull(getUnavailableErrorCode(otherUserId, background))
+    }
+
+    @Test
+    fun `받은 뒤 회수한 아이템은 장착 중이었어도 마이룸과 보유 개수에서 빠지고 장착 저장을 거부한다`() {
+        val userId = createUser()
+        val product = createProduct(price = 500)
+        createCartItem(userId, product, quantity = 2)
+        purchase(userId, listOf(product to 2))
+        mailService.claimMails(userId)
+        val revokedId = getFirstOwnedRoomItemId(userId)
+        val remainingId = roomService.getOwnedRoomItems(userId, RoomItemCategory.BED, null, 10)
+            .ownedRoomItems.map { it.ownedRoomItemId }.single { it != revokedId }
+        roomService.updateEquippedRoomItems(userId, createEquippedRoomItemsRequest(revokedId, remainingId))
+
+        // 장착 해제는 환불이 하지만, 조회는 장착 상태와 관계없이 회수된 행을 빼야 한다
+        revokeRow("owned_room_items", revokedId)
+
+        val ownedRoomItems = roomService.getOwnedRoomItems(userId, RoomItemCategory.BED, null, 10).ownedRoomItems
+        assertEquals(listOf(remainingId), ownedRoomItems.map { it.ownedRoomItemId })
+        assertEquals(listOf(remainingId), roomService.getEquippedRoomItems(userId).map { it.ownedRoomItemId })
+        assertEquals(1, getOwnedCount(userId, product))
+        assertBusinessException(RoomErrorCode.OWNED_ROOM_ITEM_NOT_FOUND) {
+            roomService.updateEquippedRoomItems(userId, createEquippedRoomItemsRequest(revokedId))
+        }
+    }
+
+    @Test
+    fun `회수와 장착 저장이 겹쳐도 회수 시각이 지워지지 않는다`() {
+        val userId = createUser()
+        val product = createProduct(price = 500)
+        createCartItem(userId, product, quantity = 2)
+        purchase(userId, listOf(product to 2))
+        mailService.claimMails(userId)
+        val revokedId = getFirstOwnedRoomItemId(userId)
+        val remainingId = roomService.getOwnedRoomItems(userId, RoomItemCategory.BED, null, 10)
+            .ownedRoomItems.map { it.ownedRoomItemId }.single { it != revokedId }
+        roomService.updateEquippedRoomItems(userId, createEquippedRoomItemsRequest(revokedId, remainingId))
+        val revoked = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(2)
+
+        // 환불과 같은 순서로 코인을 잠그고 회수한 뒤 커밋을 미룬다
+        val revoker = executor.submit {
+            transactionTemplate.executeWithoutResult {
+                coinService.lockCoin(userId)
+                revokeRow("owned_room_items", revokedId)
+                revoked.countDown()
+                release.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            }
+        }
+        assertTrue(revoked.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+        val saver = executor.submit {
+            roomService.updateEquippedRoomItems(userId, createEquippedRoomItemsRequest(remainingId))
+        }
+
+        // 저장이 잠금 대기에 들어갈 시간을 준다. 잠그지 않는 코드면 회수 전 행을 읽고 UPDATE에서 기다리다가,
+        // 회수가 커밋된 뒤 전체 컬럼을 써서 revoked_at을 지운다.
+        Thread.sleep(500)
+        release.countDown()
+
+        revoker.get(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        saver.get(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        executor.shutdown()
+
+        assertEquals(
+            1,
+            queryForInt("select count(*) from owned_room_items where id = ? and revoked_at is not null", revokedId),
+        )
+        assertEquals(listOf(remainingId), roomService.getEquippedRoomItems(userId).map { it.ownedRoomItemId })
+    }
+
     private fun now(): Instant = Instant.now(clock)
 
     private fun createUser(): Long {
@@ -446,6 +595,64 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
 
     private fun getOwnedCount(userId: Long, product: Product): Int =
         shopItemService.createShopItems(userId, listOf(product), emptyMap(), now()).getValue(product.id).ownedCount
+
+    private fun getUnavailableErrorCode(userId: Long, product: Product, quantity: Int = 1): ErrorCode? =
+        shopItemService.getProductAvailabilities(userId, listOf(product), now())
+            .getValue(product.id)
+            .getUnavailableErrorCode(quantity)
+
+    private fun getItemPurchaseLineIds(userId: Long): List<Long> = jdbcTemplate.queryForList(
+        """
+        select l.id from item_purchase_lines l
+            join item_purchase_products p on p.id = l.item_purchase_product_id
+            join item_purchases ip on ip.id = p.item_purchase_id
+        where ip.user_id = ?
+        order by l.id
+        """,
+        Long::class.javaObjectType,
+        userId,
+    ).filterNotNull()
+
+    // 환불 코드가 아직 없어 환불 기록을 직접 넣는다
+    private fun refundLine(itemPurchaseLineId: Long) {
+        val adminId = adminRepository.save(Admin(email = "${UUID.randomUUID()}@nyummy.co.kr", name = "운영자")).id
+        val itemPurchaseProductId = queryForInt(
+            "select item_purchase_product_id from item_purchase_lines where id = ?",
+            itemPurchaseLineId,
+        )
+        jdbcTemplate.update(
+            """
+            insert into item_purchase_refunds (item_purchase_product_id, admin_id, coin_quantity, reason)
+            values (?, ?, 0, '테스트')
+            """,
+            itemPurchaseProductId,
+            adminId,
+        )
+        jdbcTemplate.update(
+            """
+            insert into item_purchase_refund_lines (item_purchase_refund_id, item_purchase_line_id)
+            values ((select max(id) from item_purchase_refunds), ?)
+            """,
+            itemPurchaseLineId,
+        )
+    }
+
+    private fun getFirstMailItemId(userId: Long): Long = queryForInt(
+        "select min(mi.id) from mail_items mi join mails m on m.id = mi.mail_id where m.user_id = ?",
+        userId,
+    ).toLong()
+
+    private fun getFirstOwnedRoomItemId(userId: Long): Long =
+        queryForInt("select min(id) from owned_room_items where user_id = ?", userId).toLong()
+
+    // 환불 코드가 아직 없어 회수 시각을 직접 넣는다
+    private fun revokeRow(table: String, id: Long) {
+        jdbcTemplate.update("update $table set revoked_at = current_timestamp where id = ?", id)
+    }
+
+    private fun createEquippedRoomItemsRequest(vararg ownedRoomItemIds: Long) = UpdateEquippedRoomItemsRequest(
+        ownedRoomItemIds.map { EquippedRoomItemRequest(it, x = 10f, y = 10f, zIndex = 0, scale = 1f) },
+    )
 
     private fun getBalance(userId: Long): Int = assertNotNull(coinRepository.findByUserId(userId)).balance
 

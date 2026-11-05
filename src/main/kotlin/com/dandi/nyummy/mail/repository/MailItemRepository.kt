@@ -11,7 +11,7 @@ import org.springframework.stereotype.Repository
 interface MailItemRepository : JpaRepository<MailItem, Long> {
 
     /**
-     * 우편들에 든 아이템을 이름과 함께 조회한다. 우편 id 오름차순, 같은 우편 안에서는 넣은 순서(id 오름차순)다.
+     * 우편들에 든 아이템 중 회수되지 않은 것을 이름과 함께 조회한다. 우편 id 오름차순, 같은 우편 안에서는 넣은 순서(id 오름차순)다.
      */
     @Query(
         """
@@ -19,6 +19,7 @@ interface MailItemRepository : JpaRepository<MailItem, Long> {
         from MailItem as mi
             join Item as i on i.id = mi.itemId
         where mi.mailId in :mailIds
+            and mi.revokedAt is null
         order by mi.mailId asc, mi.id asc
     """,
     )
@@ -36,6 +37,7 @@ interface MailItemRepository : JpaRepository<MailItem, Long> {
         where m.userId = :userId
             and m.claimedAt is null
             and mi.itemPurchaseLineId is not null
+            and mi.revokedAt is null
             and mi.itemId in :itemIds
     """,
     )

@@ -1,5 +1,7 @@
 package com.dandi.nyummy.room.service
 
+import com.dandi.nyummy.coin.entity.Coin
+import com.dandi.nyummy.coin.service.CoinService
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.AuthErrorCode
 import com.dandi.nyummy.exception.errorcode.CommonErrorCode
@@ -19,6 +21,7 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
+import io.mockk.verifyOrder
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.SliceImpl
 import org.springframework.data.repository.findByIdOrNull
@@ -39,6 +42,9 @@ class RoomServiceTest {
     private val now = Instant.parse("2026-10-19T03:00:00Z")
     private val clock = Clock.fixed(now, ZoneOffset.UTC)
 
+    private val coinService = mockk<CoinService> {
+        every { lockCoin(any()) } returns Coin(userId = userId)
+    }
     private val ownedRoomItemRepository = mockk<OwnedRoomItemRepository>()
     private val roomProperties = RoomProperties(
         defaultRoomItems = listOf(
@@ -48,6 +54,7 @@ class RoomServiceTest {
     )
 
     private val roomService = RoomService(
+        coinService = coinService,
         ownedRoomItemRepository = ownedRoomItemRepository,
         roomProperties = roomProperties,
         clock = clock,
@@ -73,7 +80,8 @@ class RoomServiceTest {
         EquippedRoomItemRequest(ownedRoomItemId = ownedRoomItemId, x = x, y = 20f, zIndex = 3, scale = 0.5f)
 
     private fun givenOwnedRoomItemsToUpdate(vararg items: OwnedRoomItem) {
-        every { ownedRoomItemRepository.findOwnedRoomItemsByUserIdAndDeletedAtIsNull(userId) } returns items.toList()
+        every { ownedRoomItemRepository.findOwnedRoomItemsByUserIdAndDeletedAtIsNullAndRevokedAtIsNull(userId) } returns
+            items.toList()
     }
 
     private fun assertBusinessException(expected: ErrorCode, block: () -> Unit) {
@@ -223,7 +231,8 @@ class RoomServiceTest {
     @Test
     fun `장착하면 현재 시각을 처음 장착한 시각으로 남긴다`() {
         val item = ownedRoomItem(id = 5L, isEquipped = false)
-        every { ownedRoomItemRepository.findOwnedRoomItemsByUserIdAndDeletedAtIsNull(userId) } returns listOf(item)
+        every { ownedRoomItemRepository.findOwnedRoomItemsByUserIdAndDeletedAtIsNullAndRevokedAtIsNull(userId) } returns
+            listOf(item)
 
         roomService.updateEquippedRoomItems(userId, UpdateEquippedRoomItemsRequest(listOf(equippedRoomItemRequest(5L))))
 
@@ -271,13 +280,27 @@ class RoomServiceTest {
     }
 
     @Test
+    fun `장착을 저장할 때 코인 행을 잠근 뒤에 보유 아이템을 읽는다`() {
+        givenOwnedRoomItemsToUpdate()
+
+        roomService.updateEquippedRoomItems(userId, UpdateEquippedRoomItemsRequest(emptyList()))
+
+        verifyOrder {
+            coinService.lockCoin(userId)
+            ownedRoomItemRepository.findOwnedRoomItemsByUserIdAndDeletedAtIsNullAndRevokedAtIsNull(userId)
+        }
+    }
+
+    @Test
     fun `같은 보유 아이템이 두 번 있으면 보유 아이템을 조회하지 않고 거부한다`() {
         val request = UpdateEquippedRoomItemsRequest(listOf(equippedRoomItemRequest(5L), equippedRoomItemRequest(5L)))
 
         assertBusinessException(RoomErrorCode.DUPLICATE_OWNED_ROOM_ITEM) {
             roomService.updateEquippedRoomItems(userId, request)
         }
-        verify(exactly = 0) { ownedRoomItemRepository.findOwnedRoomItemsByUserIdAndDeletedAtIsNull(any()) }
+        verify(exactly = 0) {
+            ownedRoomItemRepository.findOwnedRoomItemsByUserIdAndDeletedAtIsNullAndRevokedAtIsNull(any())
+        }
     }
 
     @Test
@@ -332,6 +355,19 @@ class RoomServiceTest {
     // deleteOwnedRoomItem
 
     @Test
+    fun `삭제할 때 코인 행을 잠근 뒤에 보유 아이템을 읽는다`() {
+        val item = ownedRoomItem(id = 5L, isEquipped = false)
+        every { ownedRoomItemRepository.findByIdOrNull(5L) } returns item
+
+        roomService.deleteOwnedRoomItem(userId, 5L)
+
+        verifyOrder {
+            coinService.lockCoin(userId)
+            ownedRoomItemRepository.findByIdOrNull(5L)
+        }
+    }
+
+    @Test
     fun `장착 중인 보유 아이템을 삭제하면 장착을 해제하고 삭제 시각을 기록한다`() {
         val item = ownedRoomItem(id = 5L, isEquipped = true).apply { x = 76f }
         every { ownedRoomItemRepository.findByIdOrNull(5L) } returns item
@@ -351,6 +387,17 @@ class RoomServiceTest {
         roomService.deleteOwnedRoomItem(userId, 5L)
 
         assertEquals(now, item.deletedAt)
+    }
+
+    @Test
+    fun `회수된 보유 아이템은 없는 것으로 보고 삭제하지 않는다`() {
+        val item = ownedRoomItem(id = 5L, isEquipped = false).apply { revokedAt = now.minusSeconds(60) }
+        every { ownedRoomItemRepository.findByIdOrNull(5L) } returns item
+
+        assertBusinessException(RoomErrorCode.OWNED_ROOM_ITEM_NOT_FOUND) {
+            roomService.deleteOwnedRoomItem(userId, 5L)
+        }
+        assertNull(item.deletedAt)
     }
 
     @Test
@@ -375,6 +422,19 @@ class RoomServiceTest {
     // restoreOwnedRoomItem
 
     @Test
+    fun `복구할 때 코인 행을 잠근 뒤에 보유 아이템을 읽는다`() {
+        val item = ownedRoomItem(id = 5L, isEquipped = false)
+        every { ownedRoomItemRepository.findByIdOrNull(5L) } returns item
+
+        roomService.restoreOwnedRoomItem(userId, 5L)
+
+        verifyOrder {
+            coinService.lockCoin(userId)
+            ownedRoomItemRepository.findByIdOrNull(5L)
+        }
+    }
+
+    @Test
     fun `삭제한 보유 아이템을 복구하면 장착하지 않은 채로 돌아온다`() {
         val item = ownedRoomItem(id = 5L, isEquipped = false).apply { deletedAt = now.minusSeconds(600) }
         every { ownedRoomItemRepository.findByIdOrNull(5L) } returns item
@@ -394,6 +454,21 @@ class RoomServiceTest {
 
         assertNull(item.deletedAt)
         assertTrue(item.isEquipped)
+    }
+
+    @Test
+    fun `회수된 보유 아이템은 없는 것으로 보고 복구하지 않는다`() {
+        val deletedAt = now.minusSeconds(600)
+        val item = ownedRoomItem(id = 5L, isEquipped = false).apply {
+            this.deletedAt = deletedAt
+            revokedAt = now.minusSeconds(60)
+        }
+        every { ownedRoomItemRepository.findByIdOrNull(5L) } returns item
+
+        assertBusinessException(RoomErrorCode.OWNED_ROOM_ITEM_NOT_FOUND) {
+            roomService.restoreOwnedRoomItem(userId, 5L)
+        }
+        assertEquals(deletedAt, item.deletedAt)
     }
 
     @Test

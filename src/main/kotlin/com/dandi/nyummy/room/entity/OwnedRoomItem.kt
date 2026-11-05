@@ -21,6 +21,7 @@ import java.time.Instant
  *
  * @property itemPurchaseLineId 구매한 구성품이면 그 id. 보상이면 null이다
  * @property firstEquippedAt 처음 장착한 시각. 환불 정책의 미착용 판단 기준이라 해제해도 지우지 않는다
+ * @property revokedAt 받은 뒤 환불되어 회수한 시각. 사용자 삭제([deletedAt])와 달리 복구할 수 없다
  */
 @Entity
 @EntityListeners(AuditingEntityListener::class)
@@ -68,6 +69,12 @@ class OwnedRoomItem(
 
     @Column(name = "deleted_at")
     var deletedAt: Instant? = null
+
+    @Column(name = "revoked_at")
+    var revokedAt: Instant? = null
+
+    val isRevoked: Boolean
+        get() = revokedAt != null
 
     /**
      * 장착하고 마이룸에서의 위치·크기를 바꾼다. 이미 장착한 아이템이면 위치·크기만 바뀐다.

@@ -15,4 +15,7 @@ enum class CoinHistoryCategory {
 
     /** 코인 충전 이벤트의 선물. 실제로 결제하지 않는다. sourceId = 패키지 번호, A 그룹 1~3·B 그룹 4~6(행의 id가 아니다) */
     COIN_GIFT,
+
+    /** 상점 구매 환불. sourceId = item_purchase_refunds.id */
+    ITEM_PURCHASE_REFUND,
 }

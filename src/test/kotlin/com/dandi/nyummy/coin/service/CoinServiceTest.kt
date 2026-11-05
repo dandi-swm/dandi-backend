@@ -223,6 +223,16 @@ class CoinServiceTest {
     }
 
     @Test
+    fun `환불 내역은 상점 환불로 주고 상품 이름을 조회하지 않는다`() {
+        givenCoinHistories(coinHistory(9, CoinHistoryCategory.ITEM_PURCHASE_REFUND, sourceId = 3L))
+
+        val response = coinService.getCoinHistories(userId, cursor = null, size = 10)
+
+        assertEquals("상점 환불", response.coinHistories.single().title)
+        verify(exactly = 0) { itemPurchaseProductRepository.findItemPurchaseProductNames(any()) }
+    }
+
+    @Test
     fun `내역의 수량과 잔액, 시각을 그대로 준다`() {
         val coinHistory = coinHistory(9, CoinHistoryCategory.MAIL_CLAIM)
         givenCoinHistories(coinHistory)

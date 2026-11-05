@@ -26,6 +26,7 @@ class CoinService(
         private const val ITEM_PURCHASE_TITLE = "상점 구매"
         private const val IN_APP_PURCHASE_TITLE = "코인 구매"
         private const val COIN_GIFT_TITLE = "코인 선물"
+        private const val ITEM_PURCHASE_REFUND_TITLE = "상점 환불"
     }
 
     /**
@@ -51,7 +52,7 @@ class CoinService(
     /**
      * 사용자의 코인 행을 잠가(SELECT … FOR UPDATE) 반환한다.
      *
-     * 이 행을 사용자 단위 자물쇠로 쓴다. 코인·우편·장바구니를 함께 바꾸는 트랜잭션은 첫 문장에서 이 메서드를 불러,
+     * 이 행을 사용자 단위 자물쇠로 쓴다. 코인·우편·장바구니·보유 아이템을 바꾸는 트랜잭션은 첫 문장에서 이 메서드를 불러,
      * 같은 사용자의 요청을 하나씩 처리하고 서로 반대 순서로 기다리지 않게 한다. 첫 문장이어야 REPEATABLE READ의
      * 스냅샷이 잠금 뒤에 생겨 이후 조회가 앞 요청이 커밋한 데이터를 본다.
      *
@@ -167,6 +168,7 @@ class CoinService(
             CoinHistoryCategory.ROOM_ITEM_PURCHASE -> createItemPurchaseTitle(productNames[coinHistory.sourceId])
             CoinHistoryCategory.IN_APP_PURCHASE -> IN_APP_PURCHASE_TITLE
             CoinHistoryCategory.COIN_GIFT -> COIN_GIFT_TITLE
+            CoinHistoryCategory.ITEM_PURCHASE_REFUND -> ITEM_PURCHASE_REFUND_TITLE
         }
 
     // 상품 1개는 "발바닥 방석 구매", 여러 개는 같은 상품이어도 1개당 한 행이라 "발바닥 방석 외 2개 구매"다
