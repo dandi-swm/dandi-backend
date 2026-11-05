@@ -35,6 +35,7 @@ export function AdminLayout() {
           <Link to="/products">상품</Link>
           <Link to="/promotions">프로모션</Link>
           <Link to="/banners">배너</Link>
+          <Link to="/item-purchases">구매 내역</Link>
         </nav>
         <div className="me">
           <span>{me.data.name}</span>

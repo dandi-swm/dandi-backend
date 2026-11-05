@@ -5,6 +5,7 @@ import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import { isUnauthorized } from "./api/client";
 import { AdminLayout } from "./components/AdminLayout";
 import { IconListPage } from "./pages/IconListPage";
+import { ItemPurchaseListPage } from "./pages/ItemPurchaseListPage";
 import { LinksPage } from "./pages/LinksPage";
 import { InquiryDetailPage } from "./pages/InquiryDetailPage";
 import { InquiryListPage } from "./pages/InquiryListPage";
@@ -48,6 +49,7 @@ const router = createBrowserRouter(
       { path: "/products", element: <ProductListPage /> },
       { path: "/promotions", element: <PromotionListPage /> },
       { path: "/banners", element: <ShopBannerListPage /> },
+      { path: "/item-purchases", element: <ItemPurchaseListPage /> },
     ],
   },
   ],

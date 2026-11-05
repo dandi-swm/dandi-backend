@@ -19,7 +19,7 @@ class AdminItemPurchaseRefundServiceTest {
     private val transactionService = mockk<AdminItemPurchaseRefundTransactionService>()
     private val service = AdminItemPurchaseRefundService(itemPurchaseProductRepository, transactionService)
 
-    private val request = CreateItemPurchaseRefundRequest(listOf(1L), "실수 구매")
+    private val request = CreateItemPurchaseRefundRequest(listOf(1L), "실수 구매", expectedCoinQuantity = 500)
 
     private fun assertBusinessException(errorCode: ErrorCode, block: () -> Unit) {
         val exception = assertFailsWith<BusinessException> { block() }

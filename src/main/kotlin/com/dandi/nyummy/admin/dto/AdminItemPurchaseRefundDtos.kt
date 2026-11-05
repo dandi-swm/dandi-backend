@@ -11,6 +11,7 @@ import jakarta.validation.constraints.Size
 /**
  * @property itemPurchaseLineIds 환불할 구성품. 모두 같은 구매 상품이어야 한다
  * @property reason 환불 이유
+ * @property expectedCoinQuantity 화면에서 본 돌려줄 코인. 다시 계산한 금액과 다르면 거부한다
  * @property isPolicyException 정책에 어긋나도 예외로 환불하는지. 어긋나는데 false면 거부한다
  */
 data class CreateItemPurchaseRefundRequest(
@@ -20,6 +21,8 @@ data class CreateItemPurchaseRefundRequest(
     @field:NotBlank(message = "환불 이유는 필수입니다.")
     @field:Size(max = 255, message = "환불 이유는 255자 이하여야 합니다.")
     val reason: String,
+
+    val expectedCoinQuantity: Int,
 
     val isPolicyException: Boolean = false,
 )

@@ -93,8 +93,8 @@ class AdminItemPurchaseRefundTransactionServiceTest {
             this.isEquipped = isEquipped
         }
 
-    private fun request(lineIds: List<Long>, isPolicyException: Boolean = false) =
-        CreateItemPurchaseRefundRequest(lineIds, "  실수 구매  ", isPolicyException)
+    private fun request(lineIds: List<Long>, expectedCoinQuantity: Int = 800, isPolicyException: Boolean = false) =
+        CreateItemPurchaseRefundRequest(lineIds, "  실수 구매  ", expectedCoinQuantity, isPolicyException)
 
     private fun givenRefundTarget(
         purchasePrice: Int = 800,
@@ -256,7 +256,7 @@ class AdminItemPurchaseRefundTransactionServiceTest {
         givenRefundTarget(purchasePrice = 500, balance = 1000)
         givenRefundSaved()
 
-        val response = createRefund(request(listOf(2L), isPolicyException = true))
+        val response = createRefund(request(listOf(2L), expectedCoinQuantity = 0, isPolicyException = true))
 
         assertEquals(0, response.coinQuantity)
         assertEquals(1000, response.balance)
@@ -275,6 +275,31 @@ class AdminItemPurchaseRefundTransactionServiceTest {
         assertNull(equipped.revokedAt)
         verify(exactly = 0) { itemPurchaseRefundRepository.save(any()) }
         verify(exactly = 0) { coinService.increaseBalance(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `돌려줄 코인이 화면에서 본 금액과 다르면 예외로 표시해도 아무것도 저장하지 않고 거부한다`() {
+        val owned = ownedRoomItem(1L)
+        givenRefundTarget(ownedRoomItems = listOf(owned))
+
+        assertBusinessException(AdminErrorCode.REFUND_COIN_QUANTITY_CHANGED) {
+            createRefund(request(listOf(1L, 2L), expectedCoinQuantity = 300, isPolicyException = true))
+        }
+
+        assertNull(owned.revokedAt)
+        verify(exactly = 0) { itemPurchaseRefundRepository.save(any()) }
+        verify(exactly = 0) { itemPurchaseRefundLineRepository.saveAll(any<List<ItemPurchaseRefundLine>>()) }
+        verify(exactly = 0) { coinService.increaseBalance(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `금액도 바뀌고 정책에도 어긋나면 바뀐 금액을 먼저 알린다`() {
+        val equipped = ownedRoomItem(1L, firstEquippedAt = now.minusSeconds(60))
+        givenRefundTarget(ownedRoomItems = listOf(equipped))
+
+        assertBusinessException(AdminErrorCode.REFUND_COIN_QUANTITY_CHANGED) {
+            createRefund(request(listOf(1L, 2L), expectedCoinQuantity = 300))
+        }
     }
 
     @Test
@@ -318,7 +343,7 @@ class AdminItemPurchaseRefundTransactionServiceTest {
         every { mailItemRepository.findByItemPurchaseLineIdIn(setOf(1L)) } returns listOf(mailItem)
         every { mailItemRepository.existsByMailIdAndRevokedAtIsNull(50L) } returns true
 
-        createRefund(request(listOf(1L)))
+        createRefund(request(listOf(1L), expectedCoinQuantity = 500))
 
         assertEquals(now, mailItem.revokedAt)
         verify(exactly = 1) { mailRepository.findAllById(emptyList()) }

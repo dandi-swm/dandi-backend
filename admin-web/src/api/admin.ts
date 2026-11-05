@@ -374,3 +374,100 @@ export function updateShopBannerImage(bannerId: number, image: File) {
 
   return request<AdminShopBanner>(`${PREFIX}/shop-banners/${bannerId}/image`, { method: "PUT", body });
 }
+
+export type ItemPurchaseLineStatus = "NOT_CLAIMED" | "CLAIMED" | "REFUNDED";
+
+export const ITEM_PURCHASE_LINE_STATUS_LABELS: Record<ItemPurchaseLineStatus, string> = {
+  NOT_CLAIMED: "받기 전",
+  CLAIMED: "받음",
+  REFUNDED: "환불함",
+};
+
+export type AdminItemPurchaseLine = {
+  itemPurchaseLineId: number;
+  itemName: string;
+  listPrice: number;
+  status: ItemPurchaseLineStatus;
+  /** 지금 장착 중인지. 장착한 적이 있는지는 환불 미리 보기의 EQUIPPED로 안다. */
+  isEquipped: boolean;
+};
+
+export type AdminItemPurchaseRefund = {
+  itemPurchaseRefundId: number;
+  coinQuantity: number;
+  reason: string;
+  createdAt: string;
+};
+
+export type AdminItemPurchaseProduct = {
+  itemPurchaseProductId: number;
+  productName: string;
+  listPrice: number;
+  purchasePrice: number;
+  lines: AdminItemPurchaseLine[];
+  refunds: AdminItemPurchaseRefund[];
+};
+
+export type AdminItemPurchase = {
+  itemPurchaseId: number;
+  purchasePrice: number;
+  createdAt: string;
+  products: AdminItemPurchaseProduct[];
+};
+
+export type AdminItemPurchases = {
+  itemPurchases: AdminItemPurchase[];
+  nextCursor: number | null;
+  hasNext: boolean;
+};
+
+export function getItemPurchases(userId: number, cursor: number | null, size = 20) {
+  const params = new URLSearchParams({ userId: String(userId), size: String(size) });
+  if (cursor !== null) params.set("cursor", String(cursor));
+
+  return request<AdminItemPurchases>(`${PREFIX}/item-purchases?${params}`);
+}
+
+export type RefundPolicyExceptionCategory = "PERIOD_EXPIRED" | "EQUIPPED" | "ZERO_COIN";
+
+export const REFUND_POLICY_EXCEPTION_LABELS: Record<RefundPolicyExceptionCategory, string> = {
+  PERIOD_EXPIRED: "환불 기간이 지남",
+  EQUIPPED: "장착한 적 있음",
+  ZERO_COIN: "돌려줄 코인이 0",
+};
+
+export type ItemPurchaseRefundLinePreview = {
+  itemPurchaseLineId: number;
+  policyExceptions: RefundPolicyExceptionCategory[];
+};
+
+export type ItemPurchaseRefundPreview = {
+  coinQuantity: number;
+  policyExceptions: RefundPolicyExceptionCategory[];
+  lines: ItemPurchaseRefundLinePreview[];
+};
+
+export type CreateItemPurchaseRefundInput = {
+  itemPurchaseLineIds: number[];
+  reason: string;
+  /** 미리 보기에서 본 돌려줄 코인. 다시 계산한 금액과 다르면 서버가 409로 거부한다. */
+  expectedCoinQuantity: number;
+  isPolicyException: boolean;
+};
+
+export type ItemPurchaseRefund = { itemPurchaseRefundId: number; coinQuantity: number; balance: number };
+
+// 백엔드 CreateItemPurchaseRefundRequest와 같은 값
+export const REFUND_REASON_MAX = 255;
+
+export function getRefundPreview(itemPurchaseProductId: number, itemPurchaseLineIds: number[]) {
+  const params = new URLSearchParams(itemPurchaseLineIds.map((id) => ["itemPurchaseLineIds", String(id)]));
+
+  return request<ItemPurchaseRefundPreview>(`${PREFIX}/item-purchase-products/${itemPurchaseProductId}/refund-preview?${params}`);
+}
+
+export const createRefund = (itemPurchaseProductId: number, input: CreateItemPurchaseRefundInput) =>
+  request<ItemPurchaseRefund>(`${PREFIX}/item-purchase-products/${itemPurchaseProductId}/refunds`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
