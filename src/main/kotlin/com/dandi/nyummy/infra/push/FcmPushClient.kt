@@ -3,6 +3,8 @@ package com.dandi.nyummy.infra.push
 import com.dandi.nyummy.infra.push.dto.PushMessage
 import com.dandi.nyummy.infra.push.dto.PushResult
 import com.google.firebase.messaging.AndroidConfig
+import com.google.firebase.messaging.ApnsConfig
+import com.google.firebase.messaging.Aps
 import com.google.firebase.messaging.BatchResponse
 import com.google.firebase.messaging.FcmOptions
 import com.google.firebase.messaging.FirebaseMessaging
@@ -43,6 +45,13 @@ class FcmPushClient(
             .setPriority(AndroidConfig.Priority.HIGH)
             .build()
 
+        // iOS는 aps.sound가 있어야 알림 소리가 난다. 제목과 본문은 FCM이 notification에서 옮겨 주므로 넣지 않는다.
+        // 10은 즉시 전달이다. Android와 같은 이유로 생략하지 않고 명시한다.
+        private val APNS_CONFIG = ApnsConfig.builder()
+            .putHeader("apns-priority", "10")
+            .setAps(Aps.builder().setSound("default").build())
+            .build()
+
         private val logger = LoggerFactory.getLogger(FcmPushClient::class.java)
     }
 
@@ -74,6 +83,7 @@ class FcmPushClient(
                 )
                 .putAllData(convertData(message))
                 .setAndroidConfig(ANDROID_CONFIG)
+                .setApnsConfig(APNS_CONFIG)
                 // Firebase 콘솔 리포트에서 알림 종류별로 보기 위한 라벨이다. 앱으로 전달되는 값은 아니다
                 .setFcmOptions(FcmOptions.withAnalyticsLabel(message.type.name))
                 .build()

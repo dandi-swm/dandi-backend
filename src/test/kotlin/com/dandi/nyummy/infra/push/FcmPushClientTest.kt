@@ -35,6 +35,18 @@ class FcmPushClientTest {
     }
 
     @Test
+    fun `iOS 알림에 기본 소리와 즉시 전달 우선순위를 넣는다`() {
+        val json = sendPushAndCaptureJson(createPushMessage())
+        val apns = json["apns"] as Map<*, *>
+        val headers = apns["headers"] as Map<*, *>
+        val payload = apns["payload"] as Map<*, *>
+        val aps = payload["aps"] as Map<*, *>
+
+        assertEquals("10", headers["apns-priority"])
+        assertEquals("default", aps["sound"])
+    }
+
+    @Test
     fun `알림 종류를 FCM 분석 라벨로 보낸다`() {
         val json = sendPushAndCaptureJson(createPushMessage(type = PushType.RETENTION))
         val fcmOptions = json["fcm_options"] as Map<*, *>
