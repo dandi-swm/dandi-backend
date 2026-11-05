@@ -129,10 +129,11 @@ function ItemPurchaseProductSection({ product }: { product: AdminItemPurchasePro
   const hasPolicyExceptions = (preview.data?.policyExceptions.length ?? 0) > 0;
 
   const refund = useMutation({
-    mutationFn: () =>
+    mutationFn: (expectedCoinQuantity: number) =>
       createRefund(productId, {
         itemPurchaseLineIds: selectedLineIds,
         reason: reason.trim(),
+        expectedCoinQuantity,
         isPolicyException: hasPolicyExceptions && isPolicyException,
       }),
     onSuccess: (result) => {
@@ -143,7 +144,9 @@ function ItemPurchaseProductSection({ product }: { product: AdminItemPurchasePro
       queryClient.invalidateQueries({ queryKey: ["itemPurchases"] });
     },
     // 다른 운영자가 먼저 환불했거나 사용자가 그사이 장착했을 수 있어 화면을 최신 상태로 다시 읽는다.
+    // 금액이나 경고가 바뀌었을 수 있으니 예외 확인도 다시 받는다.
     onError: () => {
+      setIsPolicyException(false);
       queryClient.invalidateQueries({ queryKey: ["itemPurchases"] });
       queryClient.invalidateQueries({ queryKey: ["refundPreview", productId] });
     },
@@ -164,7 +167,7 @@ function ItemPurchaseProductSection({ product }: { product: AdminItemPurchasePro
   const handleRefund = () => {
     if (!preview.data) return;
     const message = `"${product.productName}"의 구성품 ${selectedLineIds.length}개를 환불하고 ${preview.data.coinQuantity} 코인을 돌려줍니다. 되돌릴 수 없습니다.`;
-    if (window.confirm(message)) refund.mutate();
+    if (window.confirm(message)) refund.mutate(preview.data.coinQuantity);
   };
 
   const canRefund =

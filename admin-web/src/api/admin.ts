@@ -450,6 +450,8 @@ export type ItemPurchaseRefundPreview = {
 export type CreateItemPurchaseRefundInput = {
   itemPurchaseLineIds: number[];
   reason: string;
+  /** 미리 보기에서 본 돌려줄 코인. 다시 계산한 금액과 다르면 서버가 409로 거부한다. */
+  expectedCoinQuantity: number;
   isPolicyException: boolean;
 };
 
