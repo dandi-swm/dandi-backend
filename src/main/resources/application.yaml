@@ -165,6 +165,7 @@ app:
     cdn-base-url: https://cdn.nyummy.co.kr
     new-user-time-to-live: 7d
     new-product-time-to-live: 7d
+    refund-time-to-live: 7d
     max-quantity-per-product: 10
     max-cart-quantity: 30
   meal:

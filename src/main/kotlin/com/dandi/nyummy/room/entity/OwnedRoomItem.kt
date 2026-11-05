@@ -96,6 +96,14 @@ class OwnedRoomItem(
         this.isEquipped = false
     }
 
+    /**
+     * 환불로 회수한다. 장착을 해제해 마이룸에 남지 않게 한다.
+     */
+    fun revoke(revokedAt: Instant) {
+        this.isEquipped = false
+        this.revokedAt = revokedAt
+    }
+
     fun validateOwnership(requestUserId: Long) {
         if (userId != requestUserId) {
             throw BusinessException(AuthErrorCode.FORBIDDEN)

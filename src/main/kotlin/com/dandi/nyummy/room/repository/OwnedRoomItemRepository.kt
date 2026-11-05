@@ -27,6 +27,11 @@ interface OwnedRoomItemRepository : JpaRepository<OwnedRoomItem, Long> {
     fun findOwnedRoomItemsByUserIdAndDeletedAtIsNullAndRevokedAtIsNull(userId: Long): List<OwnedRoomItem>
 
     /**
+     * 구매 구성품으로 생긴 보유 아이템을 조회한다. 사용자가 삭제한 아이템도 환불할 수 있으므로 포함한다.
+     */
+    fun findByItemPurchaseLineIdIn(itemPurchaseLineIds: Collection<Long>): List<OwnedRoomItem>
+
+    /**
      * 한 카테고리의 보유 아이템을 장착한 것 먼저, 같은 장착 여부 안에서는 최신순(id 내림차순)으로 조회한다.
      *
      * 정렬이 두 값이라 커서도 두 값으로 비교한다. 커서보다 뒤 순서는 "커서가 장착이면 미장착 전부"와
