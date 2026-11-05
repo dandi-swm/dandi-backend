@@ -269,6 +269,58 @@ class AdminItemPurchaseRefundIntegrationTest @Autowired constructor(
     }
 
     @Test
+    fun `미리 본 뒤 같은 세트의 다른 구성품이 환불되면 거부하고 다시 본 금액으로 환불한다`() {
+        val userId = createUser()
+        purchase(userId, createProduct(listOf(500, 300, 200), purchasePrice = 800))
+        val (firstLineId, secondLineId) = getItemPurchaseLineIds(userId)
+        val itemPurchaseProductId = getItemPurchaseProductId(firstLineId)
+        val preview = adminItemPurchaseRefundService.getRefundPreview(itemPurchaseProductId, listOf(firstLineId))
+        assertEquals(300, preview.coinQuantity)
+        assertEquals(100, createRefund(listOf(secondLineId)).coinQuantity)
+        val balanceBeforeRejection = getBalance(userId)
+
+        assertBusinessException(AdminErrorCode.REFUND_COIN_QUANTITY_CHANGED) {
+            adminItemPurchaseRefundService.createRefund(
+                adminId,
+                itemPurchaseProductId,
+                CreateItemPurchaseRefundRequest(listOf(firstLineId), "실수 구매", preview.coinQuantity),
+            )
+        }
+
+        assertEquals(balanceBeforeRejection, getBalance(userId))
+        assertEquals(
+            0,
+            queryForInt("select count(*) from item_purchase_refund_lines where item_purchase_line_id = ?", firstLineId),
+        )
+        assertEquals(500, createRefund(listOf(firstLineId)).coinQuantity)
+        assertEquals(balanceBeforeRejection + 500, getBalance(userId))
+    }
+
+    @Test
+    fun `같은 세트의 다른 구성품을 동시에 환불하면 먼저 처리된 쪽만 미리 본 금액으로 환불한다`() {
+        repeat(5) {
+            val userId = createUser()
+            purchase(userId, createProduct(listOf(500, 300, 200), purchasePrice = 800))
+            val (firstLineId, secondLineId) = getItemPurchaseLineIds(userId)
+            val itemPurchaseProductId = getItemPurchaseProductId(firstLineId)
+            val requests = listOf(firstLineId, secondLineId).map { lineId ->
+                val preview = adminItemPurchaseRefundService.getRefundPreview(itemPurchaseProductId, listOf(lineId))
+                CreateItemPurchaseRefundRequest(listOf(lineId), "실수 구매", preview.coinQuantity)
+            }
+
+            val results = runConcurrently(
+                { adminItemPurchaseRefundService.createRefund(adminId, itemPurchaseProductId, requests[0]) },
+                { adminItemPurchaseRefundService.createRefund(adminId, itemPurchaseProductId, requests[1]) },
+            )
+
+            val refunded = results.single { it.isSuccess }.getOrThrow() as ItemPurchaseRefundResponse
+            val rejected = results.mapNotNull { it.exceptionOrNull() }.single() as BusinessException
+            assertEquals(AdminErrorCode.REFUND_COIN_QUANTITY_CHANGED, rejected.errorCode)
+            assertEquals(STARTING_BALANCE - 800 + refunded.coinQuantity, getBalance(userId))
+        }
+    }
+
+    @Test
     fun `구매 내역은 구성품마다 받기 전과 받음과 장착과 환불 상태를 알려 준다`() {
         val userId = createUser()
         purchase(userId, createProduct(listOf(500, 300, 200), purchasePrice = 1000))

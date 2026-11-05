@@ -278,6 +278,31 @@ class AdminItemPurchaseRefundTransactionServiceTest {
     }
 
     @Test
+    fun `돌려줄 코인이 화면에서 본 금액과 다르면 예외로 표시해도 아무것도 저장하지 않고 거부한다`() {
+        val owned = ownedRoomItem(1L)
+        givenRefundTarget(ownedRoomItems = listOf(owned))
+
+        assertBusinessException(AdminErrorCode.REFUND_COIN_QUANTITY_CHANGED) {
+            createRefund(request(listOf(1L, 2L), expectedCoinQuantity = 300, isPolicyException = true))
+        }
+
+        assertNull(owned.revokedAt)
+        verify(exactly = 0) { itemPurchaseRefundRepository.save(any()) }
+        verify(exactly = 0) { itemPurchaseRefundLineRepository.saveAll(any<List<ItemPurchaseRefundLine>>()) }
+        verify(exactly = 0) { coinService.increaseBalance(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `금액도 바뀌고 정책에도 어긋나면 바뀐 금액을 먼저 알린다`() {
+        val equipped = ownedRoomItem(1L, firstEquippedAt = now.minusSeconds(60))
+        givenRefundTarget(ownedRoomItems = listOf(equipped))
+
+        assertBusinessException(AdminErrorCode.REFUND_COIN_QUANTITY_CHANGED) {
+            createRefund(request(listOf(1L, 2L), expectedCoinQuantity = 300))
+        }
+    }
+
+    @Test
     fun `이 구매 상품의 구성품이 아닌 것이 있으면 거부한다`() {
         givenRefundTarget()
 
