@@ -374,3 +374,56 @@ export function updateShopBannerImage(bannerId: number, image: File) {
 
   return request<AdminShopBanner>(`${PREFIX}/shop-banners/${bannerId}/image`, { method: "PUT", body });
 }
+
+export type ItemPurchaseLineStatus = "NOT_CLAIMED" | "CLAIMED" | "REFUNDED";
+
+export const ITEM_PURCHASE_LINE_STATUS_LABELS: Record<ItemPurchaseLineStatus, string> = {
+  NOT_CLAIMED: "받기 전",
+  CLAIMED: "받음",
+  REFUNDED: "환불함",
+};
+
+export type AdminItemPurchaseLine = {
+  itemPurchaseLineId: number;
+  itemName: string;
+  listPrice: number;
+  status: ItemPurchaseLineStatus;
+  /** 지금 장착 중인지. 장착한 적이 있는지는 환불 미리 보기의 EQUIPPED로 안다. */
+  isEquipped: boolean;
+};
+
+export type AdminItemPurchaseRefund = {
+  itemPurchaseRefundId: number;
+  coinQuantity: number;
+  reason: string;
+  createdAt: string;
+};
+
+export type AdminItemPurchaseProduct = {
+  itemPurchaseProductId: number;
+  productName: string;
+  listPrice: number;
+  purchasePrice: number;
+  lines: AdminItemPurchaseLine[];
+  refunds: AdminItemPurchaseRefund[];
+};
+
+export type AdminItemPurchase = {
+  itemPurchaseId: number;
+  purchasePrice: number;
+  createdAt: string;
+  products: AdminItemPurchaseProduct[];
+};
+
+export type AdminItemPurchases = {
+  itemPurchases: AdminItemPurchase[];
+  nextCursor: number | null;
+  hasNext: boolean;
+};
+
+export function getItemPurchases(userId: number, cursor: number | null, size = 20) {
+  const params = new URLSearchParams({ userId: String(userId), size: String(size) });
+  if (cursor !== null) params.set("cursor", String(cursor));
+
+  return request<AdminItemPurchases>(`${PREFIX}/item-purchases?${params}`);
+}

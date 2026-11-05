@@ -228,6 +228,10 @@ select {
   border-color: transparent;
 }
 
+.badge.refunded {
+  color: var(--muted);
+}
+
 .more {
   display: block;
   margin: 16px auto 0;
@@ -580,4 +584,37 @@ button.secondary:disabled {
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--bg);
+}
+
+/* 구매 내역. 구매 한 건을 카드 하나로, 그 안의 구매 상품을 표 하나로 보여 준다. */
+.filters input[type="number"] {
+  width: 160px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: var(--text);
+  background: var(--surface);
+}
+
+.purchase-product {
+  margin-top: 16px;
+}
+
+.purchase-product h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.purchase-product .price {
+  margin-left: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.refund-list {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  color: var(--muted);
+  font-size: 13px;
 }
