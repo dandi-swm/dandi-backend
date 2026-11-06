@@ -19,6 +19,7 @@ import org.springframework.dao.DataAccessResourceFailureException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertSame
 
 class ItemPurchaseServiceTest {
 
@@ -49,7 +50,7 @@ class ItemPurchaseServiceTest {
         assertEquals(expected, exception.errorCode)
     }
 
-    private fun verifyRejectedAttempt(outcome: ItemPurchaseOutcome) {
+    private fun verifyFailedAttempt(outcome: ItemPurchaseOutcome) {
         verify(exactly = 1) {
             itemPurchaseAttemptService.createItemPurchaseAttempt(userId, idempotencyKey, request, "1.0.0", outcome)
         }
@@ -82,7 +83,7 @@ class ItemPurchaseServiceTest {
         givenFailure(BusinessException(ShopErrorCode.PRICE_CHANGED))
 
         assertBusinessException(ShopErrorCode.PRICE_CHANGED) { purchase() }
-        verifyRejectedAttempt(ItemPurchaseOutcome.PRICE_CHANGED)
+        verifyFailedAttempt(ItemPurchaseOutcome.PRICE_CHANGED)
     }
 
     @Test
@@ -90,7 +91,7 @@ class ItemPurchaseServiceTest {
         givenFailure(BusinessException(UserErrorCode.USER_NOT_FOUND))
 
         assertBusinessException(UserErrorCode.USER_NOT_FOUND) { purchase() }
-        verifyRejectedAttempt(ItemPurchaseOutcome.UNEXPECTED_ERROR)
+        verifyFailedAttempt(ItemPurchaseOutcome.UNEXPECTED_ERROR)
     }
 
     @Test
@@ -98,7 +99,32 @@ class ItemPurchaseServiceTest {
         givenFailure(CannotAcquireLockException("Lock wait timeout exceeded"))
 
         assertBusinessException(ShopErrorCode.PURCHASE_IN_PROGRESS) { purchase() }
-        verifyRejectedAttempt(ItemPurchaseOutcome.PURCHASE_IN_PROGRESS)
+        verifyFailedAttempt(ItemPurchaseOutcome.PURCHASE_IN_PROGRESS)
+    }
+
+    @Test
+    fun `거부 사유가 아닌 예외는 예상 못 한 오류로 기록하고 같은 예외를 그대로 던진다`() {
+        val failure = IllegalStateException("가입 시 생성되어야 할 코인 행이 없습니다: userId=$userId")
+        givenFailure(failure)
+
+        val thrown = assertFailsWith<IllegalStateException> { purchase() }
+
+        assertSame(failure, thrown)
+        verifyFailedAttempt(ItemPurchaseOutcome.UNEXPECTED_ERROR)
+    }
+
+    @Test
+    fun `DB 장애로 구매와 기록이 모두 실패해도 구매의 예외를 그대로 던진다`() {
+        val failure = DataAccessResourceFailureException("구매 중 DB 연결 실패")
+        givenFailure(failure)
+        every {
+            itemPurchaseAttemptService.createItemPurchaseAttempt(any(), any(), any(), any(), any(), any())
+        } throws DataAccessResourceFailureException("기록 중 DB 연결 실패")
+
+        val thrown = assertFailsWith<DataAccessResourceFailureException> { purchase() }
+
+        assertSame(failure, thrown)
+        verifyFailedAttempt(ItemPurchaseOutcome.UNEXPECTED_ERROR)
     }
 
     @Test
