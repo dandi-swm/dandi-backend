@@ -48,13 +48,13 @@ class CoinGiftService(private val coinService: CoinService, private val coinHist
             throw BusinessException(CoinErrorCode.COIN_PACKAGE_NOT_FOUND)
         }
 
-        coinService.lockCoin(userId)
+        val coin = coinService.lockCoin(userId)
         if (coinHistoryRepository.existsByUserIdAndCategory(userId, CoinHistoryCategory.COIN_GIFT)) {
             throw BusinessException(CoinErrorCode.COIN_GIFT_ALREADY_CLAIMED)
         }
 
         val balance = coinService.increaseBalance(
-            userId = userId,
+            coin = coin,
             quantity = GIFT_COIN_QUANTITY,
             category = CoinHistoryCategory.COIN_GIFT,
             sourceId = request.coinPackageId + coinPackageOffset,

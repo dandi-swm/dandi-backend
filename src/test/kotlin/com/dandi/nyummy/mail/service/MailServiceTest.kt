@@ -45,6 +45,7 @@ class MailServiceTest {
     private val expiresAt = Instant.parse("2026-10-25T00:00:00Z")
 
     private val mailId = 10L
+    private val coin = Coin(userId = userId)
 
     private val mailRepository = mockk<MailRepository>()
     private val mailItemRepository = mockk<MailItemRepository>()
@@ -60,7 +61,7 @@ class MailServiceTest {
     )
 
     init {
-        every { coinService.lockCoin(any()) } answers { Coin(userId = firstArg()) }
+        every { coinService.lockCoin(any()) } returns coin
         every { coinService.increaseBalance(any(), any(), any(), any()) } returns 0
         every { roomService.createOwnedRoomItems(any(), any()) } just runs
         every { mailItemRepository.findMailItemsByMailIds(any()) } returns emptyList()
@@ -314,7 +315,7 @@ class MailServiceTest {
 
         val reward = mailService.claimMail(userId, mailId)
 
-        verify { coinService.increaseBalance(userId, 270, CoinHistoryCategory.MAIL_CLAIM, mailId) }
+        verify { coinService.increaseBalance(coin, 270, CoinHistoryCategory.MAIL_CLAIM, mailId) }
         assertEquals(now, mail.claimedAt)
         assertEquals(270, reward.coin?.quantity)
         assertEquals(1L, reward.coin?.imageId)
@@ -329,7 +330,7 @@ class MailServiceTest {
 
         val reward = mailService.claimMail(userId, mailId)
 
-        verify { coinService.increaseBalance(userId, 100, CoinHistoryCategory.MAIL_CLAIM, mailId) }
+        verify { coinService.increaseBalance(coin, 100, CoinHistoryCategory.MAIL_CLAIM, mailId) }
         assertEquals(100, reward.coin?.quantity)
         assertNull(reward.rewardBox)
     }
@@ -373,7 +374,7 @@ class MailServiceTest {
         val reward = mailService.claimMail(userId, mailId)
 
         verify { roomService.createOwnedRoomItems(userId, grantedRoomItems(3L)) }
-        verify { coinService.increaseBalance(userId, 30, CoinHistoryCategory.MAIL_CLAIM, mailId) }
+        verify { coinService.increaseBalance(coin, 30, CoinHistoryCategory.MAIL_CLAIM, mailId) }
         assertEquals(listOf(3L), reward.items?.map { it.imageId })
         assertEquals(30, reward.coin?.quantity)
         assertEquals(1L, reward.rewardBox?.imageId)
@@ -431,7 +432,7 @@ class MailServiceTest {
         verifyOrder {
             coinService.lockCoin(userId)
             mailRepository.findMailWithLockByIdAndDeletedAtIsNull(mailId)
-            coinService.increaseBalance(userId, 100, CoinHistoryCategory.MAIL_CLAIM, mailId)
+            coinService.increaseBalance(coin, 100, CoinHistoryCategory.MAIL_CLAIM, mailId)
         }
     }
 
@@ -504,8 +505,8 @@ class MailServiceTest {
 
         val reward = mailService.claimMails(userId)
 
-        verify { coinService.increaseBalance(userId, 30, CoinHistoryCategory.MAIL_CLAIM, 1L) }
-        verify { coinService.increaseBalance(userId, 100, CoinHistoryCategory.MAIL_CLAIM, 3L) }
+        verify { coinService.increaseBalance(coin, 30, CoinHistoryCategory.MAIL_CLAIM, 1L) }
+        verify { coinService.increaseBalance(coin, 100, CoinHistoryCategory.MAIL_CLAIM, 3L) }
         verify(exactly = 2) { coinService.increaseBalance(any(), any(), any(), any()) }
         assertEquals(130, reward.coin?.quantity)
         assertEquals(1L, reward.coin?.imageId)
@@ -561,7 +562,7 @@ class MailServiceTest {
             coinService.lockCoin(userId)
             mailRepository.findMailsWithLockByUserIdAndClaimedAtIsNull(userId, now)
             roomService.createOwnedRoomItems(userId, grantedRoomItems(3L))
-            coinService.increaseBalance(userId, 30, CoinHistoryCategory.MAIL_CLAIM, 1L)
+            coinService.increaseBalance(coin, 30, CoinHistoryCategory.MAIL_CLAIM, 1L)
         }
     }
 
