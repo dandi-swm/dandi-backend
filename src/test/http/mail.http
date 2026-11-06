@@ -1,0 +1,27 @@
+### 우편함 조회 API
+GET {{url}}/api/v1/mails?size=10
+Authorization: Bearer {{accessToken}}
+
+### 우편함 조회 API (다음 묶음)
+# cursor에는 직전 응답의 nextCursor를 넣는다.
+GET {{url}}/api/v1/mails?cursor=74&size=10
+Authorization: Bearer {{accessToken}}
+
+### 우편 하나 받기 API
+# 우편함 조회 응답에서 받지 않은 우편의 id를 넣는다.
+@mailId = 74
+POST {{url}}/api/v1/mails/{{mailId}}/claim
+Authorization: Bearer {{accessToken}}
+
+### 우편 모두 받기 API
+POST {{url}}/api/v1/mails/claim-all
+Authorization: Bearer {{accessToken}}
+
+### 받은 우편 삭제 API
+# 받지 않은 우편은 api.mail.notClaimed로 거부된다.
+DELETE {{url}}/api/v1/mails/{{mailId}}
+Authorization: Bearer {{accessToken}}
+
+### 우편 복구 API
+POST {{url}}/api/v1/mails/{{mailId}}/restore
+Authorization: Bearer {{accessToken}}

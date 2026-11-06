@@ -30,6 +30,12 @@ Authorization: Bearer {{accessToken}}
   "imageKey": "{{staleImageKey}}"
 }
 
+### 튜토리얼 식사 생성 API
+# 요청 본문 없음. 보상 상자 우편이 하나 생긴다(mail.http로 확인).
+# 이미 튜토리얼을 마친 사용자가 다시 보내면 api.meal.tutorialAlreadyCompleted로 거부된다.
+POST {{url}}/api/v1/meals/tutorial
+Authorization: Bearer {{accessToken}}
+
 ### 분석 상태 조회 API
 # 시드 데이터 기준: 4=FAILED (재분석은 WAITING/FAILED만 허용)
 @analysisMealId = 4
