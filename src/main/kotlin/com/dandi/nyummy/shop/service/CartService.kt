@@ -106,6 +106,10 @@ class CartService(
     /**
      * 장바구니에 담긴 상품의 수량을 [UpdateCartItemQuantityRequest.quantity]로 맞추고 장바구니 전체를 반환한다.
      *
+     * 저장하는 것은 대상 항목의 수량뿐이다. 그래도 모든 항목의 결제가와 구매 가능 여부를 계산하는 이유는,
+     * 응답이 결제 정보를 포함한 장바구니 전체이고 가격을 저장하지 않아 지금 값으로 다시 계산해야 하기 때문이다.
+     * 전체 상한을 넘는지 볼 때도 다른 항목의 수량이 필요하다.
+     *
      * @throws BusinessException [ShopErrorCode.CART_ITEM_NOT_FOUND] 장바구니에 없는 상품인 경우
      * @throws BusinessException [ShopErrorCode.PRODUCT_NOT_FOR_SALE] 판매 기간이 끝난 상품인 경우
      * @throws BusinessException [ShopErrorCode.ALREADY_OWNED] 이미 가진 방 배경인 경우

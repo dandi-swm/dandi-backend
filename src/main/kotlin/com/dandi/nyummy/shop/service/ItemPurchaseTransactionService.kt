@@ -109,6 +109,7 @@ class ItemPurchaseTransactionService(
         val totalPrice = requestedProducts.sumOf { it.purchasePrice * it.quantity }
         if (totalPrice > coin.balance) throw BusinessException(ShopErrorCode.INSUFFICIENT_BALANCE)
 
+        // 거부는 여기까지 모두 끝내고 아래부터 저장한다. 구매 상품·우편·코인 내역(sourceId)이 구매 id를 가리키므로 구매를 먼저 저장한다.
         val itemPurchase = itemPurchaseRepository.save(ItemPurchase(userId, totalPrice, idempotencyKey))
         val productItems = productItemRepository.findByProductIdIn(productIds).groupBy { it.productId }
         requestedProducts.forEach { requestedProduct ->
