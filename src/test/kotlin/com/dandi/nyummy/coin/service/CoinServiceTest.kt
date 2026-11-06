@@ -72,13 +72,12 @@ class CoinServiceTest {
     // increaseBalance
 
     @Test
-    fun `잠근 잔액 행에 더하고 늘린 뒤 잔액으로 내역을 남긴다`() {
+    fun `잠근 코인 행에 더하고 늘린 뒤 잔액으로 내역을 남기며 다시 잠그지 않는다`() {
         val coin = Coin(userId = userId).apply { balance = 300 }
         val savedHistory = slot<CoinHistory>()
-        every { coinRepository.findCoinWithLockByUserId(userId) } returns coin
         every { coinHistoryRepository.save(capture(savedHistory)) } answers { firstArg() }
 
-        val balance = coinService.increaseBalance(userId, 270, CoinHistoryCategory.MAIL_CLAIM, sourceId = mailId)
+        val balance = coinService.increaseBalance(coin, 270, CoinHistoryCategory.MAIL_CLAIM, sourceId = mailId)
 
         assertEquals(570, balance)
         assertEquals(570, coin.balance)
@@ -87,16 +86,7 @@ class CoinServiceTest {
         assertEquals(270, savedHistory.captured.quantity)
         assertEquals(570, savedHistory.captured.balanceAfter)
         assertEquals(mailId, savedHistory.captured.sourceId)
-    }
-
-    @Test
-    fun `코인 행이 없으면 지급하지 않고 실패한다`() {
-        every { coinRepository.findCoinWithLockByUserId(userId) } returns null
-
-        assertFailsWith<IllegalStateException> {
-            coinService.increaseBalance(userId, 270, CoinHistoryCategory.MAIL_CLAIM, sourceId = mailId)
-        }
-        verify(exactly = 0) { coinHistoryRepository.save(any()) }
+        verify(exactly = 0) { coinRepository.findCoinWithLockByUserId(any()) }
     }
 
     // decreaseBalance

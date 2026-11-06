@@ -47,6 +47,7 @@ class AdminItemPurchaseRefundTransactionServiceTest {
 
     private val userId = 1L
     private val adminId = 2L
+    private var coin = Coin(userId = userId)
     private val itemPurchaseProductId = 10L
     private val purchaseId = 20L
     private val refundId = 30L
@@ -117,7 +118,8 @@ class AdminItemPurchaseRefundTransactionServiceTest {
         every { itemPurchaseRefundRepository.findByItemPurchaseProductId(itemPurchaseProductId) } returns
             listOfNotNull(refundedCoinQuantity?.let { ItemPurchaseRefund(itemPurchaseProductId, adminId, it, "이전 환불") })
         every { ownedRoomItemRepository.findByItemPurchaseLineIdIn(any()) } returns ownedRoomItems
-        every { coinService.lockCoin(userId) } returns Coin(userId = userId).apply { this.balance = balance }
+        coin = Coin(userId = userId).apply { this.balance = balance }
+        every { coinService.lockCoin(userId) } returns coin
     }
 
     private fun givenRefundSaved(balanceAfter: Int = 1800) {
@@ -127,7 +129,7 @@ class AdminItemPurchaseRefundTransactionServiceTest {
         every { itemPurchaseRefundLineRepository.saveAll(any<List<ItemPurchaseRefundLine>>()) } answers { firstArg() }
         every { mailItemRepository.findByItemPurchaseLineIdIn(any()) } returns emptyList()
         every { mailRepository.findAllById(any()) } returns emptyList()
-        every { coinService.increaseBalance(userId, any(), any(), any()) } returns balanceAfter
+        every { coinService.increaseBalance(any(), any(), any(), any()) } returns balanceAfter
     }
 
     private fun createRefund(request: CreateItemPurchaseRefundRequest) =
@@ -235,7 +237,7 @@ class AdminItemPurchaseRefundTransactionServiceTest {
             coinService.lockCoin(userId)
             itemPurchaseProductRepository.findByIdOrNull(itemPurchaseProductId)
             itemPurchaseRefundRepository.save(any())
-            coinService.increaseBalance(userId, 800, CoinHistoryCategory.ITEM_PURCHASE_REFUND, refundId)
+            coinService.increaseBalance(coin, 800, CoinHistoryCategory.ITEM_PURCHASE_REFUND, refundId)
         }
     }
 

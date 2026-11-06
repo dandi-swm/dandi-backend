@@ -94,7 +94,7 @@ class AdminItemPurchaseRefundTransactionService(
 
         val balance = if (calculation.coinQuantity > 0) {
             coinService.increaseBalance(
-                userId,
+                coin,
                 calculation.coinQuantity,
                 CoinHistoryCategory.ITEM_PURCHASE_REFUND,
                 refund.id,
