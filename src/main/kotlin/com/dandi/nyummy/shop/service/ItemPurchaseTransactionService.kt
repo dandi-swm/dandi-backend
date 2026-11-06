@@ -32,7 +32,7 @@ import java.time.Clock
 import java.time.Instant
 
 /**
- * 상점 구매 트랜잭션. 거부되면 예외로 롤백되고, 거부 기록은 [ItemPurchaseService]가 롤백 뒤에 따로 남긴다.
+ * 상점 구매 트랜잭션. 실패하면 예외로 롤백되고, 실패 기록은 [ItemPurchaseService]가 롤백 뒤에 따로 남긴다.
  * 트랜잭션 안에서 예외를 잡으면 롤백이 표시된 채로 기록을 남기게 되므로 별도 빈으로 둔다.
  */
 @Service

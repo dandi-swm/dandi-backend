@@ -86,13 +86,11 @@ class ItemPurchaseServiceTest {
     }
 
     @Test
-    fun `구매 시도의 거부 사유가 아니면 기록하지 않고 그대로 응답한다`() {
+    fun `구매 시도의 거부 사유가 아니면 예상 못 한 오류로 기록하고 그대로 응답한다`() {
         givenFailure(BusinessException(UserErrorCode.USER_NOT_FOUND))
 
         assertBusinessException(UserErrorCode.USER_NOT_FOUND) { purchase() }
-        verify(exactly = 0) {
-            itemPurchaseAttemptService.createItemPurchaseAttempt(any(), any(), any(), any(), any(), any())
-        }
+        verifyRejectedAttempt(ItemPurchaseOutcome.UNEXPECTED_ERROR)
     }
 
     @Test
