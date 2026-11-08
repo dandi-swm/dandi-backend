@@ -2,6 +2,7 @@ package com.dandi.nyummy.notification
 
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.enum.MealTime
+import com.dandi.nyummy.report.enum.ReportStatus
 import java.time.Instant
 import java.time.LocalDate
 
@@ -17,4 +18,7 @@ object NotificationId {
 
     // 답변 알림은 처음 등록할 때 한 번만 보내므로 문의 id만으로 구분된다.
     fun createInquiryAnswerId(inquiryId: Long): String = "inquiry-answer:$inquiryId"
+
+    // 리포트는 완료·실패로 한 번만 끝나므로 리포트 id와 끝난 상태로 구분된다.
+    fun createReportId(reportId: Long, status: ReportStatus): String = "report:$reportId:$status"
 }

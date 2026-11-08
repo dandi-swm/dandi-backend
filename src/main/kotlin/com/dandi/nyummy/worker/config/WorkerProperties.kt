@@ -6,23 +6,25 @@ import java.time.Duration
 /**
  * Worker 설정. Worker는 같은 이미지를 별도 ECS 서비스로 띄우고, 그 서비스에서만 enabled를 켠다.
  *
- * 작업 종류(영양 분석 등)마다 설정을 따로 두어, 종류별로 다른 ECS 서비스에서 켜고 스레드 수를 따로 정할 수 있다.
+ * 작업 종류(영양 분석·리포트 생성)마다 설정을 따로 두어, 종류별로 다른 ECS 서비스에서 켜고 스레드 수를 따로 정할 수 있다.
  *
  * @property enabled Worker 빈(스케줄링·종류별 polling·실행기)을 만든다. API 서비스는 기본값(false)이라 Worker 설정이 필요 없다
  * @property shutdownTimeout 종료할 때 처리 중인 작업이 끝나기를 기다리는 최대 시간. 정상 처리 시간보다 길어야 하고,
  *   나머지 종료 시간을 더해도 ECS stopTimeout보다 짧아야 기다리는 도중에 강제로 끝나지 않는다
  * @property analysis 영양 분석 작업(meal_analysis_jobs) 설정
+ * @property report 리포트 생성 작업(report_generation_jobs) 설정. 기본으로 꺼져 있어, 켠 서비스에서만 리포트를 만든다
  */
 @ConfigurationProperties(prefix = "app.worker")
 data class WorkerProperties(
     val enabled: Boolean = false,
     val shutdownTimeout: Duration = Duration.ofSeconds(40),
     val analysis: WorkerJobProperties = WorkerJobProperties(),
+    val report: WorkerJobProperties = WorkerJobProperties(enabled = false, maxThreads = 10),
 ) {
     /**
      * 켜진 작업 종류의 스레드 수 합. 모든 스레드가 같은 Gemini 연결 풀을 쓰므로 연결 수를 넘으면 안 된다.
      */
-    fun calculateEnabledMaxThreads(): Int = listOf(analysis).filter { it.enabled }.sumOf { it.maxThreads }
+    fun calculateEnabledMaxThreads(): Int = listOf(analysis, report).filter { it.enabled }.sumOf { it.maxThreads }
 }
 
 /**
@@ -37,6 +39,8 @@ data class WorkerProperties(
  * @property pollingDelay polling 한 번이 끝난 뒤 다음 polling까지 쉬는 시간. Worker 하나가 받아들이는 속도의 상한은
  *   약 leaseLimit ÷ (pollingDelay + polling 한 번 시간)이고, 줄이면 그만큼 DB 조회가 잦아진다(일이 없어도).
  *   `@Scheduled`가 같은 키(`app.worker.<종류>.polling-delay`)를 직접 읽는다
+ * @property retryDelay 일시적인 실패(요청 한도 초과·서버 오류·타임아웃)를 다시 가져가기까지 기다리는 시간.
+ *   Gemini가 장애일 때 바로 다시 불러 시도 횟수를 다 쓰지 않게 한다. 지금은 리포트 생성만 쓴다
  */
 data class WorkerJobProperties(
     val enabled: Boolean = true,
@@ -45,4 +49,5 @@ data class WorkerJobProperties(
     val maxLeaseCount: Int = 2,
     val leaseLimit: Int = 10,
     val pollingDelay: Duration = Duration.ofSeconds(1),
+    val retryDelay: Duration = Duration.ZERO,
 )

@@ -12,6 +12,8 @@ interface ReportPurchaseRepository : JpaRepository<ReportPurchase, Long> {
 
     fun findByUserIdAndIdempotencyKey(userId: Long, idempotencyKey: String): ReportPurchase?
 
+    fun findByReportId(reportId: Long): ReportPurchase?
+
     /**
      * 리포트가 [statuses] 중 하나인 무료(0코인) 구매가 있는지 확인한다. 첫 무료 판정에 쓴다.
      */

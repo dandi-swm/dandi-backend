@@ -6,6 +6,8 @@ enum class PushType {
     ANALYSIS_COMPLETED,
     ANALYSIS_FAILED,
     INQUIRY_ANSWERED,
+    REPORT_COMPLETED,
+    REPORT_FAILED,
 }
 
 data class PushMessage(

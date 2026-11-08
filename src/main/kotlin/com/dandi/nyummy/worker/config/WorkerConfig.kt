@@ -40,4 +40,16 @@ class WorkerConfig(workerProperties: WorkerProperties, aiProperties: AiPropertie
         queueCapacity = 0
         setThreadNamePrefix("analysis-")
     }
+
+    /**
+     * 리포트 한 건(식사 집계 + Gemini 호출 + 결과 저장)을 처리하는 실행기. 큐를 두지 않는 이유는 [analysisExecutor]와 같다.
+     */
+    @Bean
+    @ConditionalOnReportWorkerEnabled
+    fun reportExecutor(workerProperties: WorkerProperties): ThreadPoolTaskExecutor = ThreadPoolTaskExecutor().apply {
+        corePoolSize = workerProperties.report.maxThreads
+        maxPoolSize = workerProperties.report.maxThreads
+        queueCapacity = 0
+        setThreadNamePrefix("report-")
+    }
 }
