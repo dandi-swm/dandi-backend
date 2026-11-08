@@ -37,13 +37,17 @@ data class NutritionBalanceContentResponse(
 
 /**
  * @property percentOfTarget 하루 평균 섭취량이 목표의 몇 %인지(반올림). 100을 넘을 수 있다
- * @property isFocused 목표에서 가장 많이 벗어나 화면에서 강조하는 영양소
+ * @property caloryShare 탄단지 칼로리 합에서 이 영양소가 차지하는 비율(%, 반올림)
+ * @property targetCaloryShare 목표 섭취량에서의 같은 비율(%, 반올림)
+ * @property isFocused 구성비가 목표에서 가장 많이 벗어나 화면에서 강조하는 영양소. 균형이 좋은 주는 셋 다 false다
  */
 data class MacroNutrientBalanceResponse(
     val nutrient: MacroNutrient,
     val current: Int,
     val target: Int,
     val percentOfTarget: Int,
+    val caloryShare: Int,
+    val targetCaloryShare: Int,
     val isFocused: Boolean,
 )
 
@@ -65,7 +69,8 @@ data class ReportDayResponse(
 /**
  * 식사 집계 결과. AI 문장을 받기 전의 서버 몫이다.
  *
- * @property focusedNutrient 목표에서 가장 많이 벗어난 영양소. AI가 같은 영양소를 말하도록 프롬프트에 넘긴다
+ * @property focusedNutrient 구성비가 목표에서 가장 많이 벗어난 영양소. 균형이 좋은 주(또는 기록이 없는 주)는 null이다.
+ *   AI가 같은 영양소를 말하도록 프롬프트에 넘긴다
  */
 data class NutritionBalanceResult(
     val startDate: LocalDate,
@@ -74,7 +79,7 @@ data class NutritionBalanceResult(
     val current: Nutrition,
     val target: Nutrition,
     val macroNutrients: List<MacroNutrientBalanceResponse>,
-    val focusedNutrient: MacroNutrient,
+    val focusedNutrient: MacroNutrient?,
     val days: List<ReportDayResponse>,
     val breakfastDayCount: Int,
     val calorySentence: String,

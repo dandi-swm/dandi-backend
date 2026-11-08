@@ -21,11 +21,21 @@ const val NUTRITION_BALANCE_VIEW_TYPE = "NutritionBalance"
 private const val BREAKFAST_START_HOUR = 5
 private const val BREAKFAST_END_HOUR = 10
 
+// 탄단지 칼로리 구성비가 목표 구성비에서 이 비율 안(±20%)이면 균형이 좋은 주로 보고 강조할 영양소를 두지 않는다.
+private const val CALORY_SHARE_TOLERANCE = 0.2
+
+// 1g당 칼로리
+private val CALORY_PER_GRAM = mapOf(MacroNutrient.CARBS to 4, MacroNutrient.PROTEIN to 4, MacroNutrient.FAT to 9)
+
 /**
  * 한 주의 식사를 영양 균형 뷰의 숫자와 서버 문장으로 집계한다.
  *
  * [meals]는 그 주에 분석이 완료된 식사(지운 식사 제외)다. 평균은 기록한 날 기준이고, 기록이 없는 날은 칸만 두고 평균에서 뺀다.
- * 강조 영양소는 목표 대비 비율이 100%에서 가장 멀리 벗어난 것이고, 같으면 탄수화물·단백질·지방 순으로 고른다.
+ *
+ * 강조 영양소는 양이 아니라 구성으로 고른다. 탄단지가 칼로리에서 차지하는 비율(구성비)을 목표 섭취량의 구성비와 비교해,
+ * 상대적으로 가장 많이 벗어난 것을 고르고(같으면 탄수화물·단백질·지방 순) 셋 다 ±20% 안이면 고르지 않는다(균형이 좋은 주).
+ * 양으로 고르면 적게 먹은 주는 모든 영양소가 모자라 보여, 지방이 많은 주에도 가장 덜 먹은 탄수화물을 강조하게 된다.
+ * 많이·적게 먹은 것은 칼로리 문장이 따로 말한다.
  *
  * @param target 하루 목표 섭취량
  * @param zone 식사 시각을 날짜로 바꿀 시간대(Asia/Seoul)
@@ -54,7 +64,7 @@ fun calculateNutritionBalance(
     val recordedDayCount = days.count { it.isRecorded }
     val current = calculateDailyAverage(meals, recordedDayCount)
     val macroNutrients = createMacroNutrientBalances(current, target)
-    val focusedNutrient = macroNutrients.first { it.isFocused }
+    val focused = macroNutrients.firstOrNull { it.isFocused }
     val breakfastDayCount = meals
         .map { it.mealAt.atZone(zone) }
         .filter { it.hour in BREAKFAST_START_HOUR until BREAKFAST_END_HOUR }
@@ -69,11 +79,15 @@ fun calculateNutritionBalance(
         current = current,
         target = target,
         macroNutrients = macroNutrients,
-        focusedNutrient = focusedNutrient.nutrient,
+        focusedNutrient = focused?.nutrient,
         days = days,
         breakfastDayCount = breakfastDayCount,
         calorySentence = createCalorySentence(current.calory, target.calory),
-        focusSentence = createFocusSentence(focusedNutrient),
+        focusSentence = createFocusSentence(
+            focused,
+            hasMacroNutrients =
+            current.carbs + current.protein + current.fat > 0,
+        ),
         overTargetSentence = createOverTargetSentence(days.filter { it.isOverTarget }.map { it.dayOfWeek }),
         breakfastSentence = "기록한 ${recordedDayCount}일 중 아침을 챙긴 날은 ${breakfastDayCount}일이에요",
     )
@@ -97,24 +111,45 @@ private fun calculateDailyAverage(meals: List<Meal>, recordedDayCount: Int): Nut
 }
 
 private fun createMacroNutrientBalances(current: Nutrition, target: Nutrition): List<MacroNutrientBalanceResponse> {
-    val values = listOf(
-        Triple(MacroNutrient.CARBS, current.carbs, target.carbs),
-        Triple(MacroNutrient.PROTEIN, current.protein, target.protein),
-        Triple(MacroNutrient.FAT, current.fat, target.fat),
+    val currentGrams = mapOf(
+        MacroNutrient.CARBS to current.carbs,
+        MacroNutrient.PROTEIN to current.protein,
+        MacroNutrient.FAT to current.fat,
     )
-    val percents = values.map { (_, currentValue, targetValue) -> calculatePercentOfTarget(currentValue, targetValue) }
-    // maxBy는 같은 값이면 앞의 것을 고른다(탄수화물·단백질·지방 순).
-    val focusedIndex = percents.indices.maxBy { abs(percents[it] - 100) }
+    val targetGrams = mapOf(
+        MacroNutrient.CARBS to target.carbs,
+        MacroNutrient.PROTEIN to target.protein,
+        MacroNutrient.FAT to target.fat,
+    )
+    val currentShares = calculateCaloryShares(currentGrams)
+    val targetShares = calculateCaloryShares(targetGrams)
+    // 목표 구성비 대비 상대 편차. 목표가 20%인 단백질이 10%면 -0.5다.
+    val deviations = MacroNutrient.entries.associateWith { nutrient ->
+        val targetShare = targetShares.getValue(nutrient)
+        if (targetShare <= 0.0) 0.0 else currentShares.getValue(nutrient) / targetShare - 1
+    }
+    // maxBy는 같은 값이면 앞의 것을 고른다(탄수화물·단백질·지방 순). 기록이 없으면 구성비가 모두 0이라 고르지 않는다.
+    val focused = MacroNutrient.entries.maxBy { abs(deviations.getValue(it)) }
+        .takeIf { currentGrams.values.sum() > 0 && abs(deviations.getValue(it)) > CALORY_SHARE_TOLERANCE }
 
-    return values.mapIndexed { index, (nutrient, currentValue, targetValue) ->
+    return MacroNutrient.entries.map { nutrient ->
         MacroNutrientBalanceResponse(
             nutrient = nutrient,
-            current = currentValue,
-            target = targetValue,
-            percentOfTarget = percents[index],
-            isFocused = index == focusedIndex,
+            current = currentGrams.getValue(nutrient),
+            target = targetGrams.getValue(nutrient),
+            percentOfTarget = calculatePercentOfTarget(currentGrams.getValue(nutrient), targetGrams.getValue(nutrient)),
+            caloryShare = (currentShares.getValue(nutrient) * 100).roundToInt(),
+            targetCaloryShare = (targetShares.getValue(nutrient) * 100).roundToInt(),
+            isFocused = nutrient == focused,
         )
     }
+}
+
+// 탄단지 각각이 탄단지 칼로리 합에서 차지하는 비율(0~1). 합이 0이면 모두 0이다.
+private fun calculateCaloryShares(grams: Map<MacroNutrient, Int>): Map<MacroNutrient, Double> {
+    val calories = grams.mapValues { (nutrient, gram) -> gram * CALORY_PER_GRAM.getValue(nutrient) }
+    val total = calories.values.sum()
+    return calories.mapValues { (_, calory) -> if (total <= 0) 0.0 else calory.toDouble() / total }
 }
 
 private fun calculatePercentOfTarget(current: Int, target: Int): Int =
@@ -129,13 +164,16 @@ private fun createCalorySentence(current: Int, target: Int): String {
     }
 }
 
-private fun createFocusSentence(focused: MacroNutrientBalanceResponse): String {
-    val percent = focused.percentOfTarget
-    return when {
-        percent < 100 -> "${focused.nutrient.label}이 목표의 $percent%에서 멈췄어요"
-        percent > 100 -> "${focused.nutrient.label}이 목표보다 ${percent - 100}% 많았어요"
-        else -> "탄수화물·단백질·지방 모두 목표에 맞았어요"
-    }
+private fun createFocusSentence(focused: MacroNutrientBalanceResponse?, hasMacroNutrients: Boolean): String = when {
+    !hasMacroNutrients -> "탄수화물·단백질·지방 기록이 없어 균형을 볼 수 없어요"
+
+    focused == null -> "탄수화물·단백질·지방을 고르게 먹었어요"
+
+    focused.caloryShare < focused.targetCaloryShare ->
+        "${focused.nutrient.label}이 칼로리의 ${focused.caloryShare}%로, 목표 ${focused.targetCaloryShare}%보다 적었어요"
+
+    else ->
+        "${focused.nutrient.label}이 칼로리의 ${focused.caloryShare}%로, 목표 ${focused.targetCaloryShare}%보다 많았어요"
 }
 
 private fun createOverTargetSentence(overTargetDays: List<DayOfWeek>): String = when (overTargetDays.size) {
