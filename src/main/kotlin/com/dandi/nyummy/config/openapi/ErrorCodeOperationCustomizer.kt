@@ -57,7 +57,7 @@ class ErrorCodeOperationCustomizer : OperationCustomizer {
 
     private fun convertErrorCodes(annotation: ApiErrorCodes): List<ErrorCode> = with(annotation) {
         listOf(
-            admin, auth, cat, cdn, coin, common, email, inquiry, internal, mail, meal, room, s3, shop, user,
+            admin, auth, cat, cdn, coin, common, email, inquiry, internal, mail, meal, report, room, s3, shop, user,
         ).flatMap { it.toList() }
     }
 

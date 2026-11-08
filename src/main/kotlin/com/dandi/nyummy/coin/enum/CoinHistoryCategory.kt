@@ -18,4 +18,10 @@ enum class CoinHistoryCategory {
 
     /** 상점 구매 환불. sourceId = item_purchase_refunds.id */
     ITEM_PURCHASE_REFUND,
+
+    /** 리포트 구매. sourceId = report_purchases.id */
+    REPORT_PURCHASE,
+
+    /** 리포트 구매 환불(취소·생성 실패). sourceId = report_purchase_refunds.id */
+    REPORT_PURCHASE_REFUND,
 }

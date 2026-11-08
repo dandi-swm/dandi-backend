@@ -196,6 +196,11 @@ app:
       # 호박 쿠션(침대), 스크래처 타워(기타)
       item-ids: [2, 3]
       coin-quantity: 100
+  report:
+    # 리포트 가격(코인). 첫 리포트는 무료다.
+    list-price: 300
+    # 그 주에 분석이 완료된 식사가 이만큼 있어야 살 수 있다. 목록 응답의 minMealCount로 앱에 준다.
+    min-meal-count: 3
   cat:
     weight-update-interval-days: 1
     weight-update-tolerance: 0.2
