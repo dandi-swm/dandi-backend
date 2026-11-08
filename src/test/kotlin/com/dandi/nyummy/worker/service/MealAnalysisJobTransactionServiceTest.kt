@@ -9,6 +9,7 @@ import com.dandi.nyummy.meal.entity.MealAnalysisJob
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.repository.MealAnalysisJobRepository
 import com.dandi.nyummy.meal.repository.MealRepository
+import com.dandi.nyummy.worker.config.WorkerJobProperties
 import com.dandi.nyummy.worker.config.WorkerProperties
 import com.dandi.nyummy.worker.dto.AnalysisPushResult
 import com.dandi.nyummy.worker.dto.MealAnalysisJobResult
@@ -53,7 +54,10 @@ class MealAnalysisJobTransactionServiceTest {
         mealRepository = mealRepository,
         catRepository = catRepository,
         catService = catService,
-        workerProperties = WorkerProperties(enabled = true, leaseTimeToLive = Duration.ofSeconds(60)),
+        workerProperties = WorkerProperties(
+            enabled = true,
+            analysis = WorkerJobProperties(leaseTimeToLive = Duration.ofSeconds(60)),
+        ),
         clock = clock,
     )
 

@@ -1,6 +1,7 @@
 package com.dandi.nyummy.worker
 
 import com.dandi.nyummy.infra.ai.nutrition.AnalysisFailureCategory
+import com.dandi.nyummy.worker.config.WorkerJobProperties
 import com.dandi.nyummy.worker.config.WorkerProperties
 import com.dandi.nyummy.worker.dto.MealAnalysisJobResult
 import com.dandi.nyummy.worker.service.AnalysisService
@@ -36,7 +37,7 @@ class MealAnalysisJobPollerTest {
         mealAnalysisJobTransactionService = mealAnalysisJobTransactionService,
         analysisService = analysisService,
         analysisExecutor = analysisExecutor,
-        workerProperties = WorkerProperties(enabled = true, leaseLimit = leaseLimit),
+        workerProperties = WorkerProperties(enabled = true, analysis = WorkerJobProperties(leaseLimit = leaseLimit)),
     )
 
     private val firstJob = createJob(jobId = 1L)

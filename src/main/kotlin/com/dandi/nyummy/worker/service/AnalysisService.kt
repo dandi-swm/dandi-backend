@@ -10,7 +10,7 @@ import com.dandi.nyummy.infra.push.dto.PushType
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.notification.NotificationId
 import com.dandi.nyummy.notification.service.NotificationService
-import com.dandi.nyummy.worker.config.ConditionalOnWorkerEnabled
+import com.dandi.nyummy.worker.config.ConditionalOnAnalysisWorkerEnabled
 import com.dandi.nyummy.worker.dto.AnalysisPushResult
 import com.dandi.nyummy.worker.dto.MealAnalysisJobResult
 import io.micrometer.core.instrument.MeterRegistry
@@ -22,7 +22,7 @@ import java.time.Duration
 import java.time.Instant
 
 @Service
-@ConditionalOnWorkerEnabled
+@ConditionalOnAnalysisWorkerEnabled
 class AnalysisService(
     private val nutritionAnalysisClient: NutritionAnalysisClient,
     private val mealAnalysisJobTransactionService: MealAnalysisJobTransactionService,

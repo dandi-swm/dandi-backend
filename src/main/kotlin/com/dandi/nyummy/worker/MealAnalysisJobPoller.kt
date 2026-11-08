@@ -2,7 +2,8 @@ package com.dandi.nyummy.worker
 
 import com.dandi.nyummy.infra.ai.nutrition.AnalysisFailureCategory
 import com.dandi.nyummy.infra.ai.nutrition.AnalysisFailureException
-import com.dandi.nyummy.worker.config.ConditionalOnWorkerEnabled
+import com.dandi.nyummy.worker.config.ConditionalOnAnalysisWorkerEnabled
+import com.dandi.nyummy.worker.config.WorkerJobProperties
 import com.dandi.nyummy.worker.config.WorkerProperties
 import com.dandi.nyummy.worker.dto.MealAnalysisJobResult
 import com.dandi.nyummy.worker.service.AnalysisService
@@ -19,7 +20,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.math.min
 
 /**
- * 1초마다 DB 큐(meal_analysis_jobs)에서 작업을 lease로 가져와 분석 실행기에 넘긴다.
+ * [WorkerJobProperties.pollingDelay](기본 1초)마다 DB 큐(meal_analysis_jobs)에서 작업을 lease로 가져와 분석 실행기에 넘긴다.
  *
  * 실행기의 빈 자리만큼만 가져가므로, 가져간 작업은 곧바로 처리가 시작된다. lease 시간은 큐에서 기다리는 동안이 아니라
  * 처리하는 동안에만 흐른다. 빈 자리는 실행기의 activeCount로 세는데 근사값이라, 드물게 실행기가 작업을 거부하면
@@ -31,7 +32,7 @@ import kotlin.math.min
  * 결과를 쓰지 못하게(fencing) 하기 위해서다.
  */
 @Component
-@ConditionalOnWorkerEnabled
+@ConditionalOnAnalysisWorkerEnabled
 class MealAnalysisJobPoller(
     private val mealAnalysisJobTransactionService: MealAnalysisJobTransactionService,
     private val analysisService: AnalysisService,
@@ -40,8 +41,6 @@ class MealAnalysisJobPoller(
 ) : SmartLifecycle {
     companion object {
         private val logger = LoggerFactory.getLogger(MealAnalysisJobPoller::class.java)
-
-        private const val POLLING_DELAY_MILLIS = 1_000L
     }
 
     @Volatile
@@ -51,11 +50,11 @@ class MealAnalysisJobPoller(
     private val inProgressJobs: MutableSet<MealAnalysisJobResult> = ConcurrentHashMap.newKeySet()
 
     /**
-     * 이전 polling이 끝난 뒤 1초를 쉬고 다시 돈다. 처음 시작은 0~1초 사이 무작위로 늦춰, 여러 Worker가 함께 떠도
-     * 같은 순간에 DB를 조회하지 않게 한다.
+     * 이전 polling이 끝난 뒤 [WorkerJobProperties.pollingDelay](기본 1초)를 쉬고 다시 돈다. 처음 시작은 0~1초 사이
+     * 무작위로 늦춰, 여러 Worker가 함께 떠도 같은 순간에 DB를 조회하지 않게 한다.
      */
     @Scheduled(
-        fixedDelay = POLLING_DELAY_MILLIS,
+        fixedDelayString = "\${app.worker.analysis.polling-delay:1s}",
         initialDelayString = "#{T(java.util.concurrent.ThreadLocalRandom).current().nextLong(1000)}",
     )
     fun pollMealAnalysisJobs() {
@@ -68,7 +67,9 @@ class MealAnalysisJobPoller(
             return
         }
 
-        val jobs = mealAnalysisJobTransactionService.leaseMealAnalysisJobs(min(freeSlots, workerProperties.leaseLimit))
+        val jobs = mealAnalysisJobTransactionService.leaseMealAnalysisJobs(
+            min(freeSlots, workerProperties.analysis.leaseLimit),
+        )
 
         jobs.forEach { job ->
             inProgressJobs.add(job)
