@@ -44,6 +44,15 @@ interface ReportRepository : JpaRepository<Report, Long> {
     fun findReportWithLockById(id: Long): Report?
 
     /**
+     * 리포트의 지금 상태를 잠가(SELECT … FOR UPDATE) 읽는다. 잠그는 읽기라 트랜잭션의 스냅샷이 아니라 마지막으로 커밋된 값을 본다.
+     *
+     * 엔티티 조회는 이미 영속성 컨텍스트에 있는 리포트를 그대로 돌려줘, 그사이 다른 트랜잭션이 바꾼 상태를 놓친다.
+     * 그래서 상태 하나만 따로 읽는다.
+     */
+    @Query(value = "SELECT status FROM reports WHERE id = :id FOR UPDATE", nativeQuery = true)
+    fun findReportStatusWithLockById(@Param("id") id: Long): String?
+
+    /**
      * 리포트가 [fromStatuses] 중 하나일 때만 [status]로 바꾼다. 영속성 컨텍스트를 거치지 않고 status·updated_at만 쓴다.
      * 바뀐 행 수로 전이가 실제로 일어났는지 안다(이미 끝난 리포트는 바뀌지 않는다).
      */

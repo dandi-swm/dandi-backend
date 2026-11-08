@@ -9,6 +9,8 @@ import org.springframework.stereotype.Repository
 @Repository
 interface ReportPurchaseRefundRepository : JpaRepository<ReportPurchaseRefund, Long> {
 
+    fun findByReportPurchaseId(reportPurchaseId: Long): ReportPurchaseRefund?
+
     /**
      * [reportIds] 중 환불된 구매의 리포트 id. 목록의 isRefunded에 쓴다.
      */

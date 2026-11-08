@@ -16,4 +16,5 @@ enum class ReportErrorCode(override val status: HttpStatus, override val code: S
         "같은 Idempotency-Key로 다른 구매를 요청했습니다.",
     ),
     PURCHASE_IN_PROGRESS(HttpStatus.CONFLICT, "api.report.purchaseInProgress", "처리 중인 구매가 있습니다."),
+    NOT_CANCELABLE(HttpStatus.CONFLICT, "api.report.notCancelable", "완료되었거나 생성에 실패한 리포트는 취소할 수 없습니다."),
 }
