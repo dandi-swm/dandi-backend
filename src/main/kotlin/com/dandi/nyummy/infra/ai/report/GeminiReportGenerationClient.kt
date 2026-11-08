@@ -24,11 +24,13 @@ class GeminiReportGenerationClient(
 ) : ReportGenerationClient {
 
     companion object {
+        // 길이 상한은 실제 응답으로 정했다(2026-11-08, 30회). 조언 40·마무리 30자로 두었을 때 5회가 1~2자 넘겨 다시 만들었고,
+        // 통과한 문장은 제목 최대 27·조언 37·제안 43·마무리 29자였다. 다시 만들기가 잦으면 리포트가 실패·환불로 끝날 수 있다.
         const val TITLE_MAX_LENGTH = 30
-        const val ADVICE_MAX_LENGTH = 40
+        const val ADVICE_MAX_LENGTH = 60
         const val SUGGESTION_COUNT = 3
         const val SUGGESTION_MAX_LENGTH = 60
-        const val CLOSING_MAX_LENGTH = 30
+        const val CLOSING_MAX_LENGTH = 40
 
         private val DIGIT = Regex("[0-9０-９]")
 

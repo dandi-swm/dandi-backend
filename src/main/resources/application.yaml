@@ -154,9 +154,9 @@ app:
       enabled: ${WORKER_REPORT_ENABLED:false}
       # 리포트 실행기 스레드 수. 리포트는 주에 한 번 사는 상품이라 분석보다 훨씬 적게 둔다.
       max-threads: ${WORKER_REPORT_MAX_THREADS:10}
-      # Gemini 한 건(연결 5초 + 연결 풀 대기 3초 + 읽기 30초)에 식사 집계와 결과 저장을 더한 시간보다 넉넉히 둔다.
-      # 리포트 생성 시간을 재기 전이라 분석보다 길게 잡았다. 재 보고 줄인다.
-      lease-time-to-live: 120s
+      # Gemini 한 건(연결 5초 + 연결 풀 대기 3초 + 읽기 30초)에 식사 집계와 결과 저장을 더한 시간보다 길게 둔다.
+      # 실제 리포트 문장 생성은 p50 8.9초·p95 13.3초·최대 13.4초였다(2026-11-08, 30회).
+      lease-time-to-live: 60s
       # 처음 1번 + 재시도 1번. 끝내 실패하면 FAILED로 끝내고 유료였으면 환불한다.
       max-lease-count: 2
       lease-limit: 10
