@@ -9,7 +9,7 @@ import org.springframework.transaction.annotation.Transactional
 import tools.jackson.databind.ObjectMapper
 
 /**
- * 구매 시도를 기록한다. 성공은 구매 트랜잭션 안에서, 거부는 그 트랜잭션이 롤백된 뒤 따로 기록한다.
+ * 구매 시도를 기록한다. 성공은 구매 트랜잭션 안에서, 실패는 그 트랜잭션이 롤백된 뒤 따로 기록한다.
  */
 @Service
 class ItemPurchaseAttemptService(
@@ -24,7 +24,7 @@ class ItemPurchaseAttemptService(
      * 앱이 보낸 요청을 그대로 남긴다. 요청 값은 검증 전일 수 있어 합계가 Int 범위를 넘으면 최댓값으로 남긴다.
      * 앱 버전이 컬럼 길이를 넘으면 null로 둔다. 부가 정보 때문에 기록이 실패하지 않게 하기 위함이다.
      *
-     * @param itemPurchaseId 만들거나 다시 돌려준 구매. 거부되었으면 null이다
+     * @param itemPurchaseId 만들거나 다시 돌려준 구매. 실패했으면 null이다
      */
     @Transactional
     fun createItemPurchaseAttempt(

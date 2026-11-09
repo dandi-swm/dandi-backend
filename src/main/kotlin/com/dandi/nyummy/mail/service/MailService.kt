@@ -172,7 +172,7 @@ class MailService(
      */
     @Transactional
     fun claimMail(userId: Long, mailId: Long): RewardResponse {
-        coinService.lockCoin(userId)
+        val coin = coinService.lockCoin(userId)
         val mail = mailRepository.findMailWithLockByIdAndDeletedAtIsNull(mailId)
             ?: throw BusinessException(MailErrorCode.MAIL_NOT_FOUND)
 
@@ -181,7 +181,7 @@ class MailService(
 
         val mailItems = mailItemRepository.findMailItemsByMailIds(listOf(mail.id))
         createOwnedRoomItems(userId, mailItems)
-        mail.coinQuantity?.let { coinService.increaseBalance(userId, it, CoinHistoryCategory.MAIL_CLAIM, mail.id) }
+        mail.coinQuantity?.let { coinService.increaseBalance(coin, it, CoinHistoryCategory.MAIL_CLAIM, mail.id) }
 
         return mail.toRewardResponse(items = mailItems.toRewardItemResponses())
     }
@@ -201,7 +201,7 @@ class MailService(
      */
     @Transactional
     fun claimMails(userId: Long): TotalRewardResponse {
-        coinService.lockCoin(userId)
+        val coin = coinService.lockCoin(userId)
         val now = Instant.now(clock)
         val mails = mailRepository.findMailsWithLockByUserIdAndClaimedAtIsNull(userId, now)
         if (mails.isEmpty()) {
@@ -213,7 +213,7 @@ class MailService(
         val mailItems = mailItemRepository.findMailItemsByMailIds(mails.map { it.id })
         createOwnedRoomItems(userId, mailItems)
         mails.forEach { mail ->
-            mail.coinQuantity?.let { coinService.increaseBalance(userId, it, CoinHistoryCategory.MAIL_CLAIM, mail.id) }
+            mail.coinQuantity?.let { coinService.increaseBalance(coin, it, CoinHistoryCategory.MAIL_CLAIM, mail.id) }
         }
 
         return mails.toTotalRewardResponse(items = mailItems.toRewardItemResponses())

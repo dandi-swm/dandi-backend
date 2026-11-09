@@ -56,6 +56,12 @@ class CoinService(
      * 같은 사용자의 요청을 하나씩 처리하고 서로 반대 순서로 기다리지 않게 한다. 첫 문장이어야 REPEATABLE READ의
      * 스냅샷이 잠금 뒤에 생겨 이후 조회가 앞 요청이 커밋한 데이터를 본다.
      *
+     * 별도 잠금 대신 코인 행을 쓰는 이유는 다음과 같다.
+     * - 구매·지급·환불은 어차피 이 행을 잠가야 하므로, 장바구니·마이룸이 같은 행을 쓰면 잠금이 늘지 않는다.
+     * - 사용자당 잠금이 하나라 경로마다 잠금 순서를 맞출 필요가 없다. 잠금이 둘이면 반대 순서로 잡는 두 요청이 교착된다.
+     * - 구매가 장바구니 수량을 검증하므로 장바구니 변경과 구매는 같은 잠금으로 줄을 서야 한다.
+     * 잔액 조회 같은 일반 조회는 스냅샷을 읽어 이 잠금에 막히지 않는다.
+     *
      * 잠금은 호출한 쪽 트랜잭션이 끝날 때 풀리므로, 트랜잭션 없이 부르면 실패시킨다.
      *
      * @throws IllegalStateException 가입 시 생성되어야 할 코인 행이 없는 경우
@@ -65,29 +71,23 @@ class CoinService(
         ?: throw IllegalStateException("가입 시 생성되어야 할 코인 행이 없습니다: userId=$userId")
 
     /**
-     * 사용자의 코인 잔액을 [quantity]만큼 늘리고 내역을 남긴다.
+     * 이미 잠근 코인 행의 잔액을 [quantity]만큼 늘리고 내역을 남긴다.
      *
-     * 잔액 행을 잠근 뒤(SELECT … FOR UPDATE) 엔티티에서 더한다. 같은 사용자의 지급·차감이 동시에 와도
-     * 차례로 반영되어 잔액이 유실되지 않고, 내역의 balanceAfter가 실제 변동 직후 잔액과 같다.
-     * 잠금은 호출한 쪽 트랜잭션이 끝날 때까지 유지되므로, 다른 행과 함께 잠그는 쪽은 잠금 순서를 맞춘다.
+     * 지급하는 쪽은 트랜잭션 첫 문장에서 [lockCoin]으로 코인 행을 잠그므로, 그 행을 받아 다시 조회하지 않는다.
+     * 같은 트랜잭션이 다시 잠가도 기다리지는 않지만 같은 쿼리가 한 번 더 나가고, 모두 받기에서는 우편 수만큼 나간다.
      *
-     * 지급이 걸린 일이라 잔액 행이 없으면 [getBalance]와 달리 0으로 넘어가지 않고 실패시킨다.
-     *
-     * @param userId 코인을 받을 사용자 ID
+     * @param coin [lockCoin]으로 잠근 코인 행
      * @param quantity 늘릴 코인 수(1 이상)
      * @param category 변동 종류. [sourceId]가 어느 테이블의 행인지도 정한다
      * @param sourceId 변동을 일으킨 행의 id
      * @return 늘린 뒤의 잔액
-     * @throws IllegalStateException 가입 시 생성되어야 할 잔액 행이 없는 경우
      */
-    @Transactional
-    fun increaseBalance(userId: Long, quantity: Int, category: CoinHistoryCategory, sourceId: Long?): Int {
-        val coin = lockCoin(userId)
-
+    @Transactional(propagation = Propagation.MANDATORY)
+    fun increaseBalance(coin: Coin, quantity: Int, category: CoinHistoryCategory, sourceId: Long?): Int {
         coin.increaseBalance(quantity)
         coinHistoryRepository.save(
             CoinHistory(
-                userId = userId,
+                userId = coin.userId,
                 category = category,
                 quantity = quantity,
                 balanceAfter = coin.balance,

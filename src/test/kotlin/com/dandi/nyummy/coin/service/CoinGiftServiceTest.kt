@@ -19,6 +19,7 @@ import kotlin.test.assertFailsWith
 class CoinGiftServiceTest {
 
     private val userId = 1L
+    private val coin = Coin(userId = userId)
 
     private val coinService = mockk<CoinService>()
     private val coinHistoryRepository = mockk<CoinHistoryRepository>()
@@ -31,12 +32,12 @@ class CoinGiftServiceTest {
     }
 
     private fun stubCoinGift(isClaimed: Boolean = false, balance: Int = 3860) {
-        every { coinService.lockCoin(userId) } returns Coin(userId = userId)
+        every { coinService.lockCoin(userId) } returns coin
         every {
             coinHistoryRepository.existsByUserIdAndCategory(userId, CoinHistoryCategory.COIN_GIFT)
         } returns isClaimed
         every {
-            coinService.increaseBalance(userId, 3000, CoinHistoryCategory.COIN_GIFT, any())
+            coinService.increaseBalance(coin, 3000, CoinHistoryCategory.COIN_GIFT, any())
         } returns balance
     }
 
@@ -59,7 +60,7 @@ class CoinGiftServiceTest {
         verifyOrder {
             coinService.lockCoin(userId)
             coinHistoryRepository.existsByUserIdAndCategory(userId, CoinHistoryCategory.COIN_GIFT)
-            coinService.increaseBalance(userId, 3000, CoinHistoryCategory.COIN_GIFT, any())
+            coinService.increaseBalance(coin, 3000, CoinHistoryCategory.COIN_GIFT, any())
         }
     }
 
@@ -81,7 +82,7 @@ class CoinGiftServiceTest {
             coinGiftService.claimCoinGift(userId, variant, ClaimCoinGiftRequest(coinPackageId))
 
             verify(exactly = 1) {
-                coinService.increaseBalance(userId, 3000, CoinHistoryCategory.COIN_GIFT, sourceId)
+                coinService.increaseBalance(coin, 3000, CoinHistoryCategory.COIN_GIFT, sourceId)
             }
         }
     }
@@ -92,7 +93,7 @@ class CoinGiftServiceTest {
 
         coinGiftService.claimCoinGift(userId, " B ", ClaimCoinGiftRequest(coinPackageId = 1))
 
-        verify(exactly = 1) { coinService.increaseBalance(userId, 3000, CoinHistoryCategory.COIN_GIFT, 4L) }
+        verify(exactly = 1) { coinService.increaseBalance(coin, 3000, CoinHistoryCategory.COIN_GIFT, 4L) }
     }
 
     @Test

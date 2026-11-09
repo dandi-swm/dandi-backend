@@ -32,7 +32,7 @@ import java.time.Clock
 import java.time.Instant
 
 /**
- * 상점 구매 트랜잭션. 거부되면 예외로 롤백되고, 거부 기록은 [ItemPurchaseService]가 롤백 뒤에 따로 남긴다.
+ * 상점 구매 트랜잭션. 실패하면 예외로 롤백되고, 실패 기록은 [ItemPurchaseService]가 롤백 뒤에 따로 남긴다.
  * 트랜잭션 안에서 예외를 잡으면 롤백이 표시된 채로 기록을 남기게 되므로 별도 빈으로 둔다.
  */
 @Service
@@ -109,6 +109,7 @@ class ItemPurchaseTransactionService(
         val totalPrice = requestedProducts.sumOf { it.purchasePrice * it.quantity }
         if (totalPrice > coin.balance) throw BusinessException(ShopErrorCode.INSUFFICIENT_BALANCE)
 
+        // 거부는 여기까지 모두 끝내고 아래부터 저장한다. 구매 상품·우편·코인 내역(sourceId)이 구매 id를 가리키므로 구매를 먼저 저장한다.
         val itemPurchase = itemPurchaseRepository.save(ItemPurchase(userId, totalPrice, idempotencyKey))
         val productItems = productItemRepository.findByProductIdIn(productIds).groupBy { it.productId }
         requestedProducts.forEach { requestedProduct ->
