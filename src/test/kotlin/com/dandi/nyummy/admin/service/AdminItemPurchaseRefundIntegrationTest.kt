@@ -14,6 +14,7 @@ import com.dandi.nyummy.exception.errorcode.ErrorCode
 import com.dandi.nyummy.exception.errorcode.RoomErrorCode
 import com.dandi.nyummy.item.entity.Item
 import com.dandi.nyummy.item.repository.ItemRepository
+import com.dandi.nyummy.mail.enum.RewardBoxCategory
 import com.dandi.nyummy.mail.service.MailService
 import com.dandi.nyummy.room.dto.EquippedRoomItemRequest
 import com.dandi.nyummy.room.dto.UpdateEquippedRoomItemsRequest
@@ -350,6 +351,54 @@ class AdminItemPurchaseRefundIntegrationTest @Autowired constructor(
                     userId,
                 ),
             )
+            assertCoinHistoriesChained(userId, startingBalance = STARTING_BALANCE)
+        }
+    }
+
+    @Test
+    fun `구매와 환불과 우편 받기를 섞어 동시에 보내도 모두 끝나고 코인 내역이 이어진다`() {
+        repeat(5) {
+            // 작업마다 3개씩 9개라 커넥션 풀(10)을 넘지 않아 모두 코인 잠금 앞에서 겹친다
+            val requestCount = 3
+            val userId = createUser()
+            repeat(requestCount) { purchase(userId, createProduct(listOf(500))) }
+            val refundLineIds = getItemPurchaseLineIds(userId)
+            val mailIds = List(requestCount) {
+                mailService.createRewardBoxMail(
+                    userId = userId,
+                    rewardBoxCategory = RewardBoxCategory.BRONZE,
+                    coinQuantity = 10,
+                    content = "테스트 보상",
+                    expiresAt = null,
+                ).id
+            }
+            val products = List(requestCount) { createProduct(listOf(300)) }
+            products.forEach { cartItemRepository.save(CartItem(userId = userId, productId = it.id, quantity = 1)) }
+
+            // 미리 보기를 동시 실행 전에 끝내 환불도 트랜잭션만 겹치게 한다
+            val refunds: List<() -> Any> = refundLineIds.map { lineId ->
+                val itemPurchaseProductId = getItemPurchaseProductId(lineId)
+                val preview = adminItemPurchaseRefundService.getRefundPreview(itemPurchaseProductId, listOf(lineId))
+                val request = CreateItemPurchaseRefundRequest(listOf(lineId), "실수 구매", preview.coinQuantity)
+                return@map { adminItemPurchaseRefundService.createRefund(adminId, itemPurchaseProductId, request) }
+            }
+            val claims: List<() -> Any> = mailIds.map { mailId -> { mailService.claimMail(userId, mailId) } }
+            val purchases: List<() -> Any> = products.map { product ->
+                {
+                    itemPurchaseService.createItemPurchase(
+                        userId,
+                        UUID.randomUUID().toString(),
+                        CreateItemPurchaseRequest(listOf(ItemPurchaseProductRequest(product.id, 1, product.price))),
+                        "1.0.0",
+                    )
+                }
+            }
+
+            val results = runConcurrently(*(refunds + claims + purchases).toTypedArray())
+
+            results.forEach { it.getOrThrow() }
+            // 미리 산 상품은 모두 환불되어 빠진 만큼 돌아오고, 우편 코인이 더해지고 새로 산 만큼 빠진다
+            assertEquals(STARTING_BALANCE + 10 * requestCount - 300 * requestCount, getBalance(userId))
             assertCoinHistoriesChained(userId, startingBalance = STARTING_BALANCE)
         }
     }
