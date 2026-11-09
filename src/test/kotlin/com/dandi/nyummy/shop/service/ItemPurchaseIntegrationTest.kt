@@ -702,16 +702,20 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
         ),
     )
 
-    // 모든 스레드가 준비된 뒤 한꺼번에 시작한다
+    // 모든 스레드가 출발선에 선 것을 확인한 뒤 한꺼번에 시작한다. 확인하지 않으면 늦게 뜬 스레드는 열린 문을 지나
+    // 앞 요청이 끝난 뒤에 시작할 수 있어, 겹치지 않은 채 통과한다.
     private fun <T> runConcurrently(taskCount: Int, task: (Int) -> T): List<Result<T>> {
+        val ready = CountDownLatch(taskCount)
         val startGate = CountDownLatch(1)
         val executor = Executors.newFixedThreadPool(taskCount)
         val futures = (0 until taskCount).map { index ->
             executor.submit<Result<T>> {
-                startGate.await()
+                ready.countDown()
+                startGate.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)
                 runCatching { task(index) }
             }
         }
+        assertTrue(ready.await(TIMEOUT_SECONDS, TimeUnit.SECONDS), "스레드가 제시간에 준비되지 않았습니다")
         startGate.countDown()
         val results = futures.map { it.get(TIMEOUT_SECONDS, TimeUnit.SECONDS) }
         executor.shutdown()
