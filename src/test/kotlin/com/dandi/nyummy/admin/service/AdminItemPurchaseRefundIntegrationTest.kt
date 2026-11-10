@@ -14,6 +14,7 @@ import com.dandi.nyummy.exception.errorcode.ErrorCode
 import com.dandi.nyummy.exception.errorcode.RoomErrorCode
 import com.dandi.nyummy.item.entity.Item
 import com.dandi.nyummy.item.repository.ItemRepository
+import com.dandi.nyummy.mail.enum.RewardBoxCategory
 import com.dandi.nyummy.mail.service.MailService
 import com.dandi.nyummy.room.dto.EquippedRoomItemRequest
 import com.dandi.nyummy.room.dto.UpdateEquippedRoomItemsRequest
@@ -98,6 +99,7 @@ class AdminItemPurchaseRefundIntegrationTest @Autowired constructor(
 
         private const val TIMEOUT_SECONDS = 30L
         private const val STARTING_BALANCE = 10_000
+        private const val REQUEST_COUNT = 8
     }
 
     @Test
@@ -321,6 +323,87 @@ class AdminItemPurchaseRefundIntegrationTest @Autowired constructor(
     }
 
     @Test
+    fun `같은 사용자의 다른 구매 상품을 동시에 환불하면 모두 돌려주고 잔액이 시작 잔액으로 돌아온다`() {
+        repeat(5) {
+            val userId = createUser()
+            repeat(REQUEST_COUNT) { purchase(userId, createProduct(listOf(500))) }
+            // 미리 보기를 동시 실행 전에 끝내 환불 트랜잭션끼리 코인 잠금 앞에서 겹치게 한다
+            val tasks: List<() -> Any> = getItemPurchaseLineIds(userId).map { lineId ->
+                val itemPurchaseProductId = getItemPurchaseProductId(lineId)
+                val preview = adminItemPurchaseRefundService.getRefundPreview(itemPurchaseProductId, listOf(lineId))
+                val request = CreateItemPurchaseRefundRequest(listOf(lineId), "실수 구매", preview.coinQuantity)
+                return@map { adminItemPurchaseRefundService.createRefund(adminId, itemPurchaseProductId, request) }
+            }
+
+            val results = runConcurrently(*tasks.toTypedArray())
+
+            results.forEach { it.getOrThrow() }
+            assertEquals(STARTING_BALANCE, getBalance(userId))
+            assertEquals(
+                REQUEST_COUNT,
+                queryForInt(
+                    """
+                    select count(*) from item_purchase_refunds r
+                        join item_purchase_products p on p.id = r.item_purchase_product_id
+                        join item_purchases ip on ip.id = p.item_purchase_id
+                    where ip.user_id = ?
+                    """,
+                    userId,
+                ),
+            )
+            assertCoinHistoriesChained(userId, startingBalance = STARTING_BALANCE)
+        }
+    }
+
+    @Test
+    fun `구매와 환불과 우편 받기를 섞어 동시에 보내도 모두 끝나고 코인 내역이 이어진다`() {
+        repeat(5) {
+            // 작업마다 3개씩 9개라 커넥션 풀(10)을 넘지 않아 모두 코인 잠금 앞에서 겹친다
+            val requestCount = 3
+            val userId = createUser()
+            repeat(requestCount) { purchase(userId, createProduct(listOf(500))) }
+            val refundLineIds = getItemPurchaseLineIds(userId)
+            val mailIds = List(requestCount) {
+                mailService.createRewardBoxMail(
+                    userId = userId,
+                    rewardBoxCategory = RewardBoxCategory.BRONZE,
+                    coinQuantity = 10,
+                    content = "테스트 보상",
+                    expiresAt = null,
+                ).id
+            }
+            val products = List(requestCount) { createProduct(listOf(300)) }
+            products.forEach { cartItemRepository.save(CartItem(userId = userId, productId = it.id, quantity = 1)) }
+
+            // 미리 보기를 동시 실행 전에 끝내 환불도 트랜잭션만 겹치게 한다
+            val refunds: List<() -> Any> = refundLineIds.map { lineId ->
+                val itemPurchaseProductId = getItemPurchaseProductId(lineId)
+                val preview = adminItemPurchaseRefundService.getRefundPreview(itemPurchaseProductId, listOf(lineId))
+                val request = CreateItemPurchaseRefundRequest(listOf(lineId), "실수 구매", preview.coinQuantity)
+                return@map { adminItemPurchaseRefundService.createRefund(adminId, itemPurchaseProductId, request) }
+            }
+            val claims: List<() -> Any> = mailIds.map { mailId -> { mailService.claimMail(userId, mailId) } }
+            val purchases: List<() -> Any> = products.map { product ->
+                {
+                    itemPurchaseService.createItemPurchase(
+                        userId,
+                        UUID.randomUUID().toString(),
+                        CreateItemPurchaseRequest(listOf(ItemPurchaseProductRequest(product.id, 1, product.price))),
+                        "1.0.0",
+                    )
+                }
+            }
+
+            val results = runConcurrently(*(refunds + claims + purchases).toTypedArray())
+
+            results.forEach { it.getOrThrow() }
+            // 미리 산 상품은 모두 환불되어 빠진 만큼 돌아오고, 우편 코인이 더해지고 새로 산 만큼 빠진다
+            assertEquals(STARTING_BALANCE + 10 * requestCount - 300 * requestCount, getBalance(userId))
+            assertCoinHistoriesChained(userId, startingBalance = STARTING_BALANCE)
+        }
+    }
+
+    @Test
     fun `구매 내역은 구성품마다 받기 전과 받음과 장착과 환불 상태를 알려 준다`() {
         val userId = createUser()
         purchase(userId, createProduct(listOf(500, 300, 200), purchasePrice = 1000))
@@ -529,6 +612,21 @@ class AdminItemPurchaseRefundIntegrationTest @Autowired constructor(
     )
 
     private fun getBalance(userId: Long): Int = assertNotNull(coinRepository.findByUserId(userId)).balance
+
+    // 코인 내역을 쌓인 순서대로 따라가며 시작 잔액에 변동을 더한 값이 각 내역의 직후 잔액과 지금 잔액에 맞는지 본다
+    private fun assertCoinHistoriesChained(userId: Long, startingBalance: Int) {
+        val histories = jdbcTemplate.query(
+            "select quantity, balance_after from coin_histories where user_id = ? order by id",
+            { rs, _ -> rs.getInt("quantity") to rs.getInt("balance_after") },
+            userId,
+        )
+        var balance = startingBalance
+        histories.forEachIndexed { index, (quantity, balanceAfter) ->
+            assertEquals(balance + quantity, balanceAfter, "${index + 1}번째 코인 내역이 앞 내역의 잔액과 이어지지 않습니다")
+            balance = balanceAfter
+        }
+        assertEquals(balance, getBalance(userId), "마지막 코인 내역의 잔액이 지금 잔액과 다릅니다")
+    }
 
     private fun queryForInt(sql: String, id: Long): Int =
         assertNotNull(jdbcTemplate.queryForObject(sql, Int::class.java, id))

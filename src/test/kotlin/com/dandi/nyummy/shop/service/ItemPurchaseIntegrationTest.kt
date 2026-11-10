@@ -243,6 +243,25 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
     }
 
     @Test
+    fun `잔액이 모자라게 동시에 사면 잔액만큼만 사고 나머지는 잔액 부족으로 거부한다`() {
+        val userId = createUser(balance = 1000)
+        val products = List(REQUEST_COUNT) { createProduct(price = 300) }
+        products.forEach { createCartItem(userId, it, quantity = 1) }
+
+        val results = runConcurrently(REQUEST_COUNT) { index -> purchase(userId, listOf(products[index] to 1)) }
+
+        assertEquals(3, results.count { it.isSuccess })
+        results.mapNotNull { it.exceptionOrNull() }.forEach { failure ->
+            assertEquals(ShopErrorCode.INSUFFICIENT_BALANCE, (failure as BusinessException).errorCode)
+        }
+        assertEquals(100, getBalance(userId))
+        assertEquals(3, queryForInt("select count(*) from item_purchases where user_id = ?", userId))
+        assertEquals(3, countAttempts(userId, "SUCCEEDED"))
+        assertEquals(REQUEST_COUNT - 3, countAttempts(userId, "INSUFFICIENT_BALANCE"))
+        assertCoinHistoriesChained(userId, startingBalance = 1000)
+    }
+
+    @Test
     fun `거부되면 구매와 잔액, 장바구니는 그대로고 거부 기록만 남는다`() {
         val userId = createUser()
         val product = createProduct(price = 1000)
@@ -541,11 +560,11 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
 
     private fun now(): Instant = Instant.now(clock)
 
-    private fun createUser(): Long {
+    private fun createUser(balance: Int = STARTING_BALANCE): Long {
         val userId = userRepository.save(
             User(provider = AuthProvider.EMAIL, email = "${UUID.randomUUID()}@nyummy.co.kr"),
         ).id
-        coinRepository.save(Coin(userId = userId).apply { balance = STARTING_BALANCE })
+        coinRepository.save(Coin(userId = userId).apply { this.balance = balance })
         return userId
     }
 
@@ -656,6 +675,21 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
 
     private fun getBalance(userId: Long): Int = assertNotNull(coinRepository.findByUserId(userId)).balance
 
+    // 코인 내역을 쌓인 순서대로 따라가며 시작 잔액에 변동을 더한 값이 각 내역의 직후 잔액과 지금 잔액에 맞는지 본다
+    private fun assertCoinHistoriesChained(userId: Long, startingBalance: Int) {
+        val histories = jdbcTemplate.query(
+            "select quantity, balance_after from coin_histories where user_id = ? order by id",
+            { rs, _ -> rs.getInt("quantity") to rs.getInt("balance_after") },
+            userId,
+        )
+        var balance = startingBalance
+        histories.forEachIndexed { index, (quantity, balanceAfter) ->
+            assertEquals(balance + quantity, balanceAfter, "${index + 1}번째 코인 내역이 앞 내역의 잔액과 이어지지 않습니다")
+            balance = balanceAfter
+        }
+        assertEquals(balance, getBalance(userId), "마지막 코인 내역의 잔액이 지금 잔액과 다릅니다")
+    }
+
     private fun queryForInt(sql: String, id: Long): Int =
         assertNotNull(jdbcTemplate.queryForObject(sql, Int::class.java, id))
 
@@ -668,16 +702,20 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
         ),
     )
 
-    // 모든 스레드가 준비된 뒤 한꺼번에 시작한다
+    // 모든 스레드가 출발선에 선 것을 확인한 뒤 한꺼번에 시작한다. 확인하지 않으면 늦게 뜬 스레드는 열린 문을 지나
+    // 앞 요청이 끝난 뒤에 시작할 수 있어, 겹치지 않은 채 통과한다.
     private fun <T> runConcurrently(taskCount: Int, task: (Int) -> T): List<Result<T>> {
+        val ready = CountDownLatch(taskCount)
         val startGate = CountDownLatch(1)
         val executor = Executors.newFixedThreadPool(taskCount)
         val futures = (0 until taskCount).map { index ->
             executor.submit<Result<T>> {
-                startGate.await()
+                ready.countDown()
+                startGate.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)
                 runCatching { task(index) }
             }
         }
+        assertTrue(ready.await(TIMEOUT_SECONDS, TimeUnit.SECONDS), "스레드가 제시간에 준비되지 않았습니다")
         startGate.countDown()
         val results = futures.map { it.get(TIMEOUT_SECONDS, TimeUnit.SECONDS) }
         executor.shutdown()
