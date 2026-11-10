@@ -1,5 +1,6 @@
 package com.dandi.nyummy.notification.entity
 
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.notification.enum.DevicePlatform
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
@@ -28,6 +29,12 @@ class DeviceToken(
 
     @Column(name = "user_id", nullable = false, unique = true)
     val userId: Long,
+
+    // 기기 앱이 지금 쓰는 언어. 요청 없이 보내는 푸시의 문구 언어를 정한다.
+    // V0.53 전에 등록한 행은 NULL이고, 원본 언어로 본다. 앱이 다음에 토큰을 등록하면 채워진다.
+    @Enumerated(EnumType.STRING)
+    @Column(name = "language", length = 10)
+    var language: Language?,
 ) {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -45,5 +52,9 @@ class DeviceToken(
     fun updateToken(token: String, platform: DevicePlatform) {
         this.token = token
         this.platform = platform
+    }
+
+    fun updateLanguage(language: Language) {
+        this.language = language
     }
 }

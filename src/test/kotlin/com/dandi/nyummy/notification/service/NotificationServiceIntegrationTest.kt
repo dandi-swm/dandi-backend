@@ -3,6 +3,8 @@ package com.dandi.nyummy.notification.service
 import com.dandi.nyummy.auth.enum.AuthProvider
 import com.dandi.nyummy.infra.push.dto.PushMessage
 import com.dandi.nyummy.infra.push.dto.PushType
+import com.dandi.nyummy.language.enum.Language
+import com.dandi.nyummy.notification.dto.CreateDeviceTokenRequest
 import com.dandi.nyummy.notification.entity.DeviceToken
 import com.dandi.nyummy.notification.enum.DevicePlatform
 import com.dandi.nyummy.notification.enum.PushOutcome
@@ -49,7 +51,7 @@ class NotificationServiceIntegrationTest @Autowired constructor(
             User(provider = AuthProvider.EMAIL, email = "${UUID.randomUUID()}@nyummy.co.kr"),
         ).id
         val token = UUID.randomUUID().toString()
-        deviceTokenRepository.save(DeviceToken(token, DevicePlatform.ANDROID, userId))
+        deviceTokenRepository.save(DeviceToken(token, DevicePlatform.ANDROID, userId, Language.KO))
 
         notificationService.sendPushes(
             mapOf(
@@ -70,5 +72,18 @@ class NotificationServiceIntegrationTest @Autowired constructor(
         assertEquals("냥".repeat(255), pushHistory.title)
         assertEquals("밥".repeat(255), pushHistory.body)
         assertEquals(PushOutcome.SUCCESS, pushHistory.outcome)
+    }
+
+    @Test
+    fun `기기 토큰을 다시 등록하면 DB의 언어가 마지막 요청 언어로 바뀐다`() {
+        val userId = userRepository.save(
+            User(provider = AuthProvider.EMAIL, email = "${UUID.randomUUID()}@nyummy.co.kr"),
+        ).id
+        val request = CreateDeviceTokenRequest(token = UUID.randomUUID().toString(), platform = DevicePlatform.ANDROID)
+
+        notificationService.createDeviceToken(userId, request, Language.KO)
+        notificationService.createDeviceToken(userId, request, Language.JA)
+
+        assertEquals(Language.JA, deviceTokenRepository.findDeviceTokenByUserId(userId)?.language)
     }
 }

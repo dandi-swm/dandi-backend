@@ -4,6 +4,8 @@ import com.dandi.nyummy.infra.push.PushClient
 import com.dandi.nyummy.infra.push.dto.PushMessage
 import com.dandi.nyummy.infra.push.dto.PushResult
 import com.dandi.nyummy.infra.push.dto.PushType
+import com.dandi.nyummy.language.enum.Language
+import com.dandi.nyummy.notification.dto.CreateDeviceTokenRequest
 import com.dandi.nyummy.notification.entity.DeviceToken
 import com.dandi.nyummy.notification.entity.PushHistory
 import com.dandi.nyummy.notification.enum.DevicePlatform
@@ -39,6 +41,49 @@ class NotificationServiceTest {
     )
 
     @Test
+    fun `처음 등록하는 기기 토큰은 요청 언어와 함께 저장한다`() {
+        val request = CreateDeviceTokenRequest(token = "new-token", platform = DevicePlatform.ANDROID)
+        every { deviceTokenRepository.deleteByTokenAndNotUserId("new-token", 1L) } returns 0
+        every { deviceTokenRepository.findDeviceTokenByUserId(1L) } returns null
+        val savedToken = slot<DeviceToken>()
+        every { deviceTokenRepository.save(capture(savedToken)) } answers { firstArg() }
+
+        notificationService.createDeviceToken(1L, request, Language.JA)
+
+        assertEquals("new-token", savedToken.captured.token)
+        assertEquals(DevicePlatform.ANDROID, savedToken.captured.platform)
+        assertEquals(1L, savedToken.captured.userId)
+        assertEquals(Language.JA, savedToken.captured.language)
+    }
+
+    @Test
+    fun `이미 등록한 기기 토큰은 새 행을 만들지 않고 토큰과 언어를 바꾼다`() {
+        val existing = DeviceToken("old-token", DevicePlatform.ANDROID, 1L, Language.KO)
+        val request = CreateDeviceTokenRequest(token = "new-token", platform = DevicePlatform.IOS)
+        every { deviceTokenRepository.deleteByTokenAndNotUserId("new-token", 1L) } returns 0
+        every { deviceTokenRepository.findDeviceTokenByUserId(1L) } returns existing
+
+        notificationService.createDeviceToken(1L, request, Language.EN)
+
+        assertEquals("new-token", existing.token)
+        assertEquals(DevicePlatform.IOS, existing.platform)
+        assertEquals(Language.EN, existing.language)
+        verify(exactly = 0) { deviceTokenRepository.save(any()) }
+    }
+
+    @Test
+    fun `언어를 몰랐던 기존 기기 토큰도 등록할 때 언어가 채워진다`() {
+        val existing = DeviceToken("token", DevicePlatform.ANDROID, 1L, language = null)
+        val request = CreateDeviceTokenRequest(token = "token", platform = DevicePlatform.ANDROID)
+        every { deviceTokenRepository.deleteByTokenAndNotUserId("token", 1L) } returns 0
+        every { deviceTokenRepository.findDeviceTokenByUserId(1L) } returns existing
+
+        notificationService.createDeviceToken(1L, request, Language.KO)
+
+        assertEquals(Language.KO, existing.language)
+    }
+
+    @Test
     fun `발송 결과를 토큰별로 분류해 전송 내역으로 저장한다`() {
         val messagesByToken = mapOf(
             "success-token" to createPushMessage(userId = 1L),
@@ -71,7 +116,7 @@ class NotificationServiceTest {
         val message = createPushMessage(userId = 1L)
         val messagesByToken = mapOf("token" to message)
         every { deviceTokenRepository.findDeviceTokensByTokenIn(messagesByToken.keys) } returns
-            listOf(DeviceToken("token", DevicePlatform.IOS, 1L))
+            listOf(DeviceToken("token", DevicePlatform.IOS, 1L, Language.KO))
         every { pushClient.sendPushes(messagesByToken) } returns PushResult(1, emptyList(), emptyList())
         val pushHistories = slot<List<PushHistory>>()
         every { pushHistoryRepository.saveAll(capture(pushHistories)) } answers { firstArg() }

@@ -3,6 +3,7 @@ package com.dandi.nyummy.notification.service
 import com.dandi.nyummy.infra.push.PushClient
 import com.dandi.nyummy.infra.push.dto.PushMessage
 import com.dandi.nyummy.infra.push.dto.PushResult
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.notification.dto.CreateDeviceTokenRequest
 import com.dandi.nyummy.notification.entity.DeviceToken
 import com.dandi.nyummy.notification.entity.PushHistory
@@ -32,16 +33,23 @@ class NotificationService(
      * 같은 토큰이 다른 사용자에 묶여 있으면 먼저 끊는다 — 로그아웃 없이 앱을 지운 뒤 같은 기기에서
      * 다른 계정이 로그인하면 이전 사용자의 알림이 새 사용자 기기로 가기 때문이다.
      *
-     * 기존 행이 있으면 토큰만 교체하므로 앱이 실행마다 호출해도 된다(멱등).
+     * 기존 행이 있으면 토큰과 언어만 교체하므로 앱이 실행마다 호출해도 된다(멱등).
+     * 값이 그대로면 dirty checking이 UPDATE를 보내지 않는다.
+     *
+     * 언어는 앱이 실행마다 이 API를 부르는 것을 이용해 함께 갱신한다. 요청 없이 보내는 푸시(식사 리마인더·리텐션)는
+     * 물어볼 요청이 없어서, 마지막으로 받은 앱 언어를 저장해 두고 쓴다.
+     *
+     * @param language 요청의 `X-Language`로 정한 기기 앱 언어
      */
     @Transactional
-    fun createDeviceToken(userId: Long, request: CreateDeviceTokenRequest) {
+    fun createDeviceToken(userId: Long, request: CreateDeviceTokenRequest, language: Language) {
         deviceTokenRepository.deleteByTokenAndNotUserId(request.token, userId)
 
         val existing = deviceTokenRepository.findDeviceTokenByUserId(userId)
 
         if (existing != null) {
             existing.updateToken(request.token, request.platform)
+            existing.updateLanguage(language)
             return
         }
 
@@ -49,6 +57,7 @@ class NotificationService(
             request.token,
             request.platform,
             userId,
+            language,
         )
 
         deviceTokenRepository.save(newToken)
