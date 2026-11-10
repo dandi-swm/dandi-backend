@@ -23,6 +23,7 @@ import com.dandi.nyummy.meal.dto.MonthlyMealDayResponse
 import com.dandi.nyummy.meal.dto.MonthlyMealsResponse
 import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.dto.TodayMealSummaryResponse
+import com.dandi.nyummy.meal.dto.UpdateMealNutritionRequest
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.entity.MealAnalysisJob
 import com.dandi.nyummy.meal.enum.MealStatus
@@ -381,6 +382,45 @@ class MealService(
         meal.updateName(name)
 
         return meal.toMealResponse(imageUrl, analysisFeedbackService.canCreateAnalysisFeedback(meal))
+    }
+
+    /**
+     * 식사의 영양(칼로리·탄수화물·단백질·지방)을 수정한다. 요청에 담긴 항목만 바꾸고 생략한 항목은 유지한다.
+     *
+     * 분석이 완료된(COMPLETED) 식사만 수정할 수 있다. 분석 전·분석 중인 식사는 Worker가 분석을 확정하면서
+     * 영양을 덮어쓰고, 실패한 식사는 영양이 없는 채로 COMPLETED가 아니어서 집계에 들어가지 않는다.
+     *
+     * [updateMeal]과 같은 이유로 식사를 잠가 읽는다.
+     *
+     * 이름·아이콘·고양이 한마디(catComment)는 바꾸지 않는다. 고양이 한마디는 분석 때의 영양으로 쓴 문구라
+     * 수정한 값과 어긋날 수 있다.
+     *
+     * @param userId 수정하는 사용자 ID
+     * @param mealId 수정할 식사 ID
+     * @param request 바꾸려는 영양 항목을 담은 [UpdateMealNutritionRequest]
+     * @return 수정된 식사 정보와 이미지 URL, 평가 가능 여부를 담은 [MealResponse]
+     * @throws BusinessException [MealErrorCode.MEAL_NOT_FOUND] mealId에 해당하는 식사가 없거나, 삭제된 경우
+     * @throws BusinessException [AuthErrorCode.FORBIDDEN] mealId에 해당하는 userId가 아닌 경우
+     * @throws BusinessException [MealErrorCode.ANALYSIS_NOT_COMPLETED] 식사가 COMPLETED 상태가 아닌 경우
+     */
+    @Transactional
+    fun updateMealNutrition(userId: Long, mealId: Long, request: UpdateMealNutritionRequest): MealResponse {
+        val meal = mealRepository.findMealWithLockById(mealId)
+            ?.takeIf { it.deletedAt == null }
+            ?: throw BusinessException(MealErrorCode.MEAL_NOT_FOUND)
+
+        meal.validateOwnership(userId)
+
+        if (meal.status != MealStatus.COMPLETED) {
+            throw BusinessException(MealErrorCode.ANALYSIS_NOT_COMPLETED)
+        }
+
+        meal.updateNutrition(request.toNutrition(meal))
+
+        val imageUrl = imageService.createImageUrl(meal.imageKey)
+        val mealFeedback = analysisFeedbackService.canCreateAnalysisFeedback(meal)
+
+        return meal.toMealResponse(imageUrl, mealFeedback)
     }
 
     /**

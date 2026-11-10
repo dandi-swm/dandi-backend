@@ -1,5 +1,6 @@
 package com.dandi.nyummy.e2e.meal
 
+import com.dandi.nyummy.e2e.support.AuthFixture
 import com.dandi.nyummy.e2e.support.ImageFixture
 import com.dandi.nyummy.e2e.support.RequestSpecs
 import com.dandi.nyummy.e2e.support.Smoke
@@ -151,7 +152,82 @@ class MealE2eTest {
                 body("name", equalTo(updatedName))
             }
 
-            // 5. 분석 평가: 식사당 한 번만, 평가 후에는 평가 가능 여부가 꺼진다
+            // 5. 영양 수정: 보낸 항목만 바뀌고, 생략한 항목과 이름은 그대로다
+            val analyzedCalory = meal.getInt("nutrition.calory")
+            val analyzedCarbs = meal.getInt("nutrition.carbs")
+            val analyzedProtein = meal.getInt("nutrition.protein")
+            val analyzedFat = meal.getInt("nutrition.fat")
+            // 분석한 값과 반드시 다르면서 허용 범위(0~999) 안에 드는 값이다.
+            val updatedCarbs = (analyzedCarbs + 1) % 1000
+            Given {
+                spec(RequestSpecs.createAuthorizedSpec())
+                body(mapOf("carbs" to updatedCarbs))
+            } When {
+                patch("/api/v1/meals/$mealId/nutrition")
+            } Then {
+                statusCode(200)
+                body(
+                    "keySet()",
+                    hasItems(
+                        "mealId", "name", "mealAt", "status", "nutrition",
+                        "imageUrl", "canCreateAnalysisFeedback", "catComment", "iconId",
+                    ),
+                )
+                body("nutrition.calory", equalTo(analyzedCalory))
+                body("nutrition.carbs", equalTo(updatedCarbs))
+                body("nutrition.protein", equalTo(analyzedProtein))
+                body("nutrition.fat", equalTo(analyzedFat))
+                body("name", equalTo(updatedName))
+            }
+
+            // 범위를 벗어난 항목이 하나라도 있으면 거부한다. 함께 보낸 정상 항목(protein)도 저장되면 안 된다.
+            Given {
+                spec(RequestSpecs.createAuthorizedSpec())
+                body(mapOf("calory" to -1, "protein" to (analyzedProtein + 1) % 1000))
+            } When {
+                patch("/api/v1/meals/$mealId/nutrition")
+            } Then {
+                statusCode(400)
+                body("code", equalTo("api.common.invalidInputValue"))
+            }
+
+            // 남의 식사는 수정할 수 없다.
+            Given {
+                spec(RequestSpecs.createAuthorizedSpec(AuthFixture.otherAccessToken))
+                body(mapOf("fat" to (analyzedFat + 1) % 1000))
+            } When {
+                patch("/api/v1/meals/$mealId/nutrition")
+            } Then {
+                statusCode(403)
+                body("code", equalTo("api.auth.forbidden"))
+            }
+
+            // 거부된 두 요청이 값을 바꾸지 않았는지, 수정한 값이 상세와 일일 목록에 반영됐는지 확인한다.
+            Given {
+                spec(RequestSpecs.createAuthorizedSpec())
+            } When {
+                get("/api/v1/meals/$mealId")
+            } Then {
+                statusCode(200)
+                body("nutrition.calory", equalTo(analyzedCalory))
+                body("nutrition.carbs", equalTo(updatedCarbs))
+                body("nutrition.protein", equalTo(analyzedProtein))
+                body("nutrition.fat", equalTo(analyzedFat))
+            }
+            Given {
+                spec(RequestSpecs.createAuthorizedSpec())
+                queryParams(mapOf("year" to today.year, "month" to today.monthValue, "day" to today.dayOfMonth))
+            } When {
+                get("/api/v1/meals/daily")
+            } Then {
+                statusCode(200)
+                body("meals.find { it.mealId == $mealId }.calory", equalTo(analyzedCalory))
+                body("meals.find { it.mealId == $mealId }.carbs", equalTo(updatedCarbs))
+                body("meals.find { it.mealId == $mealId }.protein", equalTo(analyzedProtein))
+                body("meals.find { it.mealId == $mealId }.fat", equalTo(analyzedFat))
+            }
+
+            // 6. 분석 평가: 식사당 한 번만, 평가 후에는 평가 가능 여부가 꺼진다
             val feedback = mapOf("rating" to 4.5, "reason" to "E2E 테스트가 남긴 평가입니다.")
             Given {
                 spec(RequestSpecs.createAuthorizedSpec())
@@ -179,7 +255,7 @@ class MealE2eTest {
                 body("canCreateAnalysisFeedback", equalTo(false))
             }
 
-            // 6. 삭제: 상세는 404, 홈의 식사 수는 돌아오지만 기록 시도 횟수는 돌아오지 않는다
+            // 7. 삭제: 상세는 404, 홈의 식사 수는 돌아오지만 기록 시도 횟수는 돌아오지 않는다
             Given {
                 spec(RequestSpecs.createAuthorizedSpec())
             } When {

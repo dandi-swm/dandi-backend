@@ -64,6 +64,36 @@ Authorization: Bearer {{accessToken}}
 PUT {{url}}/api/v1/meals/{{mealId}}?name=김치찌개
 Authorization: Bearer {{accessToken}}
 
+### 식사 영양 수정 API
+# 바꾸려는 항목만 보낸다. 생략하거나 null로 보낸 항목은 유지되고, 0은 0으로 수정한다.
+# 칼로리는 0~9999, 탄수화물·단백질·지방은 0~999. 분석이 완료된(COMPLETED) 식사만 수정할 수 있다.
+PATCH {{url}}/api/v1/meals/{{mealId}}/nutrition
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "calory": 520,
+  "carbs": 80
+}
+
+### [실패] 범위를 벗어난 값으로 영양 수정 → api.common.invalidInputValue
+PATCH {{url}}/api/v1/meals/{{mealId}}/nutrition
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "calory": -1
+}
+
+### [실패] 분석이 완료되지 않은 식사의 영양 수정 → api.meal.analysisNotCompleted
+PATCH {{url}}/api/v1/meals/{{analysisMealId}}/nutrition
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "carbs": 80
+}
+
 ### 식사 삭제 API
 DELETE {{url}}/api/v1/meals/{{mealId}}
 Authorization: Bearer {{accessToken}}
