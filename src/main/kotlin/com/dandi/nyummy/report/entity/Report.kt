@@ -93,6 +93,18 @@ class Report(
         }
     }
 
+    /**
+     * 생성 결과로 리포트를 COMPLETED로 확정한다. Worker가 자기 작업(lease 번호)을 지운 뒤에만 부르므로 생성 중이어야 한다.
+     */
+    fun confirm(title: String, viewType: String, content: String, completedAt: Instant) {
+        check(status == ReportStatus.GENERATING) { "생성 중이 아닌 리포트는 확정할 수 없습니다: reportId=$id, status=$status" }
+        this.status = ReportStatus.COMPLETED
+        this.title = title
+        this.viewType = viewType
+        this.content = content
+        this.completedAt = completedAt
+    }
+
     fun validateOwnership(requestUserId: Long) {
         if (userId != requestUserId) {
             throw BusinessException(AuthErrorCode.FORBIDDEN)

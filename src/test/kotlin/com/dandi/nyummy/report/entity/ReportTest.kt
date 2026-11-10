@@ -5,6 +5,7 @@ import java.time.Instant
 import java.time.LocalDate
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 
 class ReportTest {
@@ -44,6 +45,28 @@ class ReportTest {
             report.updateReadAt(readAt)
 
             assertNull(report.readAt, "$status 리포트를 읽음으로 기록했습니다")
+        }
+    }
+
+    // confirm
+
+    @Test
+    fun `생성 중인 리포트를 확정하면 완료가 되고 결과를 채운다`() {
+        val report = report(ReportStatus.GENERATING)
+
+        report.confirm("제목", "NutritionBalance", "{}", readAt)
+
+        assertEquals(ReportStatus.COMPLETED, report.status)
+        assertEquals("제목", report.title)
+        assertEquals("NutritionBalance", report.viewType)
+        assertEquals("{}", report.content)
+        assertEquals(readAt, report.completedAt)
+    }
+
+    @Test
+    fun `생성 중이 아닌 리포트는 확정할 수 없다`() {
+        ReportStatus.entries.filter { it != ReportStatus.GENERATING }.forEach { status ->
+            assertFailsWith<IllegalStateException> { report(status).confirm("제목", "NutritionBalance", "{}", readAt) }
         }
     }
 }

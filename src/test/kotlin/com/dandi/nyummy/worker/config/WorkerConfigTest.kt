@@ -43,4 +43,20 @@ class WorkerConfigTest {
         assertEquals(0, workerProperties.calculateEnabledMaxThreads())
         WorkerConfig(workerProperties, aiProperties)
     }
+
+    @Test
+    fun `분석과 리포트를 함께 켜면 두 스레드 수의 합을 연결 수와 비교한다`() {
+        val analysis = WorkerJobProperties(maxThreads = 40)
+
+        WorkerConfig(
+            WorkerProperties(enabled = true, analysis = analysis, report = WorkerJobProperties(maxThreads = 10)),
+            aiProperties,
+        )
+        assertFailsWith<IllegalArgumentException> {
+            WorkerConfig(
+                WorkerProperties(enabled = true, analysis = analysis, report = WorkerJobProperties(maxThreads = 11)),
+                aiProperties,
+            )
+        }
+    }
 }

@@ -149,6 +149,20 @@ app:
       # polling 한 번이 끝난 뒤 다음 polling까지 쉬는 시간. Worker 하나가 받아들이는 속도는 약 lease-limit ÷ (이 값 + polling 시간)이 상한이다.
       # 줄이면 일이 없어도 DB 조회가 Worker 수 × (1 ÷ 이 값)만큼 잦아진다.
       polling-delay: ${WORKER_ANALYSIS_POLLING_DELAY:1s}
+    report:
+      # 리포트 생성 작업을 처리할지. 기본은 꺼져 있고, 리포트 Worker 서비스(와 dev 앱 컨테이너)에서만 켠다.
+      enabled: ${WORKER_REPORT_ENABLED:false}
+      # 리포트 실행기 스레드 수. 리포트는 주에 한 번 사는 상품이라 분석보다 훨씬 적게 둔다.
+      max-threads: ${WORKER_REPORT_MAX_THREADS:10}
+      # Gemini 한 건(연결 5초 + 연결 풀 대기 3초 + 읽기 30초)에 식사 집계와 결과 저장을 더한 시간보다 길게 둔다.
+      # 실제 리포트 문장 생성은 p50 8.9초·p95 13.3초·최대 13.4초였다(2026-11-08, 30회).
+      lease-time-to-live: 60s
+      # 처음 1번 + 재시도 1번. 끝내 실패하면 FAILED로 끝내고 유료였으면 환불한다.
+      max-lease-count: 2
+      lease-limit: 10
+      polling-delay: ${WORKER_REPORT_POLLING_DELAY:1s}
+      # 요청 한도 초과·서버 오류·타임아웃으로 실패하면 이만큼 기다렸다가 다시 가져간다. Gemini 장애 중에 시도를 바로 다 쓰지 않게 한다.
+      retry-delay: 30s
   fcm:
     # Firebase를 띄울지. false면 FirebaseMessaging 빈 없이 StubPushClient가 주입된다.
     enabled: true
@@ -233,6 +247,7 @@ app:
     meal-detail-url: "/meals"
     onboarding-url: "/onboarding"
     inquiry-detail-url: "/inquiries"
+    report-url: "/reports"
 
   email:
     client: ${EMAIL_CLIENT:smtp} # smtp | ses (ses는 샌드박스 해제 후 전환)

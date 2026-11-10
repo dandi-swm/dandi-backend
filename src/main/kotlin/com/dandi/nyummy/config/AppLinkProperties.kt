@@ -10,6 +10,7 @@ class AppLinkProperties(
     mealDetailUrl: String,
     onboardingUrl: String,
     inquiryDetailUrl: String,
+    reportUrl: String = "/reports",
 ) {
     val home: String = baseUrl + homeUrl
     val signup: String = baseUrl + signupUrl
@@ -17,7 +18,12 @@ class AppLinkProperties(
     val onboarding: String = baseUrl + onboardingUrl
     private val inquiryDetail: String = baseUrl + inquiryDetailUrl
 
+    // 리포트 목록. 상세는 뒤에 /{reportId}를 붙인다.
+    val reports: String = baseUrl + reportUrl
+
     fun createMealDetailLink(mealId: Long): String = "$mealDetail/$mealId"
 
     fun createInquiryDetailLink(inquiryId: Long): String = "$inquiryDetail/$inquiryId"
+
+    fun createReportDetailLink(reportId: Long): String = "$reports/$reportId"
 }
