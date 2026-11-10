@@ -35,6 +35,20 @@ data class ReportPurchaseResponse(
 )
 
 /**
+ * 취소 결과. 이미 취소된 리포트를 다시 취소해도 같은 모양으로 준다.
+ *
+ * @property status 항상 CANCELED
+ * @property refundedCoinQuantity 돌려준 코인. 무료로 산 리포트면 0이다(대신 무료 기회가 다시 생긴다)
+ * @property balance 지금 잔액. 앱은 이 값으로 상단 코인을 고친다
+ */
+data class ReportCancelResponse(
+    val reportId: Long,
+    val status: ReportStatus,
+    val refundedCoinQuantity: Int,
+    val balance: Int,
+)
+
+/**
  * @property purchasePrice 지금 구매하면 낼 코인. 다음 묶음에서도 같은 값을 준다
  * @property minMealCount 그 주에 분석이 완료된 식사가 이만큼 있어야 살 수 있다
  */

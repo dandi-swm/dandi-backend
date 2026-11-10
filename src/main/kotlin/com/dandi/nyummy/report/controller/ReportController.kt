@@ -6,9 +6,11 @@ import com.dandi.nyummy.exception.errorcode.ReportErrorCode
 import com.dandi.nyummy.header.CommonHeader
 import com.dandi.nyummy.header.CurrentCommonHeader
 import com.dandi.nyummy.report.dto.CreateReportPurchaseRequest
+import com.dandi.nyummy.report.dto.ReportCancelResponse
 import com.dandi.nyummy.report.dto.ReportPurchaseResponse
 import com.dandi.nyummy.report.dto.ReportResponse
 import com.dandi.nyummy.report.dto.ReportsResponse
+import com.dandi.nyummy.report.service.ReportCancelService
 import com.dandi.nyummy.report.service.ReportPurchaseService
 import com.dandi.nyummy.report.service.ReportService
 import com.dandi.nyummy.security.AuthUser
@@ -35,6 +37,7 @@ import org.springframework.web.bind.annotation.RestController
 class ReportController(
     private val reportService: ReportService,
     private val reportPurchaseService: ReportPurchaseService,
+    private val reportCancelService: ReportCancelService,
 ) {
     companion object {
         private const val IDEMPOTENCY_KEY = "Idempotency-Key"
@@ -107,4 +110,22 @@ class ReportController(
         @CurrentUser user: AuthUser,
         @Parameter(description = "리포트 ID") @PathVariable("reportId") reportId: Long,
     ): ReportResponse = reportService.getReport(user.userId, reportId)
+
+    @Operation(
+        summary = "리포트 취소",
+        description = "생성이 끝나지 않은(WAITING·GENERATING) 리포트를 취소한다. 유료로 산 리포트면 낸 코인을 돌려주고, " +
+            "무료로 산 리포트면 돌려줄 코인 대신 무료 기회가 다시 생긴다(목록의 purchasePrice가 0이 된다). " +
+            "취소한 주는 다시 살 수 있다. 완료되었거나 생성에 실패한 리포트는 409 notCancelable이다. " +
+            "생성이 끝나는 순간과 겹치면 먼저 처리된 쪽이 이기므로, 409를 받으면 목록이나 상세를 다시 조회한다. " +
+            "이미 취소한 리포트를 다시 취소하면 같은 응답(200)을 준다.",
+    )
+    @ApiErrorCodes(
+        report = [ReportErrorCode.REPORT_NOT_FOUND, ReportErrorCode.NOT_CANCELABLE],
+        auth = [AuthErrorCode.FORBIDDEN],
+    )
+    @PostMapping("/{reportId}/cancel")
+    fun cancelReport(
+        @CurrentUser user: AuthUser,
+        @Parameter(description = "리포트 ID") @PathVariable("reportId") reportId: Long,
+    ): ReportCancelResponse = reportCancelService.cancelReport(user.userId, reportId)
 }

@@ -1,8 +1,10 @@
 package com.dandi.nyummy.internal.batch.controller
 
+import com.dandi.nyummy.internal.batch.dto.ReportReconciliationResponse
 import com.dandi.nyummy.internal.batch.service.DailyPromotionService
 import com.dandi.nyummy.internal.batch.service.MealReminderService
 import com.dandi.nyummy.internal.batch.service.ProductSalesCountService
+import com.dandi.nyummy.internal.batch.service.ReportReconciliationService
 import com.dandi.nyummy.internal.batch.service.RetentionBatchService
 import io.swagger.v3.oas.annotations.Hidden
 import org.springframework.format.annotation.DateTimeFormat
@@ -20,6 +22,7 @@ class InternalBatchController(
     private val retentionBatchService: RetentionBatchService,
     private val dailyPromotionService: DailyPromotionService,
     private val productSalesCountService: ProductSalesCountService,
+    private val reportReconciliationService: ReportReconciliationService,
 ) {
 
     // 매시 정각 호출
@@ -47,4 +50,8 @@ class InternalBatchController(
     fun triggerSalesCountUpdate() {
         productSalesCountService.updateSalesCounts()
     }
+
+    // 매일 05:00 호출. 불일치를 찾기만 하고, Jenkins 잡이 mismatchCount가 0이 아니면 실패로 끝내 알린다
+    @PostMapping("/reports/reconciliation")
+    fun triggerReportReconciliation(): ReportReconciliationResponse = reportReconciliationService.reconcileReports()
 }

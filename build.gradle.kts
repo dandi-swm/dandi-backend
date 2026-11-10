@@ -203,3 +203,21 @@ testing {
 tasks.withType<Test> {
     useJUnitPlatform()
 }
+
+// 실제 MySQL(Testcontainers)에 동시 요청을 수백 라운드 부딪히는 경쟁 테스트(@Tag("race")). 오래 걸려 ./gradlew test에서 빼고
+// ./gradlew raceTest로만 돌린다. 라운드 수는 -PraceRounds(기본 200), 취소의 최대 출발 지연은 -PraceCancelJitterMillis(기본 60).
+tasks.named<Test>("test") {
+    useJUnitPlatform { excludeTags("race") }
+}
+
+tasks.register<Test>("raceTest") {
+    description = "리포트 취소·생성·환불 동시 요청 경쟁 테스트"
+    group = "verification"
+    testClassesDirs = sourceSets["test"].output.classesDirs
+    classpath = sourceSets["test"].runtimeClasspath
+    useJUnitPlatform { includeTags("race") }
+    systemProperty("raceRounds", providers.gradleProperty("raceRounds").getOrElse("200"))
+    systemProperty("raceCancelJitterMillis", providers.gradleProperty("raceCancelJitterMillis").getOrElse("60"))
+    systemProperty("raceDropRefundUnique", providers.gradleProperty("raceDropRefundUnique").getOrElse("false"))
+    outputs.upToDateWhen { false }
+}
