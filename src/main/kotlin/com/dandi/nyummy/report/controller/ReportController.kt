@@ -45,7 +45,7 @@ class ReportController(
         description = "리포트를 최신순으로 조회한다. 무한 스크롤용 cursor 방식이다. " +
             "첫 요청은 cursor 없이 보내고, 다음 요청부터는 직전 응답의 nextCursor를 cursor로 보낸다. " +
             "hasNext가 false면 마지막 묶음이며 nextCursor는 null이다. " +
-            "purchasePrice는 지금 구매하면 낼 코인이고(첫 리포트는 0, 그 뒤 300), " +
+            "purchasePrice는 지금 구매하면 낼 코인이고(첫 리포트는 0, 그 뒤 100), " +
             "minMealCount는 그 주에 분석이 완료된 식사가 이만큼 있어야 살 수 있다는 뜻이다. 두 값은 모든 묶음에서 같다. " +
             "title은 COMPLETED일 때만 있다. isUnread는 완료됐지만 아직 상세를 열어 보지 않은 리포트다. " +
             "isRefunded는 취소·생성 실패로 코인을 돌려준 리포트이고, 무료로 산 리포트는 취소·실패해도 false다.",
