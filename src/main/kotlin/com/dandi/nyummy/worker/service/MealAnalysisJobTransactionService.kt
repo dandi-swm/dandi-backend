@@ -7,7 +7,8 @@ import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.repository.MealAnalysisJobRepository
 import com.dandi.nyummy.meal.repository.MealRepository
-import com.dandi.nyummy.worker.config.ConditionalOnWorkerEnabled
+import com.dandi.nyummy.worker.config.ConditionalOnAnalysisWorkerEnabled
+import com.dandi.nyummy.worker.config.WorkerJobProperties
 import com.dandi.nyummy.worker.config.WorkerProperties
 import com.dandi.nyummy.worker.dto.AnalysisPushResult
 import com.dandi.nyummy.worker.dto.MealAnalysisJobResult
@@ -27,7 +28,7 @@ import java.time.Instant
  * 늦게 끝난 Worker는 아무것도 쓰지 않고 끝난다.
  */
 @Service
-@ConditionalOnWorkerEnabled
+@ConditionalOnAnalysisWorkerEnabled
 class MealAnalysisJobTransactionService(
     private val mealAnalysisJobRepository: MealAnalysisJobRepository,
     private val mealRepository: MealRepository,
@@ -48,7 +49,7 @@ class MealAnalysisJobTransactionService(
      *
      * 가져가지 않고 끝내는 작업도 있다.
      * - 그사이 사용자가 지운 식사의 작업은 지운다. 분석하지 않으므로 Gemini 비용과 알림이 생기지 않는다.
-     * - 이미 [WorkerProperties.maxLeaseCount]번 가져갔는데 또 lease가 만료된 작업은 지우고 식사를 FAILED로 둔다.
+     * - 이미 [WorkerJobProperties.maxLeaseCount]번 가져갔는데 또 lease가 만료된 작업은 지우고 식사를 FAILED로 둔다.
      *   처리하던 Worker가 거듭 죽은 경우라, 다시 가져가도 같은 일이 반복될 수 있다. 알림은 보내지 않는다.
      *
      * @param limit 이번에 가져갈 최대 개수 (Worker의 빈 자리 수)
@@ -66,7 +67,9 @@ class MealAnalysisJobTransactionService(
             val meal = mealsById[job.mealId]
             meal != null && meal.deletedAt == null
         }
-        val (leasableJobs, exhaustedJobs) = liveJobs.partition { it.leaseCount < workerProperties.maxLeaseCount }
+        val (leasableJobs, exhaustedJobs) = liveJobs.partition {
+            it.leaseCount < workerProperties.analysis.maxLeaseCount
+        }
 
         if (deletedJobs.isNotEmpty()) {
             logger.info("지워진 식사의 분석 작업을 건너뜁니다: mealIds={}", deletedJobs.map { it.mealId })
@@ -81,7 +84,12 @@ class MealAnalysisJobTransactionService(
             return emptyList()
         }
 
-        mealAnalysisJobRepository.updateLease(leasableJobs.map { it.id }, workerProperties.leaseTimeToLive.toSeconds())
+        mealAnalysisJobRepository.updateLease(
+            leasableJobs.map {
+                it.id
+            },
+            workerProperties.analysis.leaseTimeToLive.toSeconds(),
+        )
         mealRepository.updateMealStatuses(leasableJobs.map { it.mealId }, MealStatus.ANALYZING, Instant.now(clock))
 
         return leasableJobs.map {
@@ -91,7 +99,7 @@ class MealAnalysisJobTransactionService(
                 mealId = it.mealId,
                 leaseCount = leaseCount,
                 imageKey = mealsById.getValue(it.mealId).imageKey,
-                canRetry = leaseCount < workerProperties.maxLeaseCount,
+                canRetry = leaseCount < workerProperties.analysis.maxLeaseCount,
                 createdAt = it.createdAt,
             )
         }

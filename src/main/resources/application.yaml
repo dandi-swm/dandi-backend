@@ -131,15 +131,24 @@ app:
   worker:
     # Worker 서비스(와 dev 앱 컨테이너)에서만 true. API 서비스는 false라 Worker 빈을 만들지 않는다.
     enabled: ${WORKER_ENABLED:false}
-    # Gemini 한 건(연결 5초 + 연결 풀 대기 3초 + 읽기 30초)에 S3 다운로드와 결과 저장을 더한 시간보다 길게 둔다.
-    lease-time-to-live: 60s
-    # 처음 1번 + 재시도 1번. 요청 한도 초과·서버 오류·타임아웃처럼 일시적인 실패만 재시도한다.
-    max-lease-count: 2
-    # polling 한 번에 가져갈 최대 작업 수. 한 트랜잭션이 잠그는 행을 작게 둔다. 실행기(50)가 다 차려면 몇 번의 polling이 걸린다.
-    lease-limit: 10
     # 종료할 때 처리 중인 작업을 기다리는 최대 시간. 정상 처리(Gemini 약 38초 + S3·저장)는 이 안에 끝난다.
     # 이 값에 나머지 종료 시간을 더해도 Worker ECS stopTimeout(60초)보다 짧아야 기다리는 도중에 강제로 끝나지 않는다.
     shutdown-timeout: 40s
+    # 켜진 종류의 max-threads 합은 app.ai.max-connections 이하여야 한다. 넘으면 앱이 뜨지 않는다(WorkerConfig).
+    analysis:
+      # 영양 분석 작업을 처리할지. Worker가 켜진 서비스에서 기본으로 켜진다.
+      enabled: ${WORKER_ANALYSIS_ENABLED:true}
+      # 분석 실행기 스레드 수. 따로 주지 않으면 Gemini 연결 수와 같다.
+      max-threads: ${WORKER_ANALYSIS_MAX_THREADS:${app.ai.max-connections}}
+      # Gemini 한 건(연결 5초 + 연결 풀 대기 3초 + 읽기 30초)에 S3 다운로드와 결과 저장을 더한 시간보다 길게 둔다.
+      lease-time-to-live: 60s
+      # 처음 1번 + 재시도 1번. 요청 한도 초과·서버 오류·타임아웃처럼 일시적인 실패만 재시도한다.
+      max-lease-count: 2
+      # polling 한 번에 가져갈 최대 작업 수. 한 트랜잭션이 잠그는 행을 작게 둔다. 실행기(50)가 다 차려면 몇 번의 polling이 걸린다.
+      lease-limit: 10
+      # polling 한 번이 끝난 뒤 다음 polling까지 쉬는 시간. Worker 하나가 받아들이는 속도는 약 lease-limit ÷ (이 값 + polling 시간)이 상한이다.
+      # 줄이면 일이 없어도 DB 조회가 Worker 수 × (1 ÷ 이 값)만큼 잦아진다.
+      polling-delay: ${WORKER_ANALYSIS_POLLING_DELAY:1s}
   fcm:
     # Firebase를 띄울지. false면 FirebaseMessaging 빈 없이 StubPushClient가 주입된다.
     enabled: true
@@ -196,6 +205,11 @@ app:
       # 호박 쿠션(침대), 스크래처 타워(기타)
       item-ids: [2, 3]
       coin-quantity: 100
+  report:
+    # 리포트 가격(코인). 첫 리포트는 무료다.
+    list-price: 100
+    # 그 주에 분석이 완료된 식사가 이만큼 있어야 살 수 있다. 목록 응답의 minMealCount로 앱에 준다.
+    min-meal-count: 3
   cat:
     weight-update-interval-days: 1
     weight-update-tolerance: 0.2

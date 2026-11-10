@@ -1,7 +1,7 @@
 package com.dandi.nyummy.worker
 
 import com.dandi.nyummy.meal.repository.MealAnalysisJobRepository
-import com.dandi.nyummy.worker.config.ConditionalOnWorkerEnabled
+import com.dandi.nyummy.worker.config.ConditionalOnAnalysisWorkerEnabled
 import io.micrometer.core.instrument.Gauge
 import io.micrometer.core.instrument.MeterRegistry
 import io.micrometer.core.instrument.TimeGauge
@@ -16,7 +16,7 @@ import java.util.concurrent.TimeUnit
  * 큐는 Worker가 모두 함께 쓰므로 Worker가 여럿이면 같은 값을 낸다. 대시보드에서는 max로 본다.
  */
 @Component
-@ConditionalOnWorkerEnabled
+@ConditionalOnAnalysisWorkerEnabled
 class MealAnalysisJobMeterBinder(private val mealAnalysisJobRepository: MealAnalysisJobRepository) : MeterBinder {
 
     override fun bindTo(registry: MeterRegistry) {

@@ -65,6 +65,25 @@ interface MealRepository : JpaRepository<Meal, Long> {
         @Param("end") end: Instant,
     ): Long
 
+    // 기간 안에서 [status]인 식사 수. 지운 식사는 세지 않는다.
+    @Query(
+        """
+            select count(m)
+            from Meal as m
+            where m.userId = :userId
+                and m.deletedAt is null
+                and m.status = :status
+                and m.mealAt >= :start
+                and m.mealAt < :end
+        """,
+    )
+    fun countMealsByUserIdAndStatusAndPeriod(
+        @Param("userId") userId: Long,
+        @Param("status") status: MealStatus,
+        @Param("start") start: Instant,
+        @Param("end") end: Instant,
+    ): Long
+
     /**
      * 식사들의 분석 상태만 바꾼다. 영속성 컨텍스트를 거치지 않고 status·updated_at 두 컬럼만 쓴다.
      *
