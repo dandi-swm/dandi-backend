@@ -1,7 +1,9 @@
 ### 디바이스 토큰 등록
+# X-Language가 device_tokens.language에 저장된다(ja → JA). 헤더를 빼면 KO, 지원하지 않는 언어(fr)면 EN이다.
 POST {{url}}/api/v1/notifications/device-tokens
 Authorization: Bearer {{accessToken}}
 Content-Type: application/json
+X-Language: ko
 
 {
   "token": "{{fcmToken}}",
