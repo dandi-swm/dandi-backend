@@ -27,6 +27,13 @@ spring:
       ddl-auto: validate
     open-in-view: false
 
+  # 서버 고정 문구(푸시 템플릿 등). messages.properties가 원본 언어(한국어)이고, messages_ja·messages_en이 번역이다.
+  # 기본값 true면 키가 없을 때 서버 OS 언어의 파일로 가서, 서버가 어느 언어로 떠 있느냐에 따라 결과가 바뀐다.
+  # false로 두면 언제나 messages.properties(한국어)로 간다. 키 누락은 MessagesTest가 막는다.
+  messages:
+    basename: messages
+    fallback-to-system-locale: false
+
   # app.email.client=smtp일 때 SmtpEmailClient가 쓰는 JavaMailSender 설정 (Gmail, 앱 비밀번호)
   mail:
     host: smtp.gmail.com

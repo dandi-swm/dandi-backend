@@ -13,6 +13,9 @@ enum class Language(val code: String) {
     EN("en"),
     ;
 
+    /** `MessageSource`에 넘길 Locale. 서버 고정 문구를 꺼낼 때만 쓴다. */
+    fun toLocale(): Locale = Locale.of(code)
+
     companion object {
         /** 모든 문구의 원본 언어. 헤더를 보내지 않는 예전 앱 빌드와 번역이 없는 콘텐츠에 쓴다. */
         val ORIGINAL_LANGUAGE = KO
