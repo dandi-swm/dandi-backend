@@ -16,11 +16,11 @@ import java.time.Instant
 import java.time.LocalDate
 
 /**
- * 리포트 구매 시도 기록. 성공·거부 모두 한 행이고, 추가만 하고 수정·삭제하지 않는다.
+ * 리포트 구매 시도 기록. 성공·실패 모두 한 행이고, 추가만 하고 수정·삭제하지 않는다.
  *
  * @property requestedStartDate 앱이 보낸 startDate. 일요일이 아니어도 그대로 남긴다
  * @property requestedPrice 앱이 보낸 화면 가격
- * @property reportPurchaseId 만들거나 다시 돌려준 구매. 거부되었으면 null이다
+ * @property reportPurchaseId 만들거나 다시 돌려준 구매. 실패했으면 null이다
  * @property appVersion 앱 버그와 조작된 요청을 구분하는 데 쓴다
  */
 @Entity

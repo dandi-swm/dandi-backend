@@ -24,18 +24,24 @@ enum class ReportPurchaseOutcome {
 
     /** 코인 행 잠금을 제시간에 얻지 못했거나 교착으로 롤백되었다 */
     PURCHASE_IN_PROGRESS,
+
+    /**
+     * 거부 사유가 아닌 예외로 실패했다. 데이터 오류나 DB 장애처럼 정상 상태에서는 일어나지 않는다.
+     * 대부분 롤백되지만 커밋 중에 연결이 끊기면 구매가 남았을 수 있다
+     */
+    UNEXPECTED_ERROR,
     ;
 
     companion object {
-        /** 거부 사유의 에러 코드에 맞는 결과. 구매 시도의 거부 사유가 아니면 null이다 */
-        fun from(errorCode: ErrorCode): ReportPurchaseOutcome? = when (errorCode) {
+        /** 거부 사유의 에러 코드에 맞는 결과. 구매 시도의 거부 사유가 아니면 [UNEXPECTED_ERROR]다 */
+        fun from(errorCode: ErrorCode): ReportPurchaseOutcome = when (errorCode) {
             ReportErrorCode.IDEMPOTENCY_KEY_REUSED -> IDEMPOTENCY_KEY_REUSED
             ReportErrorCode.INVALID_WEEK -> INVALID_WEEK
             ReportErrorCode.NOT_ENOUGH_MEALS -> NOT_ENOUGH_MEALS
             ReportErrorCode.DUPLICATE_WEEK -> DUPLICATE_WEEK
             ReportErrorCode.PRICE_CHANGED -> PRICE_CHANGED
             ReportErrorCode.INSUFFICIENT_BALANCE -> INSUFFICIENT_BALANCE
-            else -> null
+            else -> UNEXPECTED_ERROR
         }
     }
 }
