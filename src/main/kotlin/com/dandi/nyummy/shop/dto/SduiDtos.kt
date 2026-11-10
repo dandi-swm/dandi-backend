@@ -120,7 +120,8 @@ data class ShopItemResponse(
  *
  * @property text 글자. 아이콘 조각이면 null
  * @property typeScale 글자 토큰(displayM, titleS, labelS, numberS). 모르는 값이면 앱이 bodyM으로 그린다
- * @property color 색 토큰(contentPrimary, contentSecondary, contentTertiary, contentPromo, contentDanger, contentOnInverse). 모르는 값이면 앱이 contentPrimary로 그린다
+ * @property color 색 토큰(contentPrimary, contentSecondary, contentTertiary, contentQuiet, contentDisabled,
+ *   contentBrand, contentVoice, contentDanger, contentPromo, contentOnInverse). 모르는 값이면 앱이 contentPrimary로 그린다
  * @property icon 아이콘 조각(coin, clock, chevronRight). clock, chevronRight는 [color]로 색을 정한다
  * @property strike 취소선. null이면 없음
  */

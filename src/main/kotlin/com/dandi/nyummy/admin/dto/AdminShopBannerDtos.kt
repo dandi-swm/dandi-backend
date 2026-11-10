@@ -9,9 +9,12 @@ import jakarta.validation.constraints.Size
 import java.time.Instant
 
 // 앱 RichText가 아는 색 토큰. 모르는 값이면 앱이 contentPrimary로 그리므로 오타를 여기서 막는다.
-private const val SDUI_COLOR_PATTERN = "contentPrimary|contentSecondary|contentTertiary|contentPromo|contentOnInverse"
+private const val SDUI_COLOR_PATTERN =
+    "contentPrimary|contentSecondary|contentTertiary|contentQuiet|contentDisabled|" +
+        "contentBrand|contentVoice|contentDanger|contentPromo|contentOnInverse"
 private const val SDUI_COLOR_MESSAGE =
-    "색은 contentPrimary, contentSecondary, contentTertiary, contentPromo, contentOnInverse 중 하나여야 합니다."
+    "색은 contentPrimary, contentSecondary, contentTertiary, contentQuiet, contentDisabled, " +
+        "contentBrand, contentVoice, contentDanger, contentPromo, contentOnInverse 중 하나여야 합니다."
 
 /**
  * 배너 만들기 요청. 이미지는 multipart의 다른 칸(image)으로 받는다.
