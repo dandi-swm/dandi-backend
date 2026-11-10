@@ -174,14 +174,14 @@ class ReportGenerationJobTransactionService(
      */
     @Transactional
     fun failReportGeneration(job: ReportGenerationJobResult): ReportPushResult? {
-        coinService.lockCoin(job.userId)
+        val coin = coinService.lockCoin(job.userId)
         if (!deleteJob(job)) {
             return null
         }
 
         updateReportStatus(job, ReportStatus.FAILED)
         val refundedCoinQuantity = reportPurchaseRefundService.createReportPurchaseRefund(
-            job.userId,
+            coin,
             job.reportId,
             ReportPurchaseRefundCategory.FAILED,
         )

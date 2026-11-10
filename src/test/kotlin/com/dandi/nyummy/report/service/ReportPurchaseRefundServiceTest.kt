@@ -1,5 +1,6 @@
 package com.dandi.nyummy.report.service
 
+import com.dandi.nyummy.coin.entity.Coin
 import com.dandi.nyummy.coin.enum.CoinHistoryCategory
 import com.dandi.nyummy.coin.service.CoinService
 import com.dandi.nyummy.report.entity.ReportPurchase
@@ -20,6 +21,7 @@ class ReportPurchaseRefundServiceTest {
 
     private val userId = 1L
     private val reportId = 10L
+    private val coin = Coin(userId)
 
     private val coinService = mockk<CoinService>()
     private val reportPurchaseRepository = mockk<ReportPurchaseRepository>()
@@ -40,22 +42,22 @@ class ReportPurchaseRefundServiceTest {
         every { reportPurchaseRefundRepository.saveAndFlush(capture(savedRefund)) } answers {
             firstArg<ReportPurchaseRefund>().also { ReflectionTestUtils.setField(it, "id", 500L) }
         }
-        every { coinService.increaseBalance(userId, 800, CoinHistoryCategory.REPORT_PURCHASE_REFUND, 500L) } returns
+        every { coinService.increaseBalance(coin, 800, CoinHistoryCategory.REPORT_PURCHASE_REFUND, 500L) } returns
             1000
 
-        val refunded = service.createReportPurchaseRefund(userId, reportId, ReportPurchaseRefundCategory.CANCELED)
+        val refunded = service.createReportPurchaseRefund(coin, reportId, ReportPurchaseRefundCategory.CANCELED)
 
         assertEquals(800, refunded)
         assertEquals(100L, savedRefund.captured.reportPurchaseId)
         assertEquals(ReportPurchaseRefundCategory.CANCELED, savedRefund.captured.category)
-        verify { coinService.increaseBalance(userId, 800, CoinHistoryCategory.REPORT_PURCHASE_REFUND, 500L) }
+        verify { coinService.increaseBalance(coin, 800, CoinHistoryCategory.REPORT_PURCHASE_REFUND, 500L) }
     }
 
     @Test
     fun `무료 구매면 돌려줄 코인이 없어 아무것도 남기지 않는다`() {
         givenPurchase(0)
 
-        assertEquals(0, service.createReportPurchaseRefund(userId, reportId, ReportPurchaseRefundCategory.FAILED))
+        assertEquals(0, service.createReportPurchaseRefund(coin, reportId, ReportPurchaseRefundCategory.FAILED))
         verify(exactly = 0) { reportPurchaseRefundRepository.saveAndFlush(any()) }
         verify(exactly = 0) { coinService.increaseBalance(any(), any(), any(), any()) }
     }
@@ -65,7 +67,7 @@ class ReportPurchaseRefundServiceTest {
         every { reportPurchaseRepository.findByReportId(reportId) } returns null
 
         assertFailsWith<IllegalStateException> {
-            service.createReportPurchaseRefund(userId, reportId, ReportPurchaseRefundCategory.FAILED)
+            service.createReportPurchaseRefund(coin, reportId, ReportPurchaseRefundCategory.FAILED)
         }
     }
 }

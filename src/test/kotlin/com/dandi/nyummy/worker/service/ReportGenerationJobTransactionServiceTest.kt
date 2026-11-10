@@ -30,6 +30,7 @@ class ReportGenerationJobTransactionServiceTest {
 
     private val now = Instant.parse("2026-11-10T03:00:00Z")
     private val userId = 1L
+    private val coin = Coin(userId)
     private val sunday = LocalDate.parse("2026-11-01")
 
     private val reportGenerationJobRepository = mockk<ReportGenerationJobRepository>()
@@ -54,7 +55,7 @@ class ReportGenerationJobTransactionServiceTest {
         every { reportRepository.updateReportStatuses(any(), any(), any(), any()) } answers {
             firstArg<Collection<Long>>().size
         }
-        every { coinService.lockCoin(userId) } returns Coin(userId)
+        every { coinService.lockCoin(userId) } returns coin
     }
 
     private fun job(id: Long, reportId: Long, leaseCount: Int) = ReportGenerationJob(reportId).also {
@@ -151,7 +152,7 @@ class ReportGenerationJobTransactionServiceTest {
     fun `코인 행을 먼저 잠그고 작업을 지운 뒤 리포트를 실패로 바꾸고 환불한다`() {
         every { reportGenerationJobRepository.deleteByIdAndLeaseCount(1, 1) } returns 1
         every {
-            reportPurchaseRefundService.createReportPurchaseRefund(userId, 10, ReportPurchaseRefundCategory.FAILED)
+            reportPurchaseRefundService.createReportPurchaseRefund(coin, 10, ReportPurchaseRefundCategory.FAILED)
         } returns 800
 
         val pushResult = service.failReportGeneration(jobResult())
@@ -167,7 +168,7 @@ class ReportGenerationJobTransactionServiceTest {
                 ReportStatus.FAILED,
                 now,
             )
-            reportPurchaseRefundService.createReportPurchaseRefund(userId, 10, ReportPurchaseRefundCategory.FAILED)
+            reportPurchaseRefundService.createReportPurchaseRefund(coin, 10, ReportPurchaseRefundCategory.FAILED)
         }
     }
 
