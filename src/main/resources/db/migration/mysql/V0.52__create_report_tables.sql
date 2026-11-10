@@ -37,7 +37,7 @@ CREATE TABLE reports
     CONSTRAINT fk_reports_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
 );
 
--- 리포트 구매. price는 구매 시점 가격 스냅샷(0 또는 300)이고 0이면 첫 무료다.
+-- 리포트 구매. price는 구매 시점 가격 스냅샷(0 또는 100)이고 0이면 첫 무료다.
 -- 첫 무료 판정은 "price 0이고 리포트가 대기·생성 중·완료인 구매가 있는가"다.
 -- 실패하거나 취소된 무료 구매는 세지 않으므로 무료 기회가 다시 생긴다.
 --
