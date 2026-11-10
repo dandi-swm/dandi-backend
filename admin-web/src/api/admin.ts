@@ -302,14 +302,30 @@ export const updatePromotionProducts = (promotionId: number, productIds: number[
   });
 
 /** 앱 RichText가 아는 색 토큰. 서버도 이 값만 받는다. */
-export type SduiColor = "contentPrimary" | "contentSecondary" | "contentTertiary" | "contentPromo" | "contentOnInverse";
+export type SduiColor =
+  | "contentPrimary"
+  | "contentSecondary"
+  | "contentTertiary"
+  | "contentQuiet"
+  | "contentDisabled"
+  | "contentBrand"
+  | "contentVoice"
+  | "contentDanger"
+  | "contentPromo"
+  | "contentOnInverse";
 
-export const SDUI_COLOR_LABELS: Record<SduiColor, string> = {
-  contentPrimary: "기본 (진한 글자)",
-  contentSecondary: "보조 (회색 글자)",
-  contentTertiary: "흐린 글자",
-  contentPromo: "강조 (프로모션 색)",
-  contentOnInverse: "어두운 그림 위 (흰 글자)",
+/** 디자인 시스템(흰 바탕 기준)의 색 값. 어드민 화면에서 견본을 그릴 때만 쓰고, 서버에는 토큰 이름을 보낸다. */
+export const SDUI_COLOR_HEXES: Record<SduiColor, string> = {
+  contentPrimary: "#262626",
+  contentSecondary: "#686868",
+  contentTertiary: "#939393",
+  contentQuiet: "#A5A5A5",
+  contentDisabled: "#C0C0C0",
+  contentBrand: "#43855D",
+  contentVoice: "#243329",
+  contentDanger: "#EA3348",
+  contentPromo: "#DC7E19",
+  contentOnInverse: "#FFFFFF",
 };
 
 /**

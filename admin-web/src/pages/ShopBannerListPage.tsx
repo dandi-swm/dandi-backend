@@ -5,7 +5,7 @@ import {
   getPromotions,
   getShopBanners,
   PROMOTION_CATEGORY_LABELS,
-  SDUI_COLOR_LABELS,
+  SDUI_COLOR_HEXES,
   SHOP_BANNER_DESCRIPTION_MAX,
   SHOP_BANNER_IMAGE_MAX_BYTES,
   SHOP_BANNER_TITLE_MAX,
@@ -19,7 +19,17 @@ import {
 import { ImagePicker } from "../components/ImagePicker";
 import { convertFromKstInputValue, convertToKstInputValue, formatDateTime } from "../format";
 
-const COLORS = Object.keys(SDUI_COLOR_LABELS) as SduiColor[];
+const COLORS = Object.keys(SDUI_COLOR_HEXES) as SduiColor[];
+
+/** 색 토큰 이름 앞에 견본을 붙인다. 흰색(contentOnInverse)도 보이게 견본에 테두리를 둔다. */
+function ColorName({ color }: { color: SduiColor }) {
+  return (
+    <span className="color-name">
+      <span className="color-swatch" style={{ background: SDUI_COLOR_HEXES[color] }} />
+      {color}
+    </span>
+  );
+}
 
 type BannerStatus = "SHOWING" | "SCHEDULED" | "ENDED";
 
@@ -172,27 +182,33 @@ function BannerFields({ value, onChange }: { value: BannerFieldsValue; onChange:
       <div className="form-row">
         <label>
           제목 색
-          <select value={value.titleColor} onChange={(e) => update({ titleColor: e.target.value as SduiColor })}>
-            {COLORS.map((color) => (
-              <option key={color} value={color}>
-                {SDUI_COLOR_LABELS[color]}
-              </option>
-            ))}
-          </select>
+          <span className="color-select">
+            <span className="color-swatch" style={{ background: SDUI_COLOR_HEXES[value.titleColor] }} />
+            <select value={value.titleColor} onChange={(e) => update({ titleColor: e.target.value as SduiColor })}>
+              {COLORS.map((color) => (
+                <option key={color} value={color}>
+                  {color} · {SDUI_COLOR_HEXES[color]}
+                </option>
+              ))}
+            </select>
+          </span>
         </label>
         <label>
           설명 색
-          <select
-            value={value.descriptionColor}
-            disabled={value.description.trim() === ""}
-            onChange={(e) => update({ descriptionColor: e.target.value as SduiColor })}
-          >
-            {COLORS.map((color) => (
-              <option key={color} value={color}>
-                {SDUI_COLOR_LABELS[color]}
-              </option>
-            ))}
-          </select>
+          <span className="color-select">
+            <span className="color-swatch" style={{ background: SDUI_COLOR_HEXES[value.descriptionColor] }} />
+            <select
+              value={value.descriptionColor}
+              disabled={value.description.trim() === ""}
+              onChange={(e) => update({ descriptionColor: e.target.value as SduiColor })}
+            >
+              {COLORS.map((color) => (
+                <option key={color} value={color}>
+                  {color} · {SDUI_COLOR_HEXES[color]}
+                </option>
+              ))}
+            </select>
+          </span>
         </label>
         <label>
           노출 순서
@@ -377,8 +393,13 @@ function ShopBannerCard({ banner, status }: { banner: AdminShopBanner; status: B
       <h3 className="name">{banner.title}</h3>
       {banner.description && <p>{banner.description}</p>}
       <span className="muted">
-        제목 색 {SDUI_COLOR_LABELS[banner.titleColor]}
-        {banner.descriptionColor && ` · 설명 색 ${SDUI_COLOR_LABELS[banner.descriptionColor]}`}
+        제목 색 <ColorName color={banner.titleColor} />
+        {banner.descriptionColor && (
+          <>
+            {" "}
+            · 설명 색 <ColorName color={banner.descriptionColor} />
+          </>
+        )}
       </span>
       <span className="muted">
         {formatDateTime(banner.startsAt)} ~ {banner.endsAt ? formatDateTime(banner.endsAt) : ""} · 마지막 수정{" "}

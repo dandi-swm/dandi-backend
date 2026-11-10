@@ -586,6 +586,34 @@ button.secondary:disabled {
   background: var(--bg);
 }
 
+/* 배너 색 토큰 견본. 흰색(contentOnInverse)도 보이게 테두리를 둔다. */
+.color-swatch {
+  flex: none;
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.color-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.color-select select {
+  flex: 1;
+  min-width: 0;
+}
+
+.color-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  vertical-align: middle;
+}
+
 /* 구매 내역. 구매 한 건을 카드 하나로, 그 안의 구매 상품을 표 하나로 보여 준다. */
 .filters input[type="number"] {
   width: 160px;
