@@ -11,6 +11,7 @@ import com.dandi.nyummy.meal.dto.DailyMealsResponse
 import com.dandi.nyummy.meal.dto.MealResponse
 import com.dandi.nyummy.meal.dto.MealStatusResponse
 import com.dandi.nyummy.meal.dto.MonthlyMealsResponse
+import com.dandi.nyummy.meal.dto.UpdateMealNutritionRequest
 import com.dandi.nyummy.meal.service.AnalysisFeedbackService
 import com.dandi.nyummy.meal.service.MealService
 import com.dandi.nyummy.security.AuthUser
@@ -26,6 +27,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.PutMapping
@@ -88,6 +90,25 @@ class MealController(
         @Parameter(description = "식사 ID") @PathVariable("mealId") mealId: Long,
         @Parameter(description = "변경할 식사 이름") @RequestParam name: String,
     ): MealResponse = mealService.updateMeal(user.userId, mealId, name)
+
+    @Operation(
+        summary = "식사 영양 수정",
+        description = "식사의 칼로리 · 탄수화물 · 단백질 · 지방 중 바꾸려는 항목만 담아 보낸다 — 생략하거나 null로 보낸 항목은 유지된다. " +
+            "0은 유지가 아니라 0으로 수정한다. 칼로리는 0~9999, 탄수화물·단백질·지방은 0~999이고, " +
+            "벗어나면 api.common.invalidInputValue다. 칼로리와 탄수화물·단백질·지방이 서로 맞는지는 검사하지 않는다. " +
+            "분석이 완료된(COMPLETED) 식사만 수정할 수 있다. 수정된 식사 정보를 반환하며, " +
+            "이름 · 아이콘 · 고양이 한마디(catComment)는 바뀌지 않는다.",
+    )
+    @ApiErrorCodes(
+        meal = [MealErrorCode.MEAL_NOT_FOUND, MealErrorCode.ANALYSIS_NOT_COMPLETED],
+        auth = [AuthErrorCode.FORBIDDEN],
+    )
+    @PatchMapping("/{mealId}/nutrition")
+    fun updateMealNutrition(
+        @CurrentUser user: AuthUser,
+        @Parameter(description = "식사 ID") @PathVariable("mealId") mealId: Long,
+        @Valid @RequestBody request: UpdateMealNutritionRequest,
+    ): MealResponse = mealService.updateMealNutrition(user.userId, mealId, request)
 
     @Operation(summary = "식사 삭제", description = "식사 기록을 삭제한다.")
     @ApiResponse(responseCode = "204", description = "삭제 성공")

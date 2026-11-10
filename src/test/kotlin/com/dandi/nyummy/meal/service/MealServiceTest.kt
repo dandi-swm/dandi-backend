@@ -15,9 +15,13 @@ import com.dandi.nyummy.meal.config.MealProperties
 import com.dandi.nyummy.meal.config.RewardBoxProperties
 import com.dandi.nyummy.meal.config.TutorialRewardBoxProperties
 import com.dandi.nyummy.meal.dto.CreateMealRequest
+import com.dandi.nyummy.meal.dto.Nutrition
+import com.dandi.nyummy.meal.dto.NutritionAnalysisResult
 import com.dandi.nyummy.meal.dto.RewardBoxResult
+import com.dandi.nyummy.meal.dto.UpdateMealNutritionRequest
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.enum.MealStatus
+import com.dandi.nyummy.meal.mapper.toNutrition
 import com.dandi.nyummy.meal.repository.MealAnalysisJobRepository
 import com.dandi.nyummy.meal.repository.MealRepository
 import com.dandi.nyummy.user.entity.Profile
@@ -43,7 +47,8 @@ import kotlin.test.assertNull
 /**
  * createMeal의 검사·확정 순서와 mealAt 결정, createTutorialMeal의 완료 기록과 보상 상자 우편,
  * getMealStatus의 조회·소유권 검증, retryNutritionAnalysis의 재시도 가능 여부 검사,
- * updateMeal·deleteMeal이 식사를 잠가 읽는지와 검증을 다룬다.
+ * updateMeal·deleteMeal이 식사를 잠가 읽는지와 검증,
+ * updateMealNutrition이 보낸 항목만 바꾸는지와 수정 가능 상태 검사를 다룬다.
  * 하루 정책 자체는 MealAttemptServiceTest가 맡는다.
  */
 class MealServiceTest {
@@ -412,6 +417,131 @@ class MealServiceTest {
         assertBusinessException(AuthErrorCode.FORBIDDEN) { mealService.updateMeal(userId, mealId, "비빔밥") }
 
         assertEquals("김밥", meal.name)
+    }
+
+    // updateMealNutrition
+
+    private val analyzedNutrition = Nutrition(calory = 520, carbs = 60, protein = 25, fat = 18)
+
+    /** 분석이 완료돼 영양이 채워진 식사를 잠금 조회 결과로 준비한다. */
+    private fun givenAnalyzedMeal(ownerId: Long = userId): Meal {
+        val analysisResult = NutritionAnalysisResult(
+            name = "김밥",
+            nutrition = analyzedNutrition,
+            catComment = "맛있겠다냥",
+            iconId = 3L,
+        )
+        val meal = Meal(status = MealStatus.COMPLETED, imageKey = imageKey, mealAt = now, userId = ownerId).apply {
+            updateAnalysisResult(analysisResult)
+        }
+        every { mealRepository.findMealWithLockById(mealId) } returns meal
+        every { imageService.createImageUrl(imageKey) } returns "https://image"
+        every { analysisFeedbackService.canCreateAnalysisFeedback(meal) } returns false
+        return meal
+    }
+
+    @Test
+    fun `영양 일부만 보내면 잠가 읽은 식사의 그 항목만 바꾸고 나머지는 유지한다`() {
+        val meal = givenAnalyzedMeal()
+
+        val response = mealService.updateMealNutrition(userId, mealId, UpdateMealNutritionRequest(carbs = 80))
+
+        verify(exactly = 1) { mealRepository.findMealWithLockById(mealId) }
+        val expected = analyzedNutrition.copy(carbs = 80)
+        assertEquals(expected, meal.toNutrition())
+        assertEquals(expected, response.nutrition)
+    }
+
+    @Test
+    fun `영양 네 항목을 모두 보내면 모두 바꾼다`() {
+        val meal = givenAnalyzedMeal()
+        val request = UpdateMealNutritionRequest(calory = 700, carbs = 90, protein = 40, fat = 20)
+
+        val response = mealService.updateMealNutrition(userId, mealId, request)
+
+        val expected = Nutrition(calory = 700, carbs = 90, protein = 40, fat = 20)
+        assertEquals(expected, meal.toNutrition())
+        assertEquals(expected, response.nutrition)
+    }
+
+    @Test
+    fun `영양을 0으로 보내면 유지하지 않고 0으로 바꾼다`() {
+        val meal = givenAnalyzedMeal()
+
+        mealService.updateMealNutrition(userId, mealId, UpdateMealNutritionRequest(fat = 0))
+
+        assertEquals(analyzedNutrition.copy(fat = 0), meal.toNutrition())
+    }
+
+    @Test
+    fun `바꿀 영양 항목이 없으면 영양을 그대로 두고 식사 정보를 돌려준다`() {
+        val meal = givenAnalyzedMeal()
+
+        val response = mealService.updateMealNutrition(userId, mealId, UpdateMealNutritionRequest())
+
+        assertEquals(analyzedNutrition, meal.toNutrition())
+        assertEquals(analyzedNutrition, response.nutrition)
+    }
+
+    @Test
+    fun `영양을 바꿔도 이름과 아이콘과 고양이 한마디는 바꾸지 않는다`() {
+        val meal = givenAnalyzedMeal()
+
+        val response = mealService.updateMealNutrition(userId, mealId, UpdateMealNutritionRequest(calory = 700))
+
+        assertEquals("김밥", response.name)
+        assertEquals(3L, response.iconId)
+        assertEquals("맛있겠다냥", response.catComment)
+        assertEquals(MealStatus.COMPLETED, meal.status)
+    }
+
+    @Test
+    fun `영양을 바꿀 식사가 없으면 MEAL_NOT_FOUND 예외를 던진다`() {
+        every { mealRepository.findMealWithLockById(mealId) } returns null
+
+        assertBusinessException(MealErrorCode.MEAL_NOT_FOUND) {
+            mealService.updateMealNutrition(userId, mealId, UpdateMealNutritionRequest(calory = 700))
+        }
+    }
+
+    @Test
+    fun `영양을 바꿀 식사가 지워졌으면 MEAL_NOT_FOUND 예외를 던지고 영양을 바꾸지 않는다`() {
+        val meal = givenAnalyzedMeal().apply { updateDeletedAt(now.minusSeconds(5)) }
+
+        assertBusinessException(MealErrorCode.MEAL_NOT_FOUND) {
+            mealService.updateMealNutrition(userId, mealId, UpdateMealNutritionRequest(calory = 700))
+        }
+
+        assertEquals(analyzedNutrition, meal.toNutrition())
+    }
+
+    @Test
+    fun `다른 사용자의 식사 영양을 바꾸면 FORBIDDEN 예외를 던지고 영양을 바꾸지 않는다`() {
+        val otherUserId = 2L
+        val meal = givenAnalyzedMeal(ownerId = otherUserId)
+
+        assertBusinessException(AuthErrorCode.FORBIDDEN) {
+            mealService.updateMealNutrition(userId, mealId, UpdateMealNutritionRequest(calory = 700))
+        }
+
+        assertEquals(analyzedNutrition, meal.toNutrition())
+    }
+
+    @Test
+    fun `COMPLETED가 아닌 식사의 영양을 바꾸면 ANALYSIS_NOT_COMPLETED 예외를 던지고 영양을 채우지 않는다`() {
+        val notCompletedStatuses = MealStatus.entries - MealStatus.COMPLETED
+
+        notCompletedStatuses.forEach { status ->
+            val meal = Meal(status = status, imageKey = imageKey, mealAt = now, userId = userId)
+            every { mealRepository.findMealWithLockById(mealId) } returns meal
+
+            assertBusinessException(MealErrorCode.ANALYSIS_NOT_COMPLETED) {
+                mealService.updateMealNutrition(userId, mealId, UpdateMealNutritionRequest(calory = 700))
+            }
+
+            assertNull(meal.calory)
+            assertEquals(status, meal.status)
+        }
     }
 
     // deleteMeal

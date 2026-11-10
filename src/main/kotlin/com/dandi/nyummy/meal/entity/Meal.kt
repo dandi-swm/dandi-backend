@@ -2,6 +2,7 @@ package com.dandi.nyummy.meal.entity
 
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.AuthErrorCode
+import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.dto.NutritionAnalysisResult
 import com.dandi.nyummy.meal.enum.MealStatus
 import jakarta.persistence.Column
@@ -94,6 +95,13 @@ class Meal(
 
     fun updateName(name: String) {
         this.name = name
+    }
+
+    fun updateNutrition(nutrition: Nutrition) {
+        this.calory = nutrition.calory
+        this.carbs = nutrition.carbs
+        this.protein = nutrition.protein
+        this.fat = nutrition.fat
     }
 
     fun updateDeletedAt(deletedAt: Instant) {

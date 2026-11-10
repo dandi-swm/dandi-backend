@@ -11,6 +11,6 @@ enum class MealErrorCode(override val status: HttpStatus, override val code: Str
     DAILY_COUNT_EXCEEDED(HttpStatus.CONFLICT, "api.meal.dailyCountExceeded", "하루에 등록할 수 있는 식사 개수를 초과했습니다."),
     INVALID_RATING(HttpStatus.BAD_REQUEST, "api.meal.invalidRating", "별점은 0.5 ~ 5.0 사이의 0.5 단위 값이어야 합니다."),
     ANALYSIS_FEEDBACK_ALREADY_EXISTS(HttpStatus.CONFLICT, "api.meal.analysisFeedbackAlreadyExists", "이미 평가한 식사입니다."),
-    ANALYSIS_NOT_COMPLETED(HttpStatus.CONFLICT, "api.meal.analysisNotCompleted", "분석이 완료된 식사만 평가할 수 있습니다."),
+    ANALYSIS_NOT_COMPLETED(HttpStatus.CONFLICT, "api.meal.analysisNotCompleted", "분석이 완료된 식사만 평가·수정할 수 있습니다."),
     TUTORIAL_ALREADY_COMPLETED(HttpStatus.CONFLICT, "api.meal.tutorialAlreadyCompleted", "이미 튜토리얼을 완료했습니다."),
 }

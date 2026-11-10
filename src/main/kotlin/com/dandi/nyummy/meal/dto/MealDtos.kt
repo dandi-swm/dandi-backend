@@ -4,6 +4,8 @@ import com.dandi.nyummy.mail.enum.RewardBoxCategory
 import com.dandi.nyummy.meal.enum.DailyNutritionEvaluation
 import com.dandi.nyummy.meal.enum.MealStatus
 import io.swagger.v3.oas.annotations.media.Schema
+import jakarta.validation.constraints.Max
+import jakarta.validation.constraints.Min
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Size
 import java.time.Instant
@@ -14,6 +16,27 @@ data class CreateMealRequest(
     @field:NotBlank
     val imageKey: String,
 
+)
+
+/**
+ * 바꾸려는 항목만 담는다. 생략하거나 null로 보낸 항목은 유지되고, 0은 0으로 수정한다.
+ */
+data class UpdateMealNutritionRequest(
+    @field:Min(value = 0, message = "칼로리는 0 이상이어야 합니다.")
+    @field:Max(value = 9999, message = "칼로리는 9999 이하여야 합니다.")
+    val calory: Int? = null,
+
+    @field:Min(value = 0, message = "탄수화물은 0 이상이어야 합니다.")
+    @field:Max(value = 999, message = "탄수화물은 999 이하여야 합니다.")
+    val carbs: Int? = null,
+
+    @field:Min(value = 0, message = "단백질은 0 이상이어야 합니다.")
+    @field:Max(value = 999, message = "단백질은 999 이하여야 합니다.")
+    val protein: Int? = null,
+
+    @field:Min(value = 0, message = "지방은 0 이상이어야 합니다.")
+    @field:Max(value = 999, message = "지방은 999 이하여야 합니다.")
+    val fat: Int? = null,
 )
 
 data class MealResponse(
