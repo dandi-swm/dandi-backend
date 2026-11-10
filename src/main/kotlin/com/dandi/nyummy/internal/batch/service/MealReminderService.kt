@@ -4,12 +4,15 @@ import com.dandi.nyummy.config.AppLinkProperties
 import com.dandi.nyummy.infra.push.dto.PushMessage
 import com.dandi.nyummy.infra.push.dto.PushType
 import com.dandi.nyummy.internal.batch.repository.PushDeduplicationRepository
+import com.dandi.nyummy.language.enum.Language
+import com.dandi.nyummy.language.getMessage
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.repository.MealRepository
 import com.dandi.nyummy.notification.NotificationId
 import com.dandi.nyummy.notification.service.NotificationService
 import com.dandi.nyummy.user.repository.ProfileRepository
 import org.slf4j.LoggerFactory
+import org.springframework.context.MessageSource
 import org.springframework.stereotype.Service
 import java.time.Clock
 import java.time.Duration
@@ -28,6 +31,7 @@ class MealReminderService(
     private val notificationService: NotificationService,
     private val clock: Clock,
     private val appLinkProperties: AppLinkProperties,
+    private val messageSource: MessageSource,
 ) {
     companion object {
         // TODO: 사용자별 timezone으로 수정
@@ -45,6 +49,8 @@ class MealReminderService(
      *
      * 사용자가 정한 시각에 보내는 서비스 알림이라 밤에도 보낸다. 문구에 상품이나 혜택을 넣으면 광고성 정보로 볼 수 있어
      * 밤 시간(21시~8시)에는 별도 동의가 필요해지므로 넣지 않는다.
+     *
+     * 문구는 기기 토큰에 저장한 앱 언어로 고른다. 요청 없이 보내는 알림이라 물어볼 헤더가 없다.
      *
      * @param hour 대상 시각(0~23). 생략하면 현재 시각
      */
@@ -77,12 +83,15 @@ class MealReminderService(
                 return@mapNotNull null
             }
 
+            val language = target.language ?: Language.ORIGINAL_LANGUAGE
+            val mealTimeLabel = messageSource.getMessage("mealTime.${mealTime.name}", language)
+
             target.token to PushMessage(
                 userId = target.userId,
                 type = PushType.MEAL_REMINDER,
                 notificationId = notificationId,
-                title = "집사, ${mealTime.label}은 먹었어? \uD83D\uDC3E",
-                body = "${target.catName} 너무 배고프다냥. 사진 한 장만 찍어줘!",
+                title = messageSource.getMessage("push.mealReminder.title", language, mealTimeLabel),
+                body = messageSource.getMessage("push.mealReminder.body", language, target.catName),
                 appLink = appLinkProperties.home,
             )
         }.toMap()

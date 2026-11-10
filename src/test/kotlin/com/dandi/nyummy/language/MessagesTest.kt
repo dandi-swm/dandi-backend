@@ -1,7 +1,6 @@
 package com.dandi.nyummy.language
 
 import com.dandi.nyummy.language.enum.Language
-import org.springframework.context.support.ResourceBundleMessageSource
 import java.io.InputStreamReader
 import java.text.MessageFormat
 import java.util.Properties
@@ -84,11 +83,7 @@ class MessagesTest {
 
     @Test
     fun `언어마다 해당 파일의 문구를 꺼낸다`() {
-        val messageSource = ResourceBundleMessageSource().apply {
-            setBasename("messages")
-            setDefaultEncoding(Charsets.UTF_8.name())
-            setFallbackToSystemLocale(false)
-        }
+        val messageSource = createTestMessageSource()
 
         Language.entries.forEach { language ->
             val expected = MessageFormat(

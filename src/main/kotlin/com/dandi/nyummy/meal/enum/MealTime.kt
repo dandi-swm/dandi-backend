@@ -1,7 +1,8 @@
 package com.dandi.nyummy.meal.enum
 
-enum class MealTime(val label: String) {
-    BREAKFAST("아침"),
-    LUNCH("점심"),
-    DINNER("저녁"),
+/** 끼니. 화면에 쓰는 라벨은 서버 고정 문구 파일의 `mealTime.<이름>`에 있다. */
+enum class MealTime {
+    BREAKFAST,
+    LUNCH,
+    DINNER,
 }

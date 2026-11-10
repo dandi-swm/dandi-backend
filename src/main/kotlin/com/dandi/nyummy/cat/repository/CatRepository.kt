@@ -14,7 +14,7 @@ interface CatRepository : JpaRepository<Cat, Long> {
 
     @Query(
         """
-            select new com.dandi.nyummy.internal.batch.dto.RetentionTargetResult(c.userId, c.name, c.lastMealAt, d.token)
+            select new com.dandi.nyummy.internal.batch.dto.RetentionTargetResult(c.userId, c.name, c.lastMealAt, d.token, d.language)
             from Cat as c
                 join Profile as p on p.userId = c.userId
                 join DeviceToken as d on d.userId = c.userId
