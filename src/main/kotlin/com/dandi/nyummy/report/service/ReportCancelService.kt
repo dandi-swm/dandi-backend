@@ -79,7 +79,7 @@ class ReportCancelService(
         }
 
         val refundedCoinQuantity = reportPurchaseRefundService.createReportPurchaseRefund(
-            userId,
+            coin,
             reportId,
             ReportPurchaseRefundCategory.CANCELED,
         )

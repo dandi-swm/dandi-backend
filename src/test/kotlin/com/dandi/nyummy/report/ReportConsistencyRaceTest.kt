@@ -79,10 +79,9 @@ class ReportConsistencyRaceTest {
             .withPassword("test")
 
         private const val INITIAL_BALANCE = 10_000
-        private const val LIST_PRICE = 300
+        private const val LIST_PRICE = 100
         private const val PAID_ROUND_RATE = 80
         private const val MAX_JITTER_MILLIS = 20L
-
 
         private val SUNDAY: LocalDate = LocalDate.parse("2026-10-25")
 
@@ -322,7 +321,9 @@ class ReportConsistencyRaceTest {
         jdbcTemplate.execute(
             "ALTER TABLE report_purchase_refunds ADD INDEX idx_report_purchase_refunds_report_purchase_id (report_purchase_id)",
         )
-        jdbcTemplate.execute("ALTER TABLE report_purchase_refunds DROP INDEX uk_report_purchase_refunds_report_purchase_id")
+        jdbcTemplate.execute(
+            "ALTER TABLE report_purchase_refunds DROP INDEX uk_report_purchase_refunds_report_purchase_id",
+        )
     }
 
     private fun status(reportId: Long): String =

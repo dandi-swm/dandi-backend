@@ -78,7 +78,7 @@ class ReportCancelServiceTest {
     private fun givenRefund(quantity: Int) {
         every {
             reportPurchaseRefundService.createReportPurchaseRefund(
-                userId,
+                coin,
                 reportId,
                 ReportPurchaseRefundCategory.CANCELED,
             )
@@ -114,7 +114,7 @@ class ReportCancelServiceTest {
                 now,
             )
             reportPurchaseRefundService.createReportPurchaseRefund(
-                userId,
+                coin,
                 reportId,
                 ReportPurchaseRefundCategory.CANCELED,
             )
