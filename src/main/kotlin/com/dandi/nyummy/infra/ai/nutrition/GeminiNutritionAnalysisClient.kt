@@ -40,15 +40,14 @@ class GeminiNutritionAnalysisClient(
 
     companion object {
 
-        private val RECOMMENDATION_CUISINES = listOf("한식", "중식", "일식", "양식", "분식")
-        private val RECOMMENDATION_DISH_FORMS = listOf("밥·덮밥", "면", "국·찌개·탕", "구이·조림 정식", "볶음")
+        // 분식은 떡볶이·라면·튀김 위주라 "더 건강한 메뉴" 기준과 맞지 않아 추천 후보에서 뺐다.
+        private val RECOMMENDATION_CUISINES = listOf("한식", "중식", "일식", "양식")
 
         // 한국어가 아닌 언어는 아래 한국어 지시를 그대로 두고, 출력 언어 지시를 맨 끝에 덧붙인다.
-        // 한국어 요청은 덧붙이는 것이 없어 지금까지와 같은 프롬프트로 분석한다.
+        // 한국어 요청은 덧붙이는 것이 없다.
         // 메뉴 추천 후보는 그 언어를 쓰는 사람이 평소에 먹는 음식으로 바꾼다. 영어는 어느 나라 사용자인지 몰라 넓게 둔다.
         private val JA_OUTPUT_LANGUAGE_PROMPT = OutputLanguagePrompt(
-            cuisines = listOf("和食", "中華", "洋食", "韓国料理", "エスニック"),
-            dishForms = listOf("ご飯もの・丼", "麺類", "汁物・鍋", "定食", "炒め物"),
+            cuisines = listOf("和食", "中華", "洋食", "韓国料理", "定食"),
             instruction = """
         [출력 언어]
         rejectReason, name, catComment는 모두 일본어로 써. 한국어를 섞지 마.
@@ -58,7 +57,6 @@ class GeminiNutritionAnalysisClient(
         )
         private val EN_OUTPUT_LANGUAGE_PROMPT = OutputLanguagePrompt(
             cuisines = listOf("Korean", "Southeast Asian", "East Asian", "Western", "Mediterranean"),
-            dishForms = listOf("rice bowl", "noodles", "soup or stew", "grilled plate", "stir-fry"),
             // 영어는 같은 내용이 한국어보다 길어 글자 수를 늘린다. name은 100자, cat_comment는 255자 컬럼이라 여유를 둔다.
             instruction = """
         [출력 언어]
@@ -112,9 +110,11 @@ class GeminiNutritionAnalysisClient(
         catComment에는 고양이 말투로 100자 내외의 피드백을 써.
         1. 이 식사에서 많은 영양소와 부족한 영양소를 한 문장으로 짚어.
         2. 부족한 영양소를 채울 다음 식사 메뉴를 하나 추천해.
-           - 집이나 식당에서 평소에 먹는 일반 메뉴 중에서 골라.
-           - 이번 추천은 {cuisine} 메뉴 중에서, 가능하면 {dishForm} 형태로 골라.
-           - 닭가슴살·샐러드 같은 다이어트 식단은 이 식사에 그 영양소가 정말 부족할 때만 추천해.
+           - 배달 앱이나 식당 메뉴판에서 흔히 보는, 누구나 아는 메뉴 이름으로 써. 재료 이름이 아니라 메뉴 이름이어야 해.
+           - 쉽게 사 먹거나 집에서 쉽게 만들 수 있는 메뉴로 골라.
+           - 같은 조건이면 더 건강한 메뉴를 골라. 채소와 단백질이 함께 들어간 식사를 우선하고, 튀김·가공육·인스턴트 위주의 메뉴는 피해.
+           - 그렇다고 닭가슴살·샐러드만 먹는 다이어트 식단은 이 식사에 그 영양소가 정말 부족할 때만 추천해.
+           - 이번 추천은 {cuisine} 메뉴 중에서 골라.
     """
 
         private val RESPONSE_SCHEMA = mapOf(
@@ -225,14 +225,15 @@ class GeminiNutritionAnalysisClient(
     }
 
     /**
-     * 분석 프롬프트. 한국어는 지금까지와 같고, 다른 언어는 메뉴 추천 후보를 바꾸고 출력 언어 지시를 맨 끝에 덧붙인다.
-     * 다음 식사 추천이 한 메뉴로 몰리지 않게 음식 종류와 메뉴 형태를 요청마다 무작위로 정한다.
+     * 분석 프롬프트. 다른 언어는 메뉴 추천 후보를 바꾸고 출력 언어 지시를 맨 끝에 덧붙인다.
+     *
+     * 다음 식사 추천이 한 메뉴로 몰리지 않게 음식 종류를 요청마다 무작위로 정한다. 예전에는 메뉴 형태(면·국·볶음 등)도
+     * 따로 뽑았는데, "양식 + 국·찌개·탕"처럼 어색한 조합을 맞추려다 낯선 메뉴를 추천해 뺐다.
      */
     private fun createPrompt(language: Language, iconsJson: String): String {
         val outputLanguagePrompt = pickOutputLanguagePrompt(language)
         val promptWithRecommendation = PROMPT
             .replace("{cuisine}", outputLanguagePrompt.cuisines.random())
-            .replace("{dishForm}", outputLanguagePrompt.dishForms.random())
         val prompt = "$promptWithRecommendation 음식 아이콘 목록은 다음과 같아: $iconsJson 만약 뚜렷하게 맞는 것이 없으면 5(밥)를 골라줘."
 
         return outputLanguagePrompt.instruction?.let { "$prompt\n$it" } ?: prompt
@@ -240,7 +241,7 @@ class GeminiNutritionAnalysisClient(
 
     // when으로 고르면 언어를 추가할 때 여기서 컴파일이 깨져 빠뜨리지 않는다
     private fun pickOutputLanguagePrompt(language: Language): OutputLanguagePrompt = when (language) {
-        Language.KO -> OutputLanguagePrompt(RECOMMENDATION_CUISINES, RECOMMENDATION_DISH_FORMS, instruction = null)
+        Language.KO -> OutputLanguagePrompt(RECOMMENDATION_CUISINES, instruction = null)
         Language.JA -> JA_OUTPUT_LANGUAGE_PROMPT
         Language.EN -> EN_OUTPUT_LANGUAGE_PROMPT
     }
@@ -332,10 +333,7 @@ private data class GeminiNutritionResponse(
 /**
  * 언어마다 다른 분석 프롬프트 재료.
  *
- * @property instruction 프롬프트 맨 끝에 덧붙일 출력 언어 지시. 한국어는 null이라 기존 프롬프트 그대로다
+ * @property cuisines 다음 식사 추천의 음식 종류 후보. 요청마다 하나를 무작위로 고른다
+ * @property instruction 프롬프트 맨 끝에 덧붙일 출력 언어 지시. 한국어는 덧붙이지 않아 null이다
  */
-private data class OutputLanguagePrompt(
-    val cuisines: List<String>,
-    val dishForms: List<String>,
-    val instruction: String?,
-)
+private data class OutputLanguagePrompt(val cuisines: List<String>, val instruction: String?)
