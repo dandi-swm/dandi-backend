@@ -2,6 +2,7 @@ package com.dandi.nyummy.worker.service
 
 import com.dandi.nyummy.coin.entity.Coin
 import com.dandi.nyummy.coin.service.CoinService
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.report.entity.Report
 import com.dandi.nyummy.report.entity.ReportGenerationJob
 import com.dandi.nyummy.report.enum.ReportPurchaseRefundCategory
@@ -58,7 +59,7 @@ class ReportGenerationJobTransactionServiceTest {
         every { coinService.lockCoin(userId) } returns coin
     }
 
-    private fun job(id: Long, reportId: Long, leaseCount: Int) = ReportGenerationJob(reportId).also {
+    private fun job(id: Long, reportId: Long, leaseCount: Int) = ReportGenerationJob(reportId, language = null).also {
         ReflectionTestUtils.setField(it, "id", id)
         ReflectionTestUtils.setField(it, "leaseCount", leaseCount)
         it.createdAt = now.minusSeconds(30)
@@ -77,6 +78,7 @@ class ReportGenerationJobTransactionServiceTest {
         leaseCount = leaseCount,
         canRetry = leaseCount < 2,
         createdAt = now.minusSeconds(30),
+        language = Language.KO,
     )
 
     // leaseReportGenerationJobs

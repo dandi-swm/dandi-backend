@@ -7,6 +7,9 @@ import com.dandi.nyummy.infra.ai.report.ReportGenerationFailureException
 import com.dandi.nyummy.infra.push.dto.PushMessage
 import com.dandi.nyummy.infra.push.dto.PushResult
 import com.dandi.nyummy.infra.push.dto.PushType
+import com.dandi.nyummy.language.createTestMessageSource
+import com.dandi.nyummy.language.enum.Language
+import com.dandi.nyummy.language.getMessage
 import com.dandi.nyummy.meal.repository.MealRepository
 import com.dandi.nyummy.notification.service.NotificationService
 import com.dandi.nyummy.report.calculator.NUTRITION_BALANCE_VIEW_TYPE
@@ -48,6 +51,8 @@ class ReportGenerationServiceTest {
     private val notificationService = mockk<NotificationService>()
     private val objectMapper = jacksonObjectMapper()
 
+    private val messageSource = createTestMessageSource()
+
     private val service = ReportGenerationService(
         reportGenerationClient = reportGenerationClient,
         reportGenerationJobTransactionService = transactionService,
@@ -66,6 +71,7 @@ class ReportGenerationServiceTest {
         objectMapper = objectMapper,
         meterRegistry = SimpleMeterRegistry(),
         clock = Clock.fixed(now, ZoneOffset.UTC),
+        messageSource = messageSource,
     )
 
     private val pushMessage = slot<PushMessage>()
@@ -86,6 +92,7 @@ class ReportGenerationServiceTest {
         leaseCount = 1,
         canRetry = canRetry,
         createdAt = now.minusSeconds(60),
+        language = Language.KO,
     )
 
     private fun pushResult(status: ReportStatus, refundedCoinQuantity: Int = 0) =
@@ -114,6 +121,20 @@ class ReportGenerationServiceTest {
         assertEquals(PushType.REPORT_COMPLETED, pushMessage.captured.type)
         assertEquals("https://link.test/reports/10", pushMessage.captured.appLink)
         assertEquals("11/1~11/7 주간 영양 리포트가 도착했어요", pushMessage.captured.body)
+    }
+
+    @Test
+    fun `실패 알림은 리포트를 구매한 요청의 언어로 보낸다`() {
+        givenGenerationFails(ReportGenerationFailureCategory.UNAVAILABLE)
+        every { transactionService.failReportGeneration(any()) } returns pushResult(ReportStatus.FAILED, 1200)
+
+        service.generateReport(job(canRetry = false).copy(language = Language.EN))
+
+        assertEquals(messageSource.getMessage("push.report.refunded.title", Language.EN), pushMessage.captured.title)
+        assertEquals(
+            messageSource.getMessage("push.report.refunded.body", Language.EN, "11/1~11/7", "1200"),
+            pushMessage.captured.body,
+        )
     }
 
     @Test

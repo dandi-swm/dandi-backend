@@ -1,6 +1,7 @@
 package com.dandi.nyummy.worker
 
 import com.dandi.nyummy.infra.ai.nutrition.AnalysisFailureCategory
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.worker.config.WorkerJobProperties
 import com.dandi.nyummy.worker.config.WorkerProperties
 import com.dandi.nyummy.worker.dto.MealAnalysisJobResult
@@ -60,6 +61,7 @@ class MealAnalysisJobPollerTest {
         imageKey = "meals/1/meal-$jobId.jpg",
         canRetry = true,
         createdAt = Instant.parse("2026-11-02T03:00:00Z"),
+        language = Language.KO,
     )
 
     private fun givenActiveCount(activeCount: Int) {

@@ -5,6 +5,7 @@ import com.dandi.nyummy.coin.entity.Coin
 import com.dandi.nyummy.coin.repository.CoinRepository
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.ReportErrorCode
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.repository.MealRepository
@@ -149,6 +150,7 @@ class ReportConsistencyRaceTest {
             UUID.randomUUID().toString(),
             CreateReportPurchaseRequest(SUNDAY, if (isPaid) LIST_PRICE else 0),
             null,
+            Language.KO,
         ).reportId
 
         val outcomes = mutableListOf<String>()

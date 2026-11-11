@@ -6,6 +6,7 @@ import com.dandi.nyummy.coin.service.CoinService
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.ErrorCode
 import com.dandi.nyummy.exception.errorcode.ReportErrorCode
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.repository.MealRepository
 import com.dandi.nyummy.report.config.ReportProperties
@@ -112,6 +113,7 @@ class ReportPurchaseTransactionServiceTest {
         idempotencyKey = idempotencyKey,
         request = CreateReportPurchaseRequest(startDate = startDate, purchasePrice = purchasePrice),
         appVersion = "1.0.0",
+        language = Language.KO,
     )
 
     private fun assertNothingSaved() {
@@ -162,6 +164,7 @@ class ReportPurchaseTransactionServiceTest {
         assertEquals(0, savedPurchase.captured.purchasePrice)
         assertEquals(idempotencyKey, savedPurchase.captured.idempotencyKey)
         assertEquals(reportId, savedJob.captured.reportId)
+        assertEquals(Language.KO, savedJob.captured.language)
         verify {
             reportPurchaseAttemptService.createReportPurchaseAttempt(
                 userId,

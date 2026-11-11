@@ -5,6 +5,7 @@ import com.dandi.nyummy.coin.enum.CoinHistoryCategory
 import com.dandi.nyummy.coin.service.CoinService
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.ReportErrorCode
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.repository.MealRepository
 import com.dandi.nyummy.report.calculator.calculateReportPurchasePrice
@@ -67,6 +68,7 @@ class ReportPurchaseTransactionService(
         idempotencyKey: String,
         request: CreateReportPurchaseRequest,
         appVersion: String?,
+        language: Language,
     ): ReportPurchaseResponse {
         val coin = coinService.lockCoin(userId)
 
@@ -110,7 +112,7 @@ class ReportPurchaseTransactionService(
                 idempotencyKey = idempotencyKey,
             ),
         )
-        reportGenerationJobRepository.save(ReportGenerationJob(report.id))
+        reportGenerationJobRepository.save(ReportGenerationJob(report.id, language))
 
         // 0코인 구매(첫 무료)는 잔액 변동이 없어 내역을 남기지 않는다
         if (purchasePrice > 0) {

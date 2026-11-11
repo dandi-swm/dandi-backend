@@ -2,6 +2,7 @@ package com.dandi.nyummy.worker.service
 
 import com.dandi.nyummy.cat.repository.CatRepository
 import com.dandi.nyummy.cat.service.CatService
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.dto.NutritionAnalysisResult
 import com.dandi.nyummy.meal.entity.Meal
@@ -67,12 +68,14 @@ class MealAnalysisJobTransactionServiceTest {
         every { mealRepository.updateMealStatuses(any(), any(), any()) } answers { firstArg<Collection<Long>>().size }
     }
 
-    private fun createJob(id: Long, mealId: Long, leaseCount: Int = 0): MealAnalysisJob = mockk {
-        every { this@mockk.id } returns id
-        every { this@mockk.mealId } returns mealId
-        every { this@mockk.leaseCount } returns leaseCount
-        every { this@mockk.createdAt } returns jobCreatedAt
-    }
+    private fun createJob(id: Long, mealId: Long, leaseCount: Int = 0, language: Language? = null): MealAnalysisJob =
+        mockk {
+            every { this@mockk.id } returns id
+            every { this@mockk.mealId } returns mealId
+            every { this@mockk.leaseCount } returns leaseCount
+            every { this@mockk.createdAt } returns jobCreatedAt
+            every { this@mockk.language } returns language
+        }
 
     private fun createMeal(id: Long, deletedAt: Instant? = null): Meal = mockk {
         every { this@mockk.id } returns id
@@ -130,6 +133,19 @@ class MealAnalysisJobTransactionServiceTest {
     }
 
     @Test
+    fun `작업의 언어를 결과에 담고 언어를 몰랐던 작업은 원본 언어로 본다`() {
+        givenJobs(
+            createJob(id = 1L, mealId = 10L, language = Language.JA),
+            createJob(id = 2L, mealId = 20L, language = null),
+        )
+        givenMeals(createMeal(id = 10L), createMeal(id = 20L))
+
+        val results = mealAnalysisJobTransactionService.leaseMealAnalysisJobs(limit)
+
+        assertEquals(listOf(Language.JA, Language.ORIGINAL_LANGUAGE), results.map { it.language })
+    }
+
+    @Test
     fun `돌려주는 번호는 읽은 lease_count에 1을 더한 값이고 식사의 이미지 키를 담는다`() {
         givenJobs(createJob(id = 1L, mealId = 10L, leaseCount = 0), createJob(id = 2L, mealId = 20L, leaseCount = 1))
         // 조회 순서가 작업 순서와 달라도 식사 id로 짝짓는지 본다.
@@ -146,6 +162,7 @@ class MealAnalysisJobTransactionServiceTest {
                     imageKey = "meals/1/2026/11/02/meal-10.jpg",
                     canRetry = true,
                     createdAt = jobCreatedAt,
+                    language = Language.KO,
                 ),
                 MealAnalysisJobResult(
                     jobId = 2L,
@@ -154,6 +171,7 @@ class MealAnalysisJobTransactionServiceTest {
                     imageKey = "meals/1/2026/11/02/meal-20.jpg",
                     canRetry = false,
                     createdAt = jobCreatedAt,
+                    language = Language.KO,
                 ),
             ),
             results,
@@ -212,6 +230,7 @@ class MealAnalysisJobTransactionServiceTest {
             imageKey = "meals/1/meal-10.jpg",
             canRetry = false,
             createdAt = jobCreatedAt,
+            language = Language.KO,
         )
     private val analysisResult = NutritionAnalysisResult(
         name = "김치찌개",

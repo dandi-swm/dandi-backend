@@ -1,6 +1,7 @@
 package com.dandi.nyummy.worker.service
 
 import com.dandi.nyummy.coin.service.CoinService
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.report.entity.ReportGenerationJob
 import com.dandi.nyummy.report.enum.ReportPurchaseRefundCategory
 import com.dandi.nyummy.report.enum.ReportStatus
@@ -82,6 +83,7 @@ class ReportGenerationJobTransactionService(
                 leaseCount = leaseCount,
                 canRetry = leaseCount < maxLeaseCount,
                 createdAt = job.createdAt,
+                language = job.language ?: Language.ORIGINAL_LANGUAGE,
             )
         } ?: run {
             logger.error("리포트 생성 작업의 리포트가 없습니다: jobId={}, reportId={}", job.id, job.reportId)
