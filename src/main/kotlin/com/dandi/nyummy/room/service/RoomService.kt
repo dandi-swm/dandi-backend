@@ -5,6 +5,8 @@ import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.AuthErrorCode
 import com.dandi.nyummy.exception.errorcode.CommonErrorCode
 import com.dandi.nyummy.exception.errorcode.RoomErrorCode
+import com.dandi.nyummy.language.enum.Language
+import com.dandi.nyummy.language.getMessage
 import com.dandi.nyummy.room.config.RoomProperties
 import com.dandi.nyummy.room.dto.EquippedRoomItemResponse
 import com.dandi.nyummy.room.dto.GrantedRoomItem
@@ -18,6 +20,7 @@ import com.dandi.nyummy.room.mapper.toEquippedRoomItemResponse
 import com.dandi.nyummy.room.mapper.toOwnedRoomItem
 import com.dandi.nyummy.room.mapper.toOwnedRoomItemResponse
 import com.dandi.nyummy.room.repository.OwnedRoomItemRepository
+import org.springframework.context.MessageSource
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
@@ -31,6 +34,7 @@ class RoomService(
     private val ownedRoomItemRepository: OwnedRoomItemRepository,
     private val roomProperties: RoomProperties,
     private val clock: Clock,
+    private val messageSource: MessageSource,
 ) {
 
     /**
@@ -64,14 +68,16 @@ class RoomService(
      *
      * 카테고리는 보유 아이템이 없어도 enum 순서대로 모두 내려간다. 카테고리마다 [getOwnedRoomItems]와 같은 쿼리를
      * 따로 날린다. 앱이 카테고리를 오가며 다음 묶음을 받을 때도 같은 쿼리를 쓰므로, 전체를 한 번에 읽어 나누지 않는다.
+     *
+     * @param language 요청의 `X-Language`로 정한 앱 언어. 카테고리 이름을 이 언어로 꺼낸다
      */
     @Transactional(readOnly = true)
-    fun getRoom(userId: Long, size: Int): RoomResponse = RoomResponse(
+    fun getRoom(userId: Long, size: Int, language: Language): RoomResponse = RoomResponse(
         categories = RoomItemCategory.entries.map { category ->
             val ownedRoomItems = getOwnedRoomItems(userId, category, null, size)
             RoomItemCategoryResponse(
                 category = category,
-                categoryName = category.description,
+                categoryName = messageSource.getMessage("roomItemCategory.${category.name}", language),
                 ownedRoomItems = ownedRoomItems.ownedRoomItems,
                 nextCursor = ownedRoomItems.nextCursor,
                 hasNext = ownedRoomItems.hasNext,

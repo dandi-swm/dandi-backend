@@ -2,6 +2,8 @@ package com.dandi.nyummy.shop.controller
 
 import com.dandi.nyummy.config.openapi.ApiErrorCodes
 import com.dandi.nyummy.exception.errorcode.ShopErrorCode
+import com.dandi.nyummy.language.CurrentLanguage
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.security.AuthUser
 import com.dandi.nyummy.security.CurrentUser
 import com.dandi.nyummy.shop.dto.PromotionProductsResponse
@@ -46,10 +48,11 @@ class ShopController(private val shopService: ShopService) {
     @GetMapping("/pages/recommend")
     fun getRecommendPage(
         @CurrentUser user: AuthUser,
+        @CurrentLanguage language: Language,
         @Parameter(description = "앱이 Remote Config에서 받은 추천 탭 배치 그룹 (A 또는 B)")
         @RequestHeader(SHOP_LAYOUT_VARIANT, required = false)
         shopLayoutVariant: String?,
-    ): ShopPageResponse = shopService.getRecommendPage(user.userId, shopLayoutVariant)
+    ): ShopPageResponse = shopService.getRecommendPage(user.userId, shopLayoutVariant, language)
 
     @Operation(
         summary = "상품 목록 조회",
@@ -63,6 +66,7 @@ class ShopController(private val shopService: ShopService) {
     @GetMapping("/products")
     fun getProducts(
         @CurrentUser user: AuthUser,
+        @CurrentLanguage language: Language,
         @Parameter(description = "상점 탭") @RequestParam("tab") tab: ShopTab,
         @Parameter(description = "분류 칩. 생략하면 탭 전체") @RequestParam(required = false) category: ShopCategory?,
         @Parameter(description = "정렬 기준 (기본 NEW)") @RequestParam(defaultValue = "NEW") sort: ProductSort,
@@ -72,7 +76,7 @@ class ShopController(private val shopService: ShopService) {
         @Min(1)
         @Max(50)
         size: Int,
-    ): ShopItemsResponse = shopService.getProducts(user.userId, tab, category, sort, cursor, size)
+    ): ShopItemsResponse = shopService.getProducts(user.userId, tab, category, sort, cursor, size, language)
 
     @Operation(
         summary = "프로모션 상품 목록 조회",
@@ -85,6 +89,7 @@ class ShopController(private val shopService: ShopService) {
     @GetMapping("/promotions/{promotionId}/products")
     fun getPromotionProducts(
         @CurrentUser user: AuthUser,
+        @CurrentLanguage language: Language,
         @Parameter(description = "프로모션 ID (배너 링크 /shop/promotions/{promotionId}의 값)")
         @PathVariable("promotionId")
         promotionId: Long,
@@ -94,7 +99,7 @@ class ShopController(private val shopService: ShopService) {
         @Min(1)
         @Max(50)
         size: Int,
-    ): PromotionProductsResponse = shopService.getPromotionProducts(user.userId, promotionId, cursor, size)
+    ): PromotionProductsResponse = shopService.getPromotionProducts(user.userId, promotionId, cursor, size, language)
 
     @Operation(
         summary = "상단 바 조회",

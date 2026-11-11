@@ -3,6 +3,8 @@ package com.dandi.nyummy.shop.controller
 import com.dandi.nyummy.config.openapi.ApiErrorCodes
 import com.dandi.nyummy.exception.errorcode.CommonErrorCode
 import com.dandi.nyummy.exception.errorcode.ShopErrorCode
+import com.dandi.nyummy.language.CurrentLanguage
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.security.AuthUser
 import com.dandi.nyummy.security.CurrentUser
 import com.dandi.nyummy.shop.dto.CartResponse
@@ -39,7 +41,8 @@ class CartController(private val cartService: CartService) {
             "가격은 저장하지 않고 조회할 때마다 그 시점의 결제가로 계산한다.",
     )
     @GetMapping
-    fun getCart(@CurrentUser user: AuthUser): CartResponse = cartService.getCart(user.userId)
+    fun getCart(@CurrentUser user: AuthUser, @CurrentLanguage language: Language): CartResponse =
+        cartService.getCart(user.userId, language)
 
     @Operation(
         summary = "장바구니 담기",
@@ -83,9 +86,10 @@ class CartController(private val cartService: CartService) {
     @PutMapping("/items/{productId}")
     fun updateCartItemQuantity(
         @CurrentUser user: AuthUser,
+        @CurrentLanguage language: Language,
         @Parameter(description = "상품 ID") @PathVariable("productId") productId: Long,
         @Valid @RequestBody request: UpdateCartItemQuantityRequest,
-    ): CartResponse = cartService.updateCartItemQuantity(user.userId, productId, request)
+    ): CartResponse = cartService.updateCartItemQuantity(user.userId, productId, request, language)
 
     @Operation(
         summary = "장바구니 선택 변경",
@@ -96,8 +100,9 @@ class CartController(private val cartService: CartService) {
     @PutMapping("/selection")
     fun updateCartSelection(
         @CurrentUser user: AuthUser,
+        @CurrentLanguage language: Language,
         @Valid @RequestBody request: UpdateCartSelectionRequest,
-    ): CartResponse = cartService.updateCartSelection(user.userId, request)
+    ): CartResponse = cartService.updateCartSelection(user.userId, request, language)
 
     @Operation(
         summary = "장바구니 빼기",
@@ -109,9 +114,10 @@ class CartController(private val cartService: CartService) {
     @DeleteMapping("/items")
     fun deleteCartItems(
         @CurrentUser user: AuthUser,
+        @CurrentLanguage language: Language,
         @Parameter(description = "뺄 상품 ID 목록 (1~30개)")
         @RequestParam("productIds")
         @Size(min = 1, max = 30)
         productIds: List<Long>,
-    ): CartResponse = cartService.deleteCartItems(user.userId, productIds)
+    ): CartResponse = cartService.deleteCartItems(user.userId, productIds, language)
 }

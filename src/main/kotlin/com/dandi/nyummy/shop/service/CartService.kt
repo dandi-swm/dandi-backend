@@ -3,6 +3,8 @@ package com.dandi.nyummy.shop.service
 import com.dandi.nyummy.coin.service.CoinService
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.ShopErrorCode
+import com.dandi.nyummy.language.enum.Language
+import com.dandi.nyummy.language.getMessage
 import com.dandi.nyummy.room.enum.RoomItemCategory
 import com.dandi.nyummy.shop.calculator.calculateMaxDiscountRates
 import com.dandi.nyummy.shop.calculator.calculatePurchasePrice
@@ -20,6 +22,7 @@ import com.dandi.nyummy.shop.entity.Product
 import com.dandi.nyummy.shop.repository.CartItemRepository
 import com.dandi.nyummy.shop.repository.ProductRepository
 import com.dandi.nyummy.shop.repository.PromotionProductRepository
+import org.springframework.context.MessageSource
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -45,6 +48,7 @@ class CartService(
     private val cartItemRepository: CartItemRepository,
     private val productRepository: ProductRepository,
     private val promotionProductRepository: PromotionProductRepository,
+    private val messageSource: MessageSource,
 ) {
 
     companion object {
@@ -52,11 +56,18 @@ class CartService(
         private const val MAX_BACKGROUND_QUANTITY = 1
     }
 
+    /**
+     * @param language 요청의 `X-Language`로 정한 앱 언어. 상품 카드의 분류 이름·태그와 구매 불가 사유를 이 언어로 꺼낸다
+     */
     @Transactional(readOnly = true)
-    fun getCart(userId: Long): CartResponse {
+    fun getCart(userId: Long, language: Language): CartResponse {
         val cartItems = cartItemRepository.findByUserIdOrderByCreatedAtDescIdDesc(userId)
 
-        return createCart(getPricedCartItems(userId, cartItems, clock.instant()), coinService.getBalance(userId))
+        return createCart(
+            getPricedCartItems(userId, cartItems, clock.instant(), language),
+            coinService.getBalance(userId),
+            language,
+        )
     }
 
     /**
@@ -118,10 +129,15 @@ class CartService(
      * @throws BusinessException [ShopErrorCode.CART_FULL] 장바구니 전체 상한을 넘는 경우
      */
     @Transactional
-    fun updateCartItemQuantity(userId: Long, productId: Long, request: UpdateCartItemQuantityRequest): CartResponse {
+    fun updateCartItemQuantity(
+        userId: Long,
+        productId: Long,
+        request: UpdateCartItemQuantityRequest,
+        language: Language,
+    ): CartResponse {
         val coin = coinService.lockCoin(userId)
         val cartItems = cartItemRepository.findByUserIdOrderByCreatedAtDescIdDesc(userId)
-        val pricedCartItems = getPricedCartItems(userId, cartItems, clock.instant())
+        val pricedCartItems = getPricedCartItems(userId, cartItems, clock.instant(), language)
         val target = pricedCartItems.find { it.cartItem.productId == productId }
             ?: throw BusinessException(ShopErrorCode.CART_ITEM_NOT_FOUND)
         // 구매할 수 없는 항목은 수량을 바꿀 수 없고, 그 이유를 그대로 돌려준다
@@ -135,37 +151,37 @@ class CartService(
 
         target.cartItem.updateQuantity(request.quantity)
 
-        return createCart(pricedCartItems, coin.balance)
+        return createCart(pricedCartItems, coin.balance, language)
     }
 
     /**
      * 선택된 상품 목록을 요청 목록으로 맞추고 장바구니 전체를 반환한다. 장바구니에 없는 id는 무시하고, 구매 불가 항목은 선택을 푼다.
      */
     @Transactional
-    fun updateCartSelection(userId: Long, request: UpdateCartSelectionRequest): CartResponse {
+    fun updateCartSelection(userId: Long, request: UpdateCartSelectionRequest, language: Language): CartResponse {
         val coin = coinService.lockCoin(userId)
         val cartItems = cartItemRepository.findByUserIdOrderByCreatedAtDescIdDesc(userId)
-        val pricedCartItems = getPricedCartItems(userId, cartItems, clock.instant())
+        val pricedCartItems = getPricedCartItems(userId, cartItems, clock.instant(), language)
 
         pricedCartItems.forEach {
             it.cartItem.updateIsSelected(it.canPurchase && it.cartItem.productId in request.productIds)
         }
 
-        return createCart(pricedCartItems, coin.balance)
+        return createCart(pricedCartItems, coin.balance, language)
     }
 
     /**
      * 상품을 장바구니에서 빼고 장바구니 전체를 반환한다. 장바구니에 없는 id는 무시한다.
      */
     @Transactional
-    fun deleteCartItems(userId: Long, productIds: List<Long>): CartResponse {
+    fun deleteCartItems(userId: Long, productIds: List<Long>, language: Language): CartResponse {
         val coin = coinService.lockCoin(userId)
         val (deletedCartItems, cartItems) = cartItemRepository.findByUserIdOrderByCreatedAtDescIdDesc(userId)
             .partition { it.productId in productIds }
 
         cartItemRepository.deleteAll(deletedCartItems)
 
-        return createCart(getPricedCartItems(userId, cartItems, clock.instant()), coin.balance)
+        return createCart(getPricedCartItems(userId, cartItems, clock.instant(), language), coin.balance, language)
     }
 
     private fun validateQuantity(product: Product, remainingPurchaseLimit: Int?, quantity: Int, otherQuantity: Int) {
@@ -184,16 +200,24 @@ class CartService(
     }
 
     // 장바구니 화면에 보일 구매 불가 문구
-    private fun createUnavailableReason(errorCode: ShopErrorCode?): String? = when (errorCode) {
-        null -> null
-        ShopErrorCode.PRODUCT_NOT_FOR_SALE -> "판매가 끝났어요"
-        ShopErrorCode.ALREADY_OWNED -> "이미 가진 방 배경이에요"
-        ShopErrorCode.PURCHASE_LIMIT_EXCEEDED -> "구매 한도를 넘었어요"
-        else -> error("장바구니 구매 불가 사유가 아닌 에러 코드입니다: $errorCode")
+    private fun createUnavailableReason(errorCode: ShopErrorCode?, language: Language): String? {
+        val messageKey = when (errorCode) {
+            null -> return null
+            ShopErrorCode.PRODUCT_NOT_FOR_SALE -> "cart.unavailableReason.productNotForSale"
+            ShopErrorCode.ALREADY_OWNED -> "cart.unavailableReason.alreadyOwned"
+            ShopErrorCode.PURCHASE_LIMIT_EXCEEDED -> "cart.unavailableReason.purchaseLimitExceeded"
+            else -> error("장바구니 구매 불가 사유가 아닌 에러 코드입니다: $errorCode")
+        }
+        return messageSource.getMessage(messageKey, language)
     }
 
     // 장바구니 항목마다 상품·카드·결제가·구매 불가 사유를 붙인다. 상품은 지우지 않으므로 판매가 끝난 상품도 찾는다.
-    private fun getPricedCartItems(userId: Long, cartItems: List<CartItem>, now: Instant): List<PricedCartItemResult> {
+    private fun getPricedCartItems(
+        userId: Long,
+        cartItems: List<CartItem>,
+        now: Instant,
+        language: Language,
+    ): List<PricedCartItemResult> {
         if (cartItems.isEmpty()) return emptyList()
 
         val productsById = productRepository.findAllById(cartItems.map { it.productId }).associateBy { it.id }
@@ -203,7 +227,7 @@ class CartService(
         )
         val discountRates = calculateMaxDiscountRates(promotions, promotionProducts)
         val products = productsById.values.toList()
-        val shopItems = shopItemService.createShopItems(userId, products, discountRates, now)
+        val shopItems = shopItemService.createShopItems(userId, products, discountRates, now, language)
         val availabilities = shopItemService.getProductAvailabilities(userId, products, now)
 
         return cartItems.map { cartItem ->
@@ -221,7 +245,11 @@ class CartService(
     }
 
     // 결제 정보는 선택됐고 구매 가능한 항목만 합친다
-    private fun createCart(pricedCartItems: List<PricedCartItemResult>, balance: Int): CartResponse {
+    private fun createCart(
+        pricedCartItems: List<PricedCartItemResult>,
+        balance: Int,
+        language: Language,
+    ): CartResponse {
         val totalQuantity = pricedCartItems.sumOf { it.cartItem.quantity }
         val cartItemResponses = pricedCartItems.map {
             val maxQuantity = if (it.canPurchase) {
@@ -239,7 +267,7 @@ class CartService(
                 isSelected = it.cartItem.isSelected && it.canPurchase,
                 canPurchase = it.canPurchase,
                 purchasePrice = it.purchasePrice,
-                unavailableReason = createUnavailableReason(it.unavailableErrorCode),
+                unavailableReason = createUnavailableReason(it.unavailableErrorCode, language),
             )
         }
 

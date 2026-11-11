@@ -6,6 +6,9 @@ import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.CommonErrorCode
 import com.dandi.nyummy.exception.errorcode.ErrorCode
 import com.dandi.nyummy.exception.errorcode.ShopErrorCode
+import com.dandi.nyummy.language.createTestMessageSource
+import com.dandi.nyummy.language.enum.Language
+import com.dandi.nyummy.language.getMessage
 import com.dandi.nyummy.mail.repository.MailItemRepository
 import com.dandi.nyummy.room.dto.OwnedRoomItemCountResult
 import com.dandi.nyummy.room.enum.RoomItemCategory
@@ -71,6 +74,8 @@ class ShopServiceTest {
 
     private val shopProperties = ShopProperties(cdnBaseUrl = "https://cdn.test.com")
 
+    private val messageSource = createTestMessageSource()
+
     private val shopService = ShopService(
         clock = Clock.fixed(now, ZoneOffset.UTC),
         shopItemService = ShopItemService(
@@ -82,6 +87,7 @@ class ShopServiceTest {
             itemPurchaseProductRepository = mockk(),
             mailItemRepository = mailItemRepository,
             shopProperties = shopProperties,
+            messageSource = messageSource,
         ),
         shopProperties = shopProperties,
         promotionProductRepository = promotionProductRepository,
@@ -165,19 +171,29 @@ class ShopServiceTest {
         adminId = 1,
     ).also { ReflectionTestUtils.setField(it, "id", id) }
 
-    private fun getRecommendPage(shopLayoutVariant: String? = null) =
-        shopService.getRecommendPage(userId, shopLayoutVariant)
+    private fun getRecommendPage(shopLayoutVariant: String? = null, language: Language = Language.KO) =
+        shopService.getRecommendPage(userId, shopLayoutVariant, language)
 
     private inline fun <reified T> ShopPageResponse.componentOf(): T = sduiComponents.filterIsInstance<T>().single()
 
     private fun getPromotionProducts(promotionId: Long, cursor: Long? = null, size: Int = 20) =
-        shopService.getPromotionProducts(userId, promotionId, cursor, size)
+        shopService.getPromotionProducts(userId, promotionId, cursor, size, Language.KO)
 
     private fun getProductIds(
         tab: ShopTab = ShopTab.INTERIOR,
         category: ShopCategory? = null,
         sort: ProductSort = ProductSort.NEW,
-    ) = shopService.getProducts(userId, tab, category, sort, cursor = null, size = 20).items.map { it.productId }
+    ) = shopService.getProducts(
+        userId,
+        tab,
+        category,
+        sort,
+        cursor = null,
+        size = 20,
+        language = Language.KO,
+    ).items.map {
+        it.productId
+    }
 
     private fun assertBusinessException(expected: ErrorCode, block: () -> Unit) {
         val exception = assertFailsWith<BusinessException>(block = block)
@@ -344,6 +360,20 @@ class ShopServiceTest {
         assertEquals(listOf("40%", null, "600 ", "1,000"), item.price.map { it.text })
         assertEquals("contentDanger", item.price.first().color)
         assertEquals("할인", item.tag?.text)
+    }
+
+    @Test
+    fun `상품 카드의 태그와 분류 이름은 요청 언어로 준다`() {
+        products = listOf(product(101, price = 1000))
+        productItems = products.map { single(it) }
+        promotions = listOf(promotion(3, PromotionCategory.DAILY, discountRate = 40))
+        promotionProducts = listOf(PromotionProduct(3, 101, 0))
+
+        val item = getRecommendPage(language = Language.JA)
+            .componentOf<ItemListComponentResponse>().content.items.single()
+
+        assertEquals(messageSource.getMessage("shop.tag.discounted", Language.JA), item.tag?.text)
+        assertEquals(messageSource.getMessage("roomItemCategory.${item.category.name}", Language.JA), item.categoryName)
     }
 
     @Test

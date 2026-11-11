@@ -4,6 +4,7 @@ import com.dandi.nyummy.coin.service.CoinService
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.CommonErrorCode
 import com.dandi.nyummy.exception.errorcode.ShopErrorCode
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.shop.calculator.calculateMaxDiscountRates
 import com.dandi.nyummy.shop.calculator.calculatePurchasePrice
 import com.dandi.nyummy.shop.config.ShopProperties
@@ -79,10 +80,11 @@ class ShopService(
      * 가격은 상품이 든 프로모션 중 사용자가 대상인 것의 할인율 가장 큰 것으로 계산한다.
      *
      * @param shopLayoutVariant 앱이 Remote Config에서 받은 배치 그룹. B가 아니면 A로 본다
+     * @param language 요청의 `X-Language`로 정한 앱 언어. 상품 카드의 분류 이름·태그를 이 언어로 꺼낸다
      * @throws BusinessException [UserErrorCode.USER_NOT_FOUND] 사용자가 없는 경우
      */
     @Transactional(readOnly = true)
-    fun getRecommendPage(userId: Long, shopLayoutVariant: String?): ShopPageResponse {
+    fun getRecommendPage(userId: Long, shopLayoutVariant: String?, language: Language): ShopPageResponse {
         val now = clock.instant()
         val promotions = shopItemService.getEligiblePromotions(userId, now)
         val promotionProducts = promotionProductRepository.findByPromotionIdInOrderByDisplayOrderAsc(
@@ -101,7 +103,7 @@ class ShopService(
             .sortedWith(compareByDescending<Product> { it.salesCount }.thenByDescending { it.id })
             .take(POPULAR_PRODUCT_COUNT)
         val shownProducts = (dailyProducts + popularProducts).distinctBy { it.id }
-        val shopItems = shopItemService.createShopItems(userId, shownProducts, discountRates, now)
+        val shopItems = shopItemService.createShopItems(userId, shownProducts, discountRates, now, language)
 
         val discountSection = createProductSection(
             header = SectionHeaderContentResponse(
@@ -144,6 +146,7 @@ class ShopService(
      *
      * @param category 인테리어 탭의 분류 칩. [ShopCategory.LIMITED]는 분류와 관계없이 기간 한정만 거른다
      * @param cursor 직전 묶음의 마지막 productId. null이면 처음부터 조회한다
+     * @param language 요청의 `X-Language`로 정한 앱 언어. 상품 카드의 분류 이름·태그를 이 언어로 꺼낸다
      * @throws BusinessException [CommonErrorCode.INVALID_INPUT_VALUE] 방 배경 탭에 분류 칩을 보냈거나, 커서 상품이 목록에 없는 경우
      */
     @Transactional(readOnly = true)
@@ -154,6 +157,7 @@ class ShopService(
         sort: ProductSort,
         cursor: Long?,
         size: Int,
+        language: Language,
     ): ShopItemsResponse {
         if (tab == ShopTab.BACKGROUND && category != null) throw BusinessException(CommonErrorCode.INVALID_INPUT_VALUE)
 
@@ -175,7 +179,7 @@ class ShopService(
             .sortedWith(createComparator(sort, discountRates))
 
         val page = createPage(sorted, cursor, size) { it.id }
-        val shopItems = shopItemService.createShopItems(userId, page.items, discountRates, now)
+        val shopItems = shopItemService.createShopItems(userId, page.items, discountRates, now, language)
         return ShopItemsResponse(
             items = page.items.map { shopItems.getValue(it.id) },
             nextCursor = page.nextCursor,
@@ -189,12 +193,19 @@ class ShopService(
      * 가격은 추천 탭과 같이 상품이 든 프로모션 중 사용자가 대상인 것의 할인율 가장 큰 것으로 계산한다.
      *
      * @param cursor 직전 묶음의 마지막 productId. null이면 처음부터 조회한다
+     * @param language 요청의 `X-Language`로 정한 앱 언어. 상품 카드의 분류 이름·태그를 이 언어로 꺼낸다
      * @throws BusinessException [ShopErrorCode.PROMOTION_NOT_FOUND] 진행 중인 프로모션이 아니거나, 대상 사용자가 아니거나,
      * 노출 중인 배너가 없는 경우
      * @throws BusinessException [CommonErrorCode.INVALID_INPUT_VALUE] 커서 상품이 목록에 없는 경우
      */
     @Transactional(readOnly = true)
-    fun getPromotionProducts(userId: Long, promotionId: Long, cursor: Long?, size: Int): PromotionProductsResponse {
+    fun getPromotionProducts(
+        userId: Long,
+        promotionId: Long,
+        cursor: Long?,
+        size: Int,
+        language: Language,
+    ): PromotionProductsResponse {
         val now = clock.instant()
         val promotions = shopItemService.getEligiblePromotions(userId, now)
         val promotion = promotions.find { it.id == promotionId }
@@ -211,7 +222,7 @@ class ShopService(
         val products = getPromotionProductsInOrder(promotion.id, promotionProducts, productsById)
 
         val page = createPage(products, cursor, size) { it.id }
-        val shopItems = shopItemService.createShopItems(userId, page.items, discountRates, now)
+        val shopItems = shopItemService.createShopItems(userId, page.items, discountRates, now, language)
         return PromotionProductsResponse(
             banner = shopBanner.toShopBannerResponse(
                 imageUrl = createImageUrl(shopBanner.imageKey),

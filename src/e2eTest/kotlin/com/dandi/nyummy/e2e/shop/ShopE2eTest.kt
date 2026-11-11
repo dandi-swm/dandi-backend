@@ -15,6 +15,7 @@ import org.hamcrest.Matchers.not
 import org.hamcrest.Matchers.nullValue
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 // 상점 추천 탭(SDUI)·상품 목록·상단 바. 모두 조회라 prod에서도 돌린다.
@@ -63,6 +64,23 @@ class ShopE2eTest {
         )
         items.forEach { item ->
             assertTrue(item.keys.containsAll(cardKeys), "상품 카드 필드가 빠졌습니다: ${item.keys}")
+        }
+    }
+
+    // 같은 상품을 언어만 바꿔 받는다. 두 요청 사이에 판매량이 바뀌면 순서가 달라질 수 있어 productId로 맞춘다.
+    // 상품이 없는 환경에서는 비교할 카드가 없다.
+    @Smoke
+    @Test
+    fun `상품 카드의 분류 이름은 X-Language 언어로 온다`() {
+        val koreanNames = getInteriorCategoryNames(language = null)
+        val japaneseNames = getInteriorCategoryNames(language = "ja")
+
+        koreanNames.filterKeys { it in japaneseNames }.forEach { (productId, korean) ->
+            assertNotEquals(
+                korean,
+                japaneseNames.getValue(productId),
+                "일본어 요청에 한국어 분류 이름이 왔습니다: productId=$productId",
+            )
         }
     }
 
@@ -154,6 +172,22 @@ class ShopE2eTest {
         } Then {
             validateError(404, "api.shop.promotionNotFound")
         }
+    }
+
+    // productId → categoryName
+    private fun getInteriorCategoryNames(language: String?): Map<Any?, Any?> {
+        val items: List<Map<String, Any?>> = Given {
+            spec(RequestSpecs.createAuthorizedSpec())
+            queryParams(mapOf("tab" to "INTERIOR", "sort" to "POPULAR"))
+            if (language != null) header("X-Language", language) else this
+        } When {
+            get("/api/v1/shop/products")
+        } Then {
+            statusCode(200)
+        } Extract {
+            path("items")
+        }
+        return items.associate { it["productId"] to it["categoryName"] }
     }
 
     private fun getRecommendViewTypes(shopLayoutVariant: String?): List<String> = Given {

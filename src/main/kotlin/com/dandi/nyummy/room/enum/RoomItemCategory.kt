@@ -1,9 +1,10 @@
 package com.dandi.nyummy.room.enum
 
-enum class RoomItemCategory(val description: String) {
-    BACKGROUND("배경"),
-    BED("침대"),
-    CAT_WHEEL("캣휠"),
-    RUG("러그"),
-    ETC("소품"),
+/** 마이룸 아이템 분류. 화면에 쓰는 이름은 서버 고정 문구 파일의 `roomItemCategory.<이름>`에 있다. */
+enum class RoomItemCategory {
+    BACKGROUND,
+    BED,
+    CAT_WHEEL,
+    RUG,
+    ETC,
 }

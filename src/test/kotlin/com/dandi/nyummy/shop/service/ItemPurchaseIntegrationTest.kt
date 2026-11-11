@@ -12,6 +12,7 @@ import com.dandi.nyummy.exception.errorcode.RoomErrorCode
 import com.dandi.nyummy.exception.errorcode.ShopErrorCode
 import com.dandi.nyummy.item.entity.Item
 import com.dandi.nyummy.item.repository.ItemRepository
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.mail.enum.RewardBoxCategory
 import com.dandi.nyummy.mail.service.MailService
 import com.dandi.nyummy.room.dto.EquippedRoomItemRequest
@@ -612,8 +613,13 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
         "1.0.0",
     )
 
-    private fun getOwnedCount(userId: Long, product: Product): Int =
-        shopItemService.createShopItems(userId, listOf(product), emptyMap(), now()).getValue(product.id).ownedCount
+    private fun getOwnedCount(userId: Long, product: Product): Int = shopItemService.createShopItems(
+        userId,
+        listOf(product),
+        emptyMap(),
+        now(),
+        Language.KO,
+    ).getValue(product.id).ownedCount
 
     private fun getUnavailableErrorCode(userId: Long, product: Product, quantity: Int = 1): ErrorCode? =
         shopItemService.getProductAvailabilities(userId, listOf(product), now())

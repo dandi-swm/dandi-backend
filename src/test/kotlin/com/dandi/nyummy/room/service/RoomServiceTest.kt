@@ -7,6 +7,9 @@ import com.dandi.nyummy.exception.errorcode.AuthErrorCode
 import com.dandi.nyummy.exception.errorcode.CommonErrorCode
 import com.dandi.nyummy.exception.errorcode.ErrorCode
 import com.dandi.nyummy.exception.errorcode.RoomErrorCode
+import com.dandi.nyummy.language.createTestMessageSource
+import com.dandi.nyummy.language.enum.Language
+import com.dandi.nyummy.language.getMessage
 import com.dandi.nyummy.room.config.DefaultRoomItemProperties
 import com.dandi.nyummy.room.config.RoomProperties
 import com.dandi.nyummy.room.dto.EquippedRoomItemRequest
@@ -58,6 +61,7 @@ class RoomServiceTest {
         ownedRoomItemRepository = ownedRoomItemRepository,
         roomProperties = roomProperties,
         clock = clock,
+        messageSource = createTestMessageSource(),
     )
 
     private fun ownedRoomItem(id: Long, isEquipped: Boolean, ownerId: Long = userId) =
@@ -203,11 +207,25 @@ class RoomServiceTest {
         givenOwnedRoomItems()
         every { ownedRoomItemRepository.findEquippedRoomItemsByUserId(userId) } returns emptyList()
 
-        val room = roomService.getRoom(userId, size = 10)
+        val room = roomService.getRoom(userId, size = 10, language = Language.KO)
 
         assertEquals(RoomItemCategory.entries, room.categories.map { it.category })
-        assertEquals(RoomItemCategory.entries.map { it.description }, room.categories.map { it.categoryName })
+        assertEquals(listOf("배경", "침대", "캣휠", "러그", "소품"), room.categories.map { it.categoryName })
         assertTrue(room.categories.all { it.ownedRoomItems.isEmpty() && !it.hasNext })
+    }
+
+    @Test
+    fun `카테고리 이름은 요청 언어로 준다`() {
+        givenOwnedRoomItems()
+        every { ownedRoomItemRepository.findEquippedRoomItemsByUserId(userId) } returns emptyList()
+
+        val room = roomService.getRoom(userId, size = 10, language = Language.JA)
+
+        val messageSource = createTestMessageSource()
+        assertEquals(
+            RoomItemCategory.entries.map { messageSource.getMessage("roomItemCategory.${it.name}", Language.JA) },
+            room.categories.map { it.categoryName },
+        )
     }
 
     // getEquippedRoomItems

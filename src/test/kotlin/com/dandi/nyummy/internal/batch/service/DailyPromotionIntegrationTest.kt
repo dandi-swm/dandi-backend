@@ -3,6 +3,7 @@ package com.dandi.nyummy.internal.batch.service
 import com.dandi.nyummy.auth.enum.AuthProvider
 import com.dandi.nyummy.item.entity.Item
 import com.dandi.nyummy.item.repository.ItemRepository
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.room.entity.RoomItem
 import com.dandi.nyummy.room.enum.RoomItemCategory
 import com.dandi.nyummy.room.repository.RoomItemRepository
@@ -153,7 +154,7 @@ class DailyPromotionIntegrationTest @Autowired constructor(
 
         dailyPromotionService.createDailyPromotion(today)
 
-        val page = shopService.getRecommendPage(userId, null)
+        val page = shopService.getRecommendPage(userId, null, Language.KO)
         val items = page.sduiComponents.filterIsInstance<ItemListComponentResponse>().single().content.items
         assertEquals(3, items.size)
         items.forEach { item ->

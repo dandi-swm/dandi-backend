@@ -8,28 +8,32 @@ import com.dandi.nyummy.shop.dto.TagResponse
 import com.dandi.nyummy.shop.entity.Product
 import com.dandi.nyummy.shop.entity.ShopBanner
 import com.dandi.nyummy.shop.enum.BannerCornerStyle
-import com.dandi.nyummy.shop.enum.TagTone
 import java.util.Locale
 
 private const val LINK = "https://link.nyummy.co.kr"
 
 /**
  * @param purchasePrice 이 사용자의 1개 결제가
- * @param isNew 판매를 시작한 지 얼마 안 된 상품인지
  * @param ownedCount 단품은 대표 아이템 보유 개수 + 우편함에서 아직 받지 않은 구매분, 세트는 0
+ * @param categoryName 요청 언어로 꺼낸 분류 이름
+ * @param tag 요청 언어로 꺼낸 태그. 붙일 태그가 없으면 null ([pickTagMessageKey])
  */
-fun Product.toShopItemResponse(purchasePrice: Int, isNew: Boolean, ownedCount: Int): ShopItemResponse =
-    ShopItemResponse(
-        productId = this.id,
-        itemId = this.representativeItemId,
-        name = this.name,
-        category = this.category,
-        categoryName = this.category.description,
-        price = createPriceText(this.price, purchasePrice),
-        tag = createTag(isLimited = this.isLimited, isDiscounted = purchasePrice < this.price, isNew = isNew),
-        isLimited = this.isLimited,
-        ownedCount = ownedCount,
-    )
+fun Product.toShopItemResponse(
+    purchasePrice: Int,
+    ownedCount: Int,
+    categoryName: String,
+    tag: TagResponse?,
+): ShopItemResponse = ShopItemResponse(
+    productId = this.id,
+    itemId = this.representativeItemId,
+    name = this.name,
+    category = this.category,
+    categoryName = categoryName,
+    price = createPriceText(this.price, purchasePrice),
+    tag = tag,
+    isLimited = this.isLimited,
+    ownedCount = ownedCount,
+)
 
 /**
  * @param price 프로모션 상품 전체를 묶음으로 본 가격 글자. 할인이 없으면 null
@@ -55,11 +59,15 @@ fun ShopBanner.toShopBannerResponse(
 fun createNavigateAction(path: String): ActionResponse =
     ActionResponse(actionType = "navigate", navigateLink = LINK + path, message = null)
 
-// 한정 > 할인 > 신규 순서로 하나만 붙인다
-fun createTag(isLimited: Boolean, isDiscounted: Boolean, isNew: Boolean): TagResponse? = when {
-    isLimited -> TagResponse("한정", TagTone.PROMO)
-    isDiscounted -> TagResponse("할인", TagTone.PROMO)
-    isNew -> TagResponse("신규", TagTone.PROMO)
+/**
+ * 한정 > 할인 > 신규 순서로 하나만 붙인다. 글자는 호출하는 쪽이 이 키로 요청 언어 문구를 꺼낸다.
+ *
+ * @return 서버 고정 문구 키. 붙일 태그가 없으면 null
+ */
+fun pickTagMessageKey(isLimited: Boolean, isDiscounted: Boolean, isNew: Boolean): String? = when {
+    isLimited -> "shop.tag.limited"
+    isDiscounted -> "shop.tag.discounted"
+    isNew -> "shop.tag.new"
     else -> null
 }
 

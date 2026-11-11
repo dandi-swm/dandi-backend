@@ -3,6 +3,8 @@ package com.dandi.nyummy.room.controller
 import com.dandi.nyummy.config.openapi.ApiErrorCodes
 import com.dandi.nyummy.exception.errorcode.AuthErrorCode
 import com.dandi.nyummy.exception.errorcode.RoomErrorCode
+import com.dandi.nyummy.language.CurrentLanguage
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.room.dto.OwnedRoomItemsResponse
 import com.dandi.nyummy.room.dto.RoomResponse
 import com.dandi.nyummy.room.dto.UpdateEquippedRoomItemsRequest
@@ -46,12 +48,13 @@ class RoomController(private val roomService: RoomService) {
     @GetMapping
     fun getRoom(
         @CurrentUser user: AuthUser,
+        @CurrentLanguage language: Language,
         @Parameter(description = "카테고리별로 처음 조회할 보유 아이템 개수 (1~50, 기본 10)")
         @RequestParam(defaultValue = "10")
         @Min(1)
         @Max(50)
         size: Int,
-    ): RoomResponse = roomService.getRoom(user.userId, size)
+    ): RoomResponse = roomService.getRoom(user.userId, size, language)
 
     @Operation(
         summary = "보유 아이템 목록 조회",
