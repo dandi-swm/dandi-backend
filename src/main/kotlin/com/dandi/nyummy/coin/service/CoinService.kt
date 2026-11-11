@@ -7,8 +7,11 @@ import com.dandi.nyummy.coin.enum.CoinHistoryCategory
 import com.dandi.nyummy.coin.mapper.toCoinHistoryResponse
 import com.dandi.nyummy.coin.repository.CoinHistoryRepository
 import com.dandi.nyummy.coin.repository.CoinRepository
+import com.dandi.nyummy.language.enum.Language
+import com.dandi.nyummy.language.getMessage
 import com.dandi.nyummy.shop.repository.ItemPurchaseProductRepository
 import org.slf4j.LoggerFactory
+import org.springframework.context.MessageSource
 import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
@@ -19,16 +22,10 @@ class CoinService(
     private val coinRepository: CoinRepository,
     private val coinHistoryRepository: CoinHistoryRepository,
     private val itemPurchaseProductRepository: ItemPurchaseProductRepository,
+    private val messageSource: MessageSource,
 ) {
     companion object {
         private val logger = LoggerFactory.getLogger(CoinService::class.java)
-        private const val MAIL_CLAIM_TITLE = "우편 받기"
-        private const val ITEM_PURCHASE_TITLE = "상점 구매"
-        private const val IN_APP_PURCHASE_TITLE = "코인 구매"
-        private const val COIN_GIFT_TITLE = "코인 선물"
-        private const val ITEM_PURCHASE_REFUND_TITLE = "상점 환불"
-        private const val REPORT_PURCHASE_TITLE = "리포트 구매"
-        private const val REPORT_PURCHASE_REFUND_TITLE = "리포트 환불"
     }
 
     /**
@@ -136,7 +133,7 @@ class CoinService(
      * @param cursor 직전 묶음의 마지막 coinHistoryId. null이면 가장 최신 내역부터 조회한다
      */
     @Transactional(readOnly = true)
-    fun getCoinHistories(userId: Long, cursor: Long?, size: Int): CoinHistoriesResponse {
+    fun getCoinHistories(userId: Long, cursor: Long?, size: Int, language: Language): CoinHistoriesResponse {
         val coinHistories = coinHistoryRepository.findByUserIdAndIdLessThanOrderByIdDesc(
             userId = userId,
             cursor = cursor ?: Long.MAX_VALUE,
@@ -146,7 +143,7 @@ class CoinService(
 
         return CoinHistoriesResponse(
             coinHistories = coinHistories.content.map { coinHistory ->
-                coinHistory.toCoinHistoryResponse(title = createTitle(coinHistory, productNames))
+                coinHistory.toCoinHistoryResponse(title = createTitle(coinHistory, productNames, language))
             },
             nextCursor = if (coinHistories.hasNext()) coinHistories.content.last().id else null,
             hasNext = coinHistories.hasNext(),
@@ -164,21 +161,33 @@ class CoinService(
             .groupBy({ it.itemPurchaseId }, { it.name })
     }
 
-    private fun createTitle(coinHistory: CoinHistory, productNames: Map<Long, List<String>>): String =
-        when (coinHistory.category) {
-            CoinHistoryCategory.MAIL_CLAIM -> MAIL_CLAIM_TITLE
-            CoinHistoryCategory.ROOM_ITEM_PURCHASE -> createItemPurchaseTitle(productNames[coinHistory.sourceId])
-            CoinHistoryCategory.IN_APP_PURCHASE -> IN_APP_PURCHASE_TITLE
-            CoinHistoryCategory.COIN_GIFT -> COIN_GIFT_TITLE
-            CoinHistoryCategory.ITEM_PURCHASE_REFUND -> ITEM_PURCHASE_REFUND_TITLE
-            CoinHistoryCategory.REPORT_PURCHASE -> REPORT_PURCHASE_TITLE
-            CoinHistoryCategory.REPORT_PURCHASE_REFUND -> REPORT_PURCHASE_REFUND_TITLE
+    // 종류마다 문구 파일의 coinHistoryCategory.<이름>을 쓰고, 상점 구매만 상품 이름을 넣는다
+    private fun createTitle(
+        coinHistory: CoinHistory,
+        productNames: Map<Long, List<String>>,
+        language: Language,
+    ): String {
+        val itemPurchaseProductNames = productNames[coinHistory.sourceId]
+        if (coinHistory.category == CoinHistoryCategory.ROOM_ITEM_PURCHASE &&
+            !itemPurchaseProductNames.isNullOrEmpty()
+        ) {
+            return createItemPurchaseTitle(itemPurchaseProductNames, language)
         }
 
-    // 상품 1개는 "발바닥 방석 구매", 여러 개는 같은 상품이어도 1개당 한 행이라 "발바닥 방석 외 2개 구매"다
-    private fun createItemPurchaseTitle(productNames: List<String>?): String = when {
-        productNames.isNullOrEmpty() -> ITEM_PURCHASE_TITLE
-        productNames.size == 1 -> "${productNames.first()} 구매"
-        else -> "${productNames.first()} 외 ${productNames.size - 1}개 구매"
+        return messageSource.getMessage("coinHistoryCategory.${coinHistory.category.name}", language)
     }
+
+    // 상품 1개는 "발바닥 방석 구매", 여러 개는 같은 상품이어도 1개당 한 행이라 "발바닥 방석 외 2개 구매"다.
+    // 상품 이름은 아직 번역하지 않아 모든 언어에서 한국어다.
+    private fun createItemPurchaseTitle(productNames: List<String>, language: Language): String =
+        when (productNames.size) {
+            1 -> messageSource.getMessage("coinHistory.itemPurchase.single", language, productNames.first())
+
+            else -> messageSource.getMessage(
+                "coinHistory.itemPurchase.multiple",
+                language,
+                productNames.first(),
+                productNames.size - 1,
+            )
+        }
 }

@@ -16,12 +16,15 @@ import com.dandi.nyummy.cat.repository.CatRepository
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.CatErrorCode
 import com.dandi.nyummy.exception.errorcode.UserErrorCode
+import com.dandi.nyummy.language.enum.Language
+import com.dandi.nyummy.language.getMessage
 import com.dandi.nyummy.meal.calculator.calculateRecommendedDailyIntake
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.repository.MealRepository
 import com.dandi.nyummy.user.repository.ProfileRepository
 import com.dandi.nyummy.user.service.UserService
 import org.slf4j.LoggerFactory
+import org.springframework.context.MessageSource
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -39,6 +42,7 @@ class CatService(
     private val catProperties: CatProperties,
     private val clock: Clock,
     private val catAnimationLoader: CatAnimationLoader,
+    private val messageSource: MessageSource,
 ) {
 
     companion object {
@@ -93,14 +97,16 @@ class CatService(
      * 고양이는 사용자당 하나이고 userId로 조회하므로, 다른 사용자의 고양이가 조회될 수 없다.
      *
      * @param userId 조회하는 사용자 ID
+     * @param language 요청의 `X-Language`로 정한 앱 언어. 체형 이름을 이 언어로 꺼낸다
      * @return 이름·체형·애정도·경험치를 담은 [CatResponse]
      * @throws BusinessException [CatErrorCode.CAT_NOT_FOUND] 사용자의 고양이가 없는 경우
      */
     @Transactional
-    fun getCat(userId: Long): CatResponse {
+    fun getCat(userId: Long, language: Language): CatResponse {
         val cat = updateCatWeight(userId)
+        val weightName = messageSource.getMessage("catWeight.${CatWeight.fromWeight(cat.weight).name}", language)
 
-        return cat.toCatResponse()
+        return cat.toCatResponse(weightName)
     }
 
     /**

@@ -10,6 +10,7 @@ import org.hamcrest.Matchers.hasItems
 import org.hamcrest.Matchers.instanceOf
 import org.junit.jupiter.api.Assumptions.abort
 import org.junit.jupiter.api.Test
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 class CoinE2eTest {
@@ -38,6 +39,38 @@ class CoinE2eTest {
         val secondPage = getCoinHistories(mapOf("size" to 1, "cursor" to nextCursor))
 
         assertTrue(firstPage.coinHistoryId() > secondPage.coinHistoryId(), "다음 묶음이 더 오래된 내역이 아닙니다")
+    }
+
+    // 같은 내역을 언어만 바꿔 받는다. 내역이 없는 계정은 비교할 것이 없다. 상품 이름은 아직 번역하지 않지만
+    // 구매 내역도 "구매"·"を購入" 같은 문장 부분이 달라 제목 전체가 달라진다.
+    @Smoke
+    @Test
+    fun `코인 내역 제목은 X-Language 언어로 온다`() {
+        val koreanTitles = getCoinHistoryTitles(language = null)
+        val japaneseTitles = getCoinHistoryTitles(language = "ja")
+
+        koreanTitles.filterKeys { it in japaneseTitles }.forEach { (coinHistoryId, korean) ->
+            assertNotEquals(
+                korean,
+                japaneseTitles.getValue(coinHistoryId),
+                "일본어 요청에 한국어 코인 내역 제목이 왔습니다: coinHistoryId=$coinHistoryId",
+            )
+        }
+    }
+
+    // coinHistoryId → title
+    private fun getCoinHistoryTitles(language: String?): Map<Any?, Any?> {
+        val coinHistories: List<Map<String, Any?>> = Given {
+            spec(RequestSpecs.createAuthorizedSpec())
+            if (language != null) header("X-Language", language) else this
+        } When {
+            get("/api/v1/coins/histories")
+        } Then {
+            statusCode(200)
+        } Extract {
+            path("coinHistories")
+        }
+        return coinHistories.associate { it["coinHistoryId"] to it["title"] }
     }
 
     private fun getCoinHistories(params: Map<String, Any>): Map<String, Any?> = Given {

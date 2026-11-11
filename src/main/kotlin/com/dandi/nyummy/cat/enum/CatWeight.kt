@@ -1,11 +1,12 @@
 package com.dandi.nyummy.cat.enum
 
-enum class CatWeight(val weight: Int, val description: String) {
-    LEAN(-2, "홀쭉냥"),
-    SLIM(-1, "날씬냥"),
-    NORMAL(0, "보통냥"),
-    CHUBBY(1, "통통냥"),
-    PLUMP(2, "뚱냥이"),
+/** 고양이 체형. 화면에 쓰는 이름은 서버 고정 문구 파일의 `catWeight.<이름>`에 있다. */
+enum class CatWeight(val weight: Int) {
+    LEAN(-2),
+    SLIM(-1),
+    NORMAL(0),
+    CHUBBY(1),
+    PLUMP(2),
     ;
 
     val slug: String get() = name.lowercase()

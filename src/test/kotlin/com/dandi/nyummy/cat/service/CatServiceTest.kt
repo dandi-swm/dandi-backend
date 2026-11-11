@@ -11,6 +11,9 @@ import com.dandi.nyummy.cat.repository.CatRepository
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.CatErrorCode
 import com.dandi.nyummy.exception.errorcode.ErrorCode
+import com.dandi.nyummy.language.createTestMessageSource
+import com.dandi.nyummy.language.enum.Language
+import com.dandi.nyummy.language.getMessage
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.repository.MealRepository
@@ -60,6 +63,8 @@ class CatServiceTest {
 
     private val userId = 1L
 
+    private val messageSource = createTestMessageSource()
+
     private val catService = CatService(
         catRepository = catRepository,
         mealRepository = mealRepository,
@@ -67,6 +72,7 @@ class CatServiceTest {
         catProperties = catProperties,
         clock = clock,
         catAnimationLoader = catAnimationLoader,
+        messageSource = messageSource,
     )
 
     @BeforeEach
@@ -83,7 +89,7 @@ class CatServiceTest {
         val cat = givenCat(evaluatedDaysAgo = 0)
 
         // when
-        catService.getCat(userId)
+        catService.getCat(userId, Language.KO)
 
         // then
         assertEquals(0, cat.weight)
@@ -98,7 +104,7 @@ class CatServiceTest {
         val cat = givenCat(evaluatedDaysAgo = -1)
 
         // when
-        catService.getCat(userId)
+        catService.getCat(userId, Language.KO)
 
         // then
         assertEquals(0, cat.weight)
@@ -115,7 +121,7 @@ class CatServiceTest {
         givenMeals(meal(daysAgo = 1, calory = 3000)) // 증가 임계 2400 초과
 
         // when
-        catService.getCat(userId)
+        catService.getCat(userId, Language.KO)
 
         // then
         assertEquals(1, cat.weight)
@@ -129,7 +135,7 @@ class CatServiceTest {
         val cat = givenCat(evaluatedDaysAgo = 1)
 
         // when
-        catService.getCat(userId)
+        catService.getCat(userId, Language.KO)
 
         // then
         assertEquals(-1, cat.weight)
@@ -143,7 +149,7 @@ class CatServiceTest {
         givenMeals(meal(daysAgo = 1, calory = 500))
 
         // when
-        catService.getCat(userId)
+        catService.getCat(userId, Language.KO)
 
         // then
         assertEquals(0, cat.weight)
@@ -156,7 +162,7 @@ class CatServiceTest {
         givenMeals(meal(daysAgo = 1, calory = null, status = MealStatus.FAILED))
 
         // when
-        catService.getCat(userId)
+        catService.getCat(userId, Language.KO)
 
         // then
         assertEquals(0, cat.weight)
@@ -173,7 +179,7 @@ class CatServiceTest {
         )
 
         // when
-        catService.getCat(userId)
+        catService.getCat(userId, Language.KO)
 
         // then
         assertEquals(0, cat.weight)
@@ -187,7 +193,7 @@ class CatServiceTest {
         givenMeals(meal(daysAgo = 1, calory = null))
 
         // when
-        catService.getCat(userId)
+        catService.getCat(userId, Language.KO)
 
         // then
         assertEquals(0, cat.weight)
@@ -200,7 +206,7 @@ class CatServiceTest {
         givenMeals(meal(daysAgo = 1, calory = 10000))
 
         // when
-        catService.getCat(userId)
+        catService.getCat(userId, Language.KO)
 
         // then
         assertEquals(2, cat.weight)
@@ -212,7 +218,7 @@ class CatServiceTest {
         val cat = givenCat(evaluatedDaysAgo = 1, weight = -2)
 
         // when
-        catService.getCat(userId)
+        catService.getCat(userId, Language.KO)
 
         // then
         assertEquals(-2, cat.weight)
@@ -227,7 +233,7 @@ class CatServiceTest {
         givenMeals(meal(daysAgo = 1, calory = 2000))
 
         // when
-        catService.getCat(userId)
+        catService.getCat(userId, Language.KO)
 
         // then
         assertEquals(1, cat.weight)
@@ -240,7 +246,7 @@ class CatServiceTest {
         givenMeals(meal(daysAgo = 1, calory = 2000))
 
         // when
-        catService.getCat(userId)
+        catService.getCat(userId, Language.KO)
 
         // then
         assertEquals(-1, cat.weight)
@@ -253,7 +259,7 @@ class CatServiceTest {
         givenMeals(meal(daysAgo = 1, calory = 2000))
 
         // when
-        catService.getCat(userId)
+        catService.getCat(userId, Language.KO)
 
         // then
         assertEquals(0, cat.weight)
@@ -271,7 +277,7 @@ class CatServiceTest {
         )
 
         // when
-        catService.getCat(userId)
+        catService.getCat(userId, Language.KO)
 
         // then
         assertEquals(0, cat.weight)
@@ -285,7 +291,7 @@ class CatServiceTest {
         val cat = givenCat(evaluatedDaysAgo = 2)
 
         // when
-        catService.getCat(userId)
+        catService.getCat(userId, Language.KO)
 
         // then
         assertEquals(-2, cat.weight)
@@ -299,7 +305,7 @@ class CatServiceTest {
         val cat = givenCat(evaluatedDaysAgo = 3)
 
         // when
-        catService.getCat(userId)
+        catService.getCat(userId, Language.KO)
 
         // then
         assertEquals(-2, cat.weight)
@@ -311,7 +317,7 @@ class CatServiceTest {
         val cat = givenCat(evaluatedDaysAgo = 4, weight = 2)
 
         // when
-        catService.getCat(userId)
+        catService.getCat(userId, Language.KO)
 
         // then
         assertEquals(-2, cat.weight)
@@ -330,7 +336,7 @@ class CatServiceTest {
         )
 
         // when
-        catService.getCat(userId)
+        catService.getCat(userId, Language.KO)
 
         // then
         assertEquals(0, cat.weight)
@@ -348,7 +354,7 @@ class CatServiceTest {
         )
 
         // when
-        catService.getCat(userId)
+        catService.getCat(userId, Language.KO)
 
         // then
         assertEquals(1, cat.weight)
@@ -363,7 +369,7 @@ class CatServiceTest {
         givenMeals(mealAtMidnight(daysAgo = 1, calory = 10000))
 
         // when
-        catService.getCat(userId)
+        catService.getCat(userId, Language.KO)
 
         // then
         assertEquals(2, cat.weight)
@@ -379,7 +385,7 @@ class CatServiceTest {
         givenMeals(meal(daysAgo = 1, calory = null, status = status))
 
         // when
-        catService.getCat(userId)
+        catService.getCat(userId, Language.KO)
 
         // then
         assertEquals(0, cat.weight)
@@ -392,13 +398,13 @@ class CatServiceTest {
         val cat = givenCat(evaluatedDaysAgo = 1)
         val meal = meal(daysAgo = 1, calory = null, status = MealStatus.ANALYZING)
         givenMeals(meal)
-        catService.getCat(userId)
+        catService.getCat(userId, Language.KO)
 
         meal.status = MealStatus.COMPLETED
         meal.calory = 3000
 
         // when
-        catService.getCat(userId)
+        catService.getCat(userId, Language.KO)
 
         // then
         assertEquals(1, cat.weight)
@@ -412,7 +418,7 @@ class CatServiceTest {
         givenMeals(meal(daysAgo = 1, calory = null, status = MealStatus.ANALYZING))
 
         // when
-        catService.getCat(userId)
+        catService.getCat(userId, Language.KO)
 
         // then
         assertEquals(-2, cat.weight)
@@ -428,7 +434,7 @@ class CatServiceTest {
         givenMeals(meal(daysAgo = 2, calory = null, status = MealStatus.ANALYZING))
 
         // when
-        catService.getCat(userId)
+        catService.getCat(userId, Language.KO)
 
         // then
         assertEquals(-1, cat.weight)
@@ -445,7 +451,7 @@ class CatServiceTest {
         givenMeals(meal(daysAgo = 20, calory = 60000))
 
         // when
-        catService.getCat(userId)
+        catService.getCat(userId, Language.KO)
 
         // then
         assertEquals(-2, cat.weight)
@@ -462,7 +468,7 @@ class CatServiceTest {
         every { catRepository.findByUserId(userId) } returns null
 
         // when & then
-        assertBusinessException(CatErrorCode.CAT_NOT_FOUND) { catService.getCat(userId) }
+        assertBusinessException(CatErrorCode.CAT_NOT_FOUND) { catService.getCat(userId, Language.KO) }
     }
 
     @Test
@@ -471,11 +477,20 @@ class CatServiceTest {
         givenCat(evaluatedDaysAgo = 1)
 
         // when
-        val response = catService.getCat(userId)
+        val response = catService.getCat(userId, Language.KO)
 
         // then
         assertEquals(CatWeight.SLIM, response.weight)
-        assertEquals(CatWeight.SLIM.description, response.weightName)
+        assertEquals("날씬냥", response.weightName)
+    }
+
+    @Test
+    fun `고양이 체형 이름은 요청 언어로 준다`() {
+        givenCat(evaluatedDaysAgo = 1)
+
+        val response = catService.getCat(userId, Language.JA)
+
+        assertEquals(messageSource.getMessage("catWeight.SLIM", Language.JA), response.weightName)
     }
 
     @Test
