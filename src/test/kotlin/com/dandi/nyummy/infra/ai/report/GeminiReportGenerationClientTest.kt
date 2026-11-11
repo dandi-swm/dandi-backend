@@ -8,6 +8,7 @@ import com.dandi.nyummy.report.calculator.calculateNutritionBalance
 import com.dandi.nyummy.report.dto.MacroNutrientBalanceResponse
 import com.dandi.nyummy.report.enum.MacroNutrient
 import org.hamcrest.Matchers.containsString
+import org.hamcrest.Matchers.not
 import org.springframework.http.HttpMethod
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
@@ -95,7 +96,7 @@ class GeminiReportGenerationClientTest {
     fun `규칙을 지킨 문장이면 그대로 돌려준다`() {
         givenGeminiText(validText)
 
-        val result = client.generateReportText(nutritionBalance)
+        val result = client.generateReportText(nutritionBalance, Language.KO)
 
         assertEquals("단백질만 챙기면 완벽했던 한 주", result.title)
         assertEquals(3, result.suggestions.size)
@@ -115,9 +116,56 @@ class GeminiReportGenerationClientTest {
             .andExpect(content().string(containsString("지방이 칼로리 중 차지한 비율이 목표 비율보다 많았어")))
             .andRespond(withSuccess(convertGenerateContentBody(validText), MediaType.APPLICATION_JSON))
 
-        client.generateReportText(fatFocused)
+        client.generateReportText(fatFocused, Language.KO)
 
         server.verify()
+    }
+
+    @Test
+    fun `한국어는 출력 언어 지시를 덧붙이지 않고 지금 길이를 프롬프트에 준다`() {
+        server.expect(requestTo(generateContentUrl))
+            .andExpect(content().string(not(containsString("[출력 언어]"))))
+            .andExpect(content().string(containsString("${GeminiReportGenerationClient.TITLE_GUIDE_LENGTH}자 이내")))
+            .andRespond(withSuccess(convertGenerateContentBody(validText), MediaType.APPLICATION_JSON))
+
+        client.generateReportText(nutritionBalance, Language.KO)
+
+        server.verify()
+    }
+
+    @Test
+    fun `일본어는 한국어 지시 뒤에 일본어로 쓰라는 지시를 덧붙인다`() {
+        server.expect(requestTo(generateContentUrl))
+            .andExpect(content().string(containsString("title, advice, suggestions, closing은 모두 일본어로 써.")))
+            .andExpect(content().string(containsString("${GeminiReportGenerationClient.TITLE_GUIDE_LENGTH}자 이내")))
+            .andRespond(withSuccess(convertGenerateContentBody(validText), MediaType.APPLICATION_JSON))
+
+        client.generateReportText(nutritionBalance, Language.JA)
+
+        server.verify()
+    }
+
+    @Test
+    fun `영어는 길이를 두 배로 주고 그만큼 긴 문장도 받는다`() {
+        val englishTitle = "a".repeat(GeminiReportGenerationClient.TITLE_MAX_LENGTH * 2)
+        server.expect(requestTo(generateContentUrl))
+            .andExpect(content().string(containsString("title, advice, suggestions, closing은 모두 영어로 써.")))
+            .andExpect(content().string(containsString("${GeminiReportGenerationClient.TITLE_GUIDE_LENGTH * 2}자 이내")))
+            .andRespond(
+                withSuccess(
+                    convertGenerateContentBody(validText + ("title" to englishTitle)),
+                    MediaType.APPLICATION_JSON,
+                ),
+            )
+
+        assertEquals(englishTitle, client.generateReportText(nutritionBalance, Language.EN).title)
+
+        server.verify()
+        server.reset()
+        givenGeminiText(validText + ("title" to englishTitle))
+        assertReportGenerationFailure(ReportGenerationFailureCategory.INVALID_RESPONSE) {
+            client.generateReportText(nutritionBalance, Language.KO)
+        }
     }
 
     @Test
@@ -126,7 +174,7 @@ class GeminiReportGenerationClientTest {
             .andExpect(content().string(containsString("고르게 균형을 이뤘어")))
             .andRespond(withSuccess(convertGenerateContentBody(validText), MediaType.APPLICATION_JSON))
 
-        client.generateReportText(nutritionBalance)
+        client.generateReportText(nutritionBalance, Language.KO)
 
         server.verify()
     }
@@ -144,7 +192,7 @@ class GeminiReportGenerationClientTest {
         givenGeminiText(validText + ("advice" to "단백질을 20g 더 드세요"))
 
         assertReportGenerationFailure(ReportGenerationFailureCategory.INVALID_RESPONSE) {
-            client.generateReportText(nutritionBalance)
+            client.generateReportText(nutritionBalance, Language.KO)
         }
     }
 
@@ -152,13 +200,13 @@ class GeminiReportGenerationClientTest {
     fun `제안이 3개가 아니거나 제목이 길면 INVALID_RESPONSE로 실패한다`() {
         givenGeminiText(validText + ("suggestions" to listOf("하나", "둘")))
         assertReportGenerationFailure(ReportGenerationFailureCategory.INVALID_RESPONSE) {
-            client.generateReportText(nutritionBalance)
+            client.generateReportText(nutritionBalance, Language.KO)
         }
 
         server.reset()
         givenGeminiText(validText + ("title" to "가".repeat(GeminiReportGenerationClient.TITLE_MAX_LENGTH + 1)))
         assertReportGenerationFailure(ReportGenerationFailureCategory.INVALID_RESPONSE) {
-            client.generateReportText(nutritionBalance)
+            client.generateReportText(nutritionBalance, Language.KO)
         }
     }
 
@@ -170,7 +218,7 @@ class GeminiReportGenerationClientTest {
         server.expect(requestTo(generateContentUrl)).andRespond(withSuccess(body, MediaType.APPLICATION_JSON))
 
         assertReportGenerationFailure(ReportGenerationFailureCategory.INVALID_RESPONSE) {
-            client.generateReportText(nutritionBalance)
+            client.generateReportText(nutritionBalance, Language.KO)
         }
     }
 
@@ -181,7 +229,7 @@ class GeminiReportGenerationClientTest {
             givenGeminiStatus(it)
 
             assertReportGenerationFailure(ReportGenerationFailureCategory.UNAVAILABLE) {
-                client.generateReportText(nutritionBalance)
+                client.generateReportText(nutritionBalance, Language.KO)
             }
         }
     }
@@ -190,13 +238,13 @@ class GeminiReportGenerationClientTest {
     fun `키·권한·모델 이름 때문에 거부되면 MISCONFIGURED, 그 밖의 4xx면 INVALID_REQUEST로 실패한다`() {
         givenGeminiStatus(HttpStatus.FORBIDDEN)
         assertReportGenerationFailure(ReportGenerationFailureCategory.MISCONFIGURED) {
-            client.generateReportText(nutritionBalance)
+            client.generateReportText(nutritionBalance, Language.KO)
         }
 
         server.reset()
         givenGeminiStatus(HttpStatus.BAD_REQUEST)
         assertReportGenerationFailure(ReportGenerationFailureCategory.INVALID_REQUEST) {
-            client.generateReportText(nutritionBalance)
+            client.generateReportText(nutritionBalance, Language.KO)
         }
     }
 }

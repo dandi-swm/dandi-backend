@@ -45,6 +45,45 @@ class GeminiReportGenerationClient(
 
         private val DIGIT = Regex("[0-9０-９]")
 
+        // 한국어와 일본어는 같은 내용의 글자 수가 비슷해 위 길이를 그대로 쓴다.
+        private val KO_TEXT_LENGTH = ReportTextLength(
+            titleGuide = TITLE_GUIDE_LENGTH,
+            titleMax = TITLE_MAX_LENGTH,
+            adviceGuide = ADVICE_GUIDE_LENGTH,
+            adviceMax = ADVICE_MAX_LENGTH,
+            suggestionGuide = SUGGESTION_GUIDE_LENGTH,
+            suggestionMax = SUGGESTION_MAX_LENGTH,
+            closingGuide = CLOSING_GUIDE_LENGTH,
+            closingMax = CLOSING_MAX_LENGTH,
+        )
+
+        // 영어는 같은 내용이 한국어보다 대략 두 배 길다. 상한에 걸리면 다시 만들다 실패·환불로 끝나므로 넉넉히 둔다.
+        private val EN_TEXT_LENGTH = ReportTextLength(
+            titleGuide = TITLE_GUIDE_LENGTH * 2,
+            titleMax = TITLE_MAX_LENGTH * 2,
+            adviceGuide = ADVICE_GUIDE_LENGTH * 2,
+            adviceMax = ADVICE_MAX_LENGTH * 2,
+            suggestionGuide = SUGGESTION_GUIDE_LENGTH * 2,
+            suggestionMax = SUGGESTION_MAX_LENGTH * 2,
+            closingGuide = CLOSING_GUIDE_LENGTH * 2,
+            closingMax = CLOSING_MAX_LENGTH * 2,
+        )
+
+        // 아래 한국어 지시는 그대로 두고, 한국어가 아닌 언어만 맨 끝에 출력 언어 지시를 덧붙인다.
+        private const val JA_OUTPUT_LANGUAGE_INSTRUCTION = """
+        [출력 언어]
+        title, advice, suggestions, closing은 모두 일본어로 써. 한국어를 섞지 마.
+        - advice와 suggestions는 해요체 대신 です・ます체로 써.
+        - closing은 사용자를 "執事"라고 부르는 고양이 말투로 쓰고, 문장 끝을 "~にゃ"로 맺어.
+    """
+        private const val EN_OUTPUT_LANGUAGE_INSTRUCTION = """
+        [출력 언어]
+        title, advice, suggestions, closing은 모두 영어로 써. 한국어를 섞지 마.
+        - 숫자 규칙은 영어에도 같아. 아라비아 숫자를 쓰지 말고, "a lot", "a little", "often", "a few days" 같은 말로 써.
+        - advice와 suggestions는 해요체 대신 친근한 영어로 써.
+        - closing은 사용자를 "Butler"라고 부르는 장난스러운 고양이 말투로 쓰고 "meow"를 넣어.
+    """
+
         private const val PROMPT =
             """
         너는 식사 기록 앱의 고양이 캐릭터야. 사용자의 한 주(일요일~토요일) 식사를 서버가 집계한 값을 보고 주간 리포트의 문장을 써.
@@ -91,16 +130,20 @@ class GeminiReportGenerationClient(
     /**
      * 집계 값을 프롬프트에 넣어 Gemini로 리포트 문장을 받는다. 받은 문장이 길이·개수·숫자 금지 규칙을 어기면
      * [ReportGenerationFailureCategory.INVALID_RESPONSE]로 실패한다. 숫자 문장은 서버가 만들므로 AI 문장에는 숫자가 없어야 한다.
+     *
+     * 한국어는 지금까지와 같은 프롬프트로 쓴다. 다른 언어는 길이를 그 언어에 맞추고 출력 언어 지시를 맨 끝에 덧붙인다.
      */
-    override fun generateReportText(nutritionBalance: NutritionBalanceResult): ReportTextResult {
-        val prompt = PROMPT
+    override fun generateReportText(nutritionBalance: NutritionBalanceResult, language: Language): ReportTextResult {
+        val textLength = pickReportTextLength(language)
+        val promptWithValues = PROMPT
             .replace("{nutritionBalance}", objectMapper.writeValueAsString(nutritionBalance))
             .replace("{focus}", createFocus(nutritionBalance))
-            .replace("{titleLength}", TITLE_GUIDE_LENGTH.toString())
-            .replace("{adviceLength}", ADVICE_GUIDE_LENGTH.toString())
+            .replace("{titleLength}", textLength.titleGuide.toString())
+            .replace("{adviceLength}", textLength.adviceGuide.toString())
             .replace("{suggestionCount}", SUGGESTION_COUNT.toString())
-            .replace("{suggestionLength}", SUGGESTION_GUIDE_LENGTH.toString())
-            .replace("{closingLength}", CLOSING_GUIDE_LENGTH.toString())
+            .replace("{suggestionLength}", textLength.suggestionGuide.toString())
+            .replace("{closingLength}", textLength.closingGuide.toString())
+        val prompt = pickOutputLanguageInstruction(language)?.let { "$promptWithValues\n$it" } ?: promptWithValues
 
         val requestBody = mapOf(
             "contents" to listOf(mapOf("role" to "user", "parts" to listOf(mapOf("text" to prompt)))),
@@ -161,7 +204,7 @@ class GeminiReportGenerationClient(
                 "Gemini 응답에 결과가 없습니다.",
             )
 
-        return convertReportText(resultJson).also { validateReportText(it) }
+        return convertReportText(resultJson).also { validateReportText(it, textLength) }
     }
 
     /**
@@ -205,14 +248,26 @@ class GeminiReportGenerationClient(
         )
     }
 
-    private fun validateReportText(text: ReportTextResult) {
+    // when으로 고르면 언어를 추가할 때 여기서 컴파일이 깨져 빠뜨리지 않는다
+    private fun pickReportTextLength(language: Language): ReportTextLength = when (language) {
+        Language.KO, Language.JA -> KO_TEXT_LENGTH
+        Language.EN -> EN_TEXT_LENGTH
+    }
+
+    private fun pickOutputLanguageInstruction(language: Language): String? = when (language) {
+        Language.KO -> null
+        Language.JA -> JA_OUTPUT_LANGUAGE_INSTRUCTION
+        Language.EN -> EN_OUTPUT_LANGUAGE_INSTRUCTION
+    }
+
+    private fun validateReportText(text: ReportTextResult, textLength: ReportTextLength) {
         val sentences = listOf(text.title, text.advice, text.closing) + text.suggestions
         val violation = when {
-            text.title.isBlank() || text.title.length > TITLE_MAX_LENGTH -> "title 길이"
-            text.advice.isBlank() || text.advice.length > ADVICE_MAX_LENGTH -> "advice 길이"
-            text.closing.isBlank() || text.closing.length > CLOSING_MAX_LENGTH -> "closing 길이"
+            text.title.isBlank() || text.title.length > textLength.titleMax -> "title 길이"
+            text.advice.isBlank() || text.advice.length > textLength.adviceMax -> "advice 길이"
+            text.closing.isBlank() || text.closing.length > textLength.closingMax -> "closing 길이"
             text.suggestions.size != SUGGESTION_COUNT -> "suggestions 개수"
-            text.suggestions.any { it.isBlank() || it.length > SUGGESTION_MAX_LENGTH } -> "suggestions 길이"
+            text.suggestions.any { it.isBlank() || it.length > textLength.suggestionMax } -> "suggestions 길이"
             sentences.any { DIGIT.containsMatchIn(it) } -> "숫자 포함"
             else -> null
         }
@@ -224,6 +279,20 @@ class GeminiReportGenerationClient(
         }
     }
 }
+
+/**
+ * 언어별 리포트 문장 길이. ~Guide는 프롬프트에 주는 목표, ~Max는 받은 문장을 거르는 상한이다.
+ */
+private data class ReportTextLength(
+    val titleGuide: Int,
+    val titleMax: Int,
+    val adviceGuide: Int,
+    val adviceMax: Int,
+    val suggestionGuide: Int,
+    val suggestionMax: Int,
+    val closingGuide: Int,
+    val closingMax: Int,
+)
 
 private data class GeminiErrorResponse(val error: GeminiError?)
 private data class GeminiError(val details: List<GeminiErrorDetail> = emptyList())

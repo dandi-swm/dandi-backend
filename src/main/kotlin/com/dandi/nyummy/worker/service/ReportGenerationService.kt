@@ -91,7 +91,7 @@ class ReportGenerationService(
             )
             val nutritionBalance =
                 calculateNutritionBalance(meals, job.startDate, target, ZONE, job.language, messageSource)
-            val text = reportGenerationClient.generateReportText(nutritionBalance)
+            val text = reportGenerationClient.generateReportText(nutritionBalance, job.language)
             val content = NutritionBalanceContentResponse(
                 mealCount = nutritionBalance.mealCount,
                 recordedDayCount = nutritionBalance.recordedDayCount,
