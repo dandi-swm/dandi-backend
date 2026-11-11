@@ -6,6 +6,7 @@ import com.dandi.nyummy.coin.service.CoinService
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.ErrorCode
 import com.dandi.nyummy.exception.errorcode.ShopErrorCode
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.mail.entity.Mail
 import com.dandi.nyummy.mail.enum.MailCategory
 import com.dandi.nyummy.mail.service.MailService
@@ -133,7 +134,7 @@ class ItemPurchaseTransactionServiceTest {
                 row.withId(2000L + savedLines.size)
             }
         }
-        every { mailService.createItemMail(any(), any(), any(), any(), any()) } returns mockk<Mail>()
+        every { mailService.createItemPurchaseMail(any(), any(), any(), any(), any()) } returns mockk<Mail>()
         every {
             itemPurchaseAttemptService.createItemPurchaseAttempt(any(), any(), any(), any(), any(), any())
         } just runs
@@ -174,7 +175,7 @@ class ItemPurchaseTransactionServiceTest {
     )
 
     private fun purchase(request: CreateItemPurchaseRequest) =
-        service.createItemPurchase(userId, idempotencyKey, request, appVersion = "1.0.0")
+        service.createItemPurchase(userId, idempotencyKey, request, appVersion = "1.0.0", language = Language.KO)
 
     private fun assertBusinessException(expected: ErrorCode, block: () -> Unit) {
         val exception = assertFailsWith<BusinessException>(block = block)
@@ -184,7 +185,7 @@ class ItemPurchaseTransactionServiceTest {
     private fun assertNothingSaved() {
         verify(exactly = 0) { itemPurchaseRepository.save(any()) }
         verify(exactly = 0) { coinService.decreaseBalance(any(), any(), any(), any()) }
-        verify(exactly = 0) { mailService.createItemMail(any(), any(), any(), any(), any()) }
+        verify(exactly = 0) { mailService.createItemPurchaseMail(any(), any(), any(), any(), any()) }
         verify(exactly = 0) { cartItemRepository.deleteAllInBatch(any<Iterable<CartItem>>()) }
     }
 
@@ -231,10 +232,10 @@ class ItemPurchaseTransactionServiceTest {
         assertEquals(3, savedItemPurchaseProducts.size)
         assertEquals(3, savedLines.size)
         verify(exactly = 1) {
-            mailService.createItemMail(
+            mailService.createItemPurchaseMail(
                 userId = userId,
                 title = "상품 101",
-                content = "상점 구매",
+                language = Language.KO,
                 representativeItemId = 1010L,
                 items = listOf(
                     GrantedRoomItem(1010L, itemPurchaseLineId = 2001L),
@@ -257,7 +258,7 @@ class ItemPurchaseTransactionServiceTest {
         assertEquals(2, savedItemPurchaseProducts.size)
         assertEquals(listOf(1001L, 1001L, 1002L, 1002L), savedLines.map { it.itemPurchaseProductId })
         assertEquals(listOf(1000, 800, 1000, 800), savedLines.map { it.listPrice })
-        verify(exactly = 1) { mailService.createItemMail(any(), any(), any(), any(), any()) }
+        verify(exactly = 1) { mailService.createItemPurchaseMail(any(), any(), any(), any(), any()) }
     }
 
     @Test

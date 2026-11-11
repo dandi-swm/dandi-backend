@@ -2,6 +2,7 @@ package com.dandi.nyummy.meal.service
 
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.UserErrorCode
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.mail.service.MailService
 import com.dandi.nyummy.meal.dto.RewardBoxResult
 import com.dandi.nyummy.meal.entity.Meal
@@ -29,10 +30,6 @@ class MealTransactionService(
     private val mailService: MailService,
     private val streakService: StreakService,
 ) {
-    companion object {
-        private const val MEAL_REWARD_CONTENT = "식사 기록 보상"
-    }
-
     /**
      * 식사와 보상 상자 우편, 영양 분석 작업을 한 트랜잭션으로 저장하고 연속 기록을 갱신한다. 우편·작업 저장이나 연속 기록 갱신이
      * 실패하면 식사도 남기지 않는다. 연속 기록은 분석 결과와 상관없이 식사를 만든 날을 인정하므로 여기서 갱신한다.
@@ -54,24 +51,25 @@ class MealTransactionService(
      * @param meal 저장할 식사
      * @param rewardBox 이 식사의 보상으로 뽑은 상자
      * @param rewardMailExpiresAt 보상 상자 우편의 만료 시각
+     * @param language 식사를 기록한 요청의 앱 언어. 보상 상자 우편의 문구를 이 언어로 저장한다
      * @return 저장된 [Meal]
      * @throws BusinessException [UserErrorCode.PROFILE_NOT_FOUND] 가입 시 만들어져야 할 프로필이 없는 경우
      * @throws BusinessException [com.dandi.nyummy.exception.errorcode.MealErrorCode.DAILY_COUNT_EXCEEDED] 다시 센 오늘 시도 횟수가 상한인 경우
      */
     @Transactional
-    fun createMeal(meal: Meal, rewardBox: RewardBoxResult, rewardMailExpiresAt: Instant): Meal {
+    fun createMeal(meal: Meal, rewardBox: RewardBoxResult, rewardMailExpiresAt: Instant, language: Language): Meal {
         profileRepository.findProfileWithLockByUserId(meal.userId)
             ?: throw BusinessException(UserErrorCode.PROFILE_NOT_FOUND)
         mealAttemptService.validateDailyCount(meal.userId)
 
         mealRepository.save(meal)
         mealAnalysisJobRepository.save(MealAnalysisJob(mealId = meal.id))
-        mailService.createRewardBoxMail(
+        mailService.createMealRewardMail(
             userId = meal.userId,
             rewardBoxCategory = rewardBox.category,
             coinQuantity = rewardBox.coinQuantity,
-            content = MEAL_REWARD_CONTENT,
             expiresAt = rewardMailExpiresAt,
+            language = language,
         )
         streakService.updateStreak(meal.userId)
         return meal

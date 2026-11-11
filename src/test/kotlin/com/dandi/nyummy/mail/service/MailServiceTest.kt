@@ -7,6 +7,9 @@ import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.AuthErrorCode
 import com.dandi.nyummy.exception.errorcode.ErrorCode
 import com.dandi.nyummy.exception.errorcode.MailErrorCode
+import com.dandi.nyummy.language.createTestMessageSource
+import com.dandi.nyummy.language.enum.Language
+import com.dandi.nyummy.language.getMessage
 import com.dandi.nyummy.mail.dto.MailItemResult
 import com.dandi.nyummy.mail.entity.Mail
 import com.dandi.nyummy.mail.entity.MailItem
@@ -58,6 +61,7 @@ class MailServiceTest {
         coinService = coinService,
         roomService = roomService,
         clock = clock,
+        messageSource = createTestMessageSource(),
     )
 
     init {
@@ -120,18 +124,18 @@ class MailServiceTest {
             SliceImpl(mails.toList(), PageRequest.of(0, 10), false)
     }
 
-    // createRewardBoxMail
+    // createMealRewardMail · createTutorialRewardMail
 
     @Test
     fun `상자 우편은 REWARD_BOX로 만들고 등급 이름을 제목으로 쓴다`() {
         val savedMail = slot<Mail>()
         every { mailRepository.save(capture(savedMail)) } answers { firstArg() }
 
-        mailService.createRewardBoxMail(
+        mailService.createMealRewardMail(
             userId = userId,
             rewardBoxCategory = RewardBoxCategory.GOLD,
             coinQuantity = 412,
-            content = "식사 기록 보상",
+            language = Language.KO,
             expiresAt = expiresAt,
         )
 
@@ -147,6 +151,24 @@ class MailServiceTest {
     }
 
     @Test
+    fun `보상 상자 우편의 제목과 문구는 요청 언어로 저장한다`() {
+        val savedMail = slot<Mail>()
+        every { mailRepository.save(capture(savedMail)) } answers { firstArg() }
+
+        mailService.createMealRewardMail(
+            userId = userId,
+            rewardBoxCategory = RewardBoxCategory.GOLD,
+            coinQuantity = 412,
+            expiresAt = expiresAt,
+            language = Language.JA,
+        )
+
+        val messageSource = createTestMessageSource()
+        assertEquals(messageSource.getMessage("rewardBoxCategory.GOLD", Language.JA), savedMail.captured.title)
+        assertEquals(messageSource.getMessage("mail.content.mealReward", Language.JA), savedMail.captured.content)
+    }
+
+    @Test
     fun `아이템을 넣으면 우편 id로 아이템을 하나씩 저장한다`() {
         every { mailRepository.save(any()) } answers {
             firstArg<Mail>().apply { ReflectionTestUtils.setField(this, "id", mailId) }
@@ -154,11 +176,11 @@ class MailServiceTest {
         val savedMailItems = slot<List<MailItem>>()
         every { mailItemRepository.saveAll(capture(savedMailItems)) } answers { firstArg() }
 
-        mailService.createRewardBoxMail(
+        mailService.createTutorialRewardMail(
             userId = userId,
             rewardBoxCategory = RewardBoxCategory.GOLD,
             coinQuantity = 100,
-            content = "첫 기록 보상",
+            language = Language.KO,
             expiresAt = null,
             itemIds = listOf(2L, 3L),
         )
@@ -172,11 +194,11 @@ class MailServiceTest {
     fun `아이템이 없으면 우편 아이템을 저장하지 않는다`() {
         every { mailRepository.save(any()) } answers { firstArg() }
 
-        mailService.createRewardBoxMail(
+        mailService.createMealRewardMail(
             userId = userId,
             rewardBoxCategory = RewardBoxCategory.BRONZE,
             coinQuantity = 3,
-            content = "식사 기록 보상",
+            language = Language.KO,
             expiresAt = expiresAt,
         )
 
@@ -188,11 +210,12 @@ class MailServiceTest {
         val savedMail = slot<Mail>()
         every { mailRepository.save(capture(savedMail)) } answers { firstArg() }
 
-        mailService.createRewardBoxMail(
+        mailService.createTutorialRewardMail(
             userId = userId,
             rewardBoxCategory = RewardBoxCategory.GOLD,
             coinQuantity = 100,
-            content = "첫 기록 보상",
+            itemIds = emptyList(),
+            language = Language.KO,
             expiresAt = null,
         )
 
@@ -200,7 +223,7 @@ class MailServiceTest {
         assertFalse(savedMail.captured.isExpired(Instant.MAX))
     }
 
-    // createItemMail
+    // createItemPurchaseMail
 
     @Test
     fun `아이템 우편은 만료 없이 만들고 대표 아이템과 구매 구성품을 넣는다`() {
@@ -211,10 +234,10 @@ class MailServiceTest {
         }
         every { mailItemRepository.saveAll(capture(savedItems)) } answers { firstArg() }
 
-        mailService.createItemMail(
+        mailService.createItemPurchaseMail(
             userId = userId,
             title = "호박 세트",
-            content = "상점 구매",
+            language = Language.KO,
             representativeItemId = 2L,
             items = listOf(GrantedRoomItem(2L, itemPurchaseLineId = 7L), GrantedRoomItem(3L, itemPurchaseLineId = 8L)),
         )

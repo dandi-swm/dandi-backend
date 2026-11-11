@@ -14,6 +14,7 @@ import org.hamcrest.Matchers.equalTo
 import org.hamcrest.Matchers.greaterThan
 import org.hamcrest.Matchers.hasItems
 import org.hamcrest.Matchers.instanceOf
+import org.hamcrest.Matchers.not
 import org.hamcrest.Matchers.notNullValue
 import org.hamcrest.Matchers.oneOf
 import org.junit.jupiter.api.Test
@@ -48,7 +49,8 @@ class MailE2eTest {
     fun `식사 보상 상자를 받고 삭제·복구한다`() {
         val ownerSpec = RequestSpecs.createAuthorizedSpec()
         val otherSpec = RequestSpecs.createAuthorizedSpec(AuthFixture.otherAccessToken)
-        val meal = createMeal()
+        // 우편은 만드는 요청의 언어로 저장된다. 한국어(헤더 없음)는 MealE2eTest가 본다.
+        val meal = createMeal(language = "ja")
         var mailId: Long? = null
 
         try {
@@ -64,6 +66,9 @@ class MailE2eTest {
                 body("mails[0].category", equalTo("REWARD_BOX"))
                 body("mails[0].imageId", equalTo(REWARD_BOX_IDS.getValue(meal.rewardBoxCategory)))
                 body("mails[0].isClaimed", equalTo(false))
+                // 번역문은 바뀔 수 있어 한국어가 아닌지만 본다
+                body("mails[0].title", not(oneOf("브론즈 상자", "실버 상자", "골드 상자")))
+                body("mails[0].content", not(equalTo("식사 기록 보상")))
             } Extract {
                 jsonPath().getLong("mails[0].mailId")
             }
@@ -146,11 +151,12 @@ class MailE2eTest {
     }
 
     // 분석 결과는 보지 않는다. 상자는 분석 전에 식사와 같은 트랜잭션에서 만들어진다.
-    private fun createMeal(): CreateMealResponse {
+    private fun createMeal(language: String? = null): CreateMealResponse {
         val imageKey = ImageFixture.createUploadedImage("MEAL", "/images/cake-undated.jpeg", "image/jpeg")
 
         return Given {
             spec(RequestSpecs.createAuthorizedSpec())
+            if (language != null) header("X-Language", language)
             body(mapOf("imageKey" to imageKey))
         } When {
             post("/api/v1/meals")

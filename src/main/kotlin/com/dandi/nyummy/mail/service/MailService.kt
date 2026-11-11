@@ -5,6 +5,8 @@ import com.dandi.nyummy.coin.service.CoinService
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.AuthErrorCode
 import com.dandi.nyummy.exception.errorcode.MailErrorCode
+import com.dandi.nyummy.language.enum.Language
+import com.dandi.nyummy.language.getMessage
 import com.dandi.nyummy.mail.dto.MailItemResult
 import com.dandi.nyummy.mail.dto.MailsResponse
 import com.dandi.nyummy.mail.dto.RewardResponse
@@ -21,6 +23,7 @@ import com.dandi.nyummy.mail.repository.MailItemRepository
 import com.dandi.nyummy.mail.repository.MailRepository
 import com.dandi.nyummy.room.dto.GrantedRoomItem
 import com.dandi.nyummy.room.service.RoomService
+import org.springframework.context.MessageSource
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
@@ -28,6 +31,12 @@ import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
 import java.time.Instant
 
+/**
+ * 우편함. 우편을 만드는 메서드는 어떤 우편인지 이름으로 말하고, 제목·얻은 경로 문구는 여기서 정한다.
+ * 무엇을·얼마나·언제 줄지는 호출하는 쪽이 정한다.
+ *
+ * 문구는 우편을 만드는 요청의 언어로 꺼내 저장한다. 이미 만든 우편은 나중에 언어를 바꿔도 만든 언어 그대로다.
+ */
 @Service
 class MailService(
     private val mailRepository: MailRepository,
@@ -35,74 +44,97 @@ class MailService(
     private val coinService: CoinService,
     private val roomService: RoomService,
     private val clock: Clock,
+    private val messageSource: MessageSource,
 ) {
 
+    companion object {
+        private const val MEAL_REWARD_CONTENT_MESSAGE_KEY = "mail.content.mealReward"
+        private const val TUTORIAL_REWARD_CONTENT_MESSAGE_KEY = "mail.content.tutorialReward"
+        private const val ITEM_PURCHASE_CONTENT_MESSAGE_KEY = "mail.content.itemPurchase"
+    }
+
     /**
-     * 보상 상자 우편을 만든다. 제목은 등급 이름이다.
+     * 식사 기록 보상 상자 우편을 만든다. 얻은 경로 문구는 "식사 기록 보상"이다.
      *
-     * 무엇을·얼마나·언제 줄지는 호출하는 쪽이 정하고, 여기서는 우편함에 넣기만 한다.
+     * @param userId 우편을 받을 사용자 ID
+     * @param rewardBoxCategory 상자 등급
+     * @param coinQuantity 상자에 든 코인 수
+     * @param expiresAt 우편 만료 시각
+     * @param language 식사를 기록한 요청의 앱 언어
+     * @return 저장된 [Mail]
+     */
+    fun createMealRewardMail(
+        userId: Long,
+        rewardBoxCategory: RewardBoxCategory,
+        coinQuantity: Int,
+        expiresAt: Instant,
+        language: Language,
+    ): Mail = createRewardBoxMail(
+        userId = userId,
+        rewardBoxCategory = rewardBoxCategory,
+        coinQuantity = coinQuantity,
+        expiresAt = expiresAt,
+        itemIds = emptyList(),
+        contentMessageKey = MEAL_REWARD_CONTENT_MESSAGE_KEY,
+        language = language,
+    )
+
+    /**
+     * 튜토리얼 보상 상자 우편을 만든다. 얻은 경로 문구는 "첫 기록 보상"이다.
+     *
      * 아이템을 넣으면 우편과 우편 아이템을 따로 저장하므로, 호출하는 쪽이 연 트랜잭션 안에서 불러야 둘이 함께 커밋된다.
      *
      * @param userId 우편을 받을 사용자 ID
      * @param rewardBoxCategory 상자 등급
      * @param coinQuantity 상자에 든 코인 수
-     * @param content 보상을 얻은 경로 문구
      * @param expiresAt 우편 만료 시각. null이면 만료되지 않는다.
      * @param itemIds 상자에 넣을 아이템. 하나에 1개씩 넣는다.
+     * @param language 튜토리얼 요청의 앱 언어
      * @return 저장된 [Mail]
      */
-    fun createRewardBoxMail(
+    fun createTutorialRewardMail(
         userId: Long,
         rewardBoxCategory: RewardBoxCategory,
         coinQuantity: Int,
-        content: String,
         expiresAt: Instant?,
-        itemIds: List<Long> = emptyList(),
-    ): Mail {
-        val mail = mailRepository.save(
-            Mail(
-                userId = userId,
-                category = MailCategory.REWARD_BOX,
-                title = rewardBoxCategory.description,
-                content = content,
-                coinQuantity = coinQuantity,
-                rewardBoxCategory = rewardBoxCategory,
-                expiresAt = expiresAt,
-            ),
-        )
-
-        if (itemIds.isNotEmpty()) {
-            mailItemRepository.saveAll(itemIds.map { MailItem(mailId = mail.id, itemId = it, quantity = 1) })
-        }
-
-        return mail
-    }
+        itemIds: List<Long>,
+        language: Language,
+    ): Mail = createRewardBoxMail(
+        userId = userId,
+        rewardBoxCategory = rewardBoxCategory,
+        coinQuantity = coinQuantity,
+        expiresAt = expiresAt,
+        itemIds = itemIds,
+        contentMessageKey = TUTORIAL_REWARD_CONTENT_MESSAGE_KEY,
+        language = language,
+    )
 
     /**
-     * 아이템 우편을 만든다. 상자와 달리 만료되지 않고, 목록에는 [representativeItemId]의 이미지가 나온다.
+     * 상점 구매 우편을 만든다. 상품 하나에 우편 하나이고, 얻은 경로 문구는 "상점 구매"다.
+     * 상자와 달리 만료되지 않고, 목록에는 [representativeItemId]의 이미지가 나온다.
      *
      * 우편과 우편 아이템을 따로 저장하므로, 호출하는 쪽이 연 트랜잭션 안에서 불러야 둘이 함께 커밋된다.
      *
      * @param userId 우편을 받을 사용자 ID
-     * @param title 우편 제목
-     * @param content 아이템을 얻은 경로 문구
+     * @param title 우편 제목. 상품 이름이라 아직 번역하지 않는다
      * @param representativeItemId 목록에 그릴 아이템
      * @param items 우편에 넣을 아이템. 하나에 1개씩 넣는다
+     * @param language 구매 요청의 앱 언어
      * @return 저장된 [Mail]
      */
-    fun createItemMail(
+    fun createItemPurchaseMail(
         userId: Long,
         title: String,
-        content: String,
         representativeItemId: Long,
         items: List<GrantedRoomItem>,
+        language: Language,
     ): Mail {
         val mail = mailRepository.save(
             Mail(
                 userId = userId,
                 category = MailCategory.ITEM,
                 title = title,
-                content = content,
+                content = messageSource.getMessage(ITEM_PURCHASE_CONTENT_MESSAGE_KEY, language),
                 representativeItemId = representativeItemId,
             ),
         )
@@ -117,6 +149,35 @@ class MailService(
                 )
             },
         )
+
+        return mail
+    }
+
+    // 보상 상자 우편 공통. 제목은 등급 이름이다.
+    private fun createRewardBoxMail(
+        userId: Long,
+        rewardBoxCategory: RewardBoxCategory,
+        coinQuantity: Int,
+        expiresAt: Instant?,
+        itemIds: List<Long>,
+        contentMessageKey: String,
+        language: Language,
+    ): Mail {
+        val mail = mailRepository.save(
+            Mail(
+                userId = userId,
+                category = MailCategory.REWARD_BOX,
+                title = messageSource.getMessage("rewardBoxCategory.${rewardBoxCategory.name}", language),
+                content = messageSource.getMessage(contentMessageKey, language),
+                coinQuantity = coinQuantity,
+                rewardBoxCategory = rewardBoxCategory,
+                expiresAt = expiresAt,
+            ),
+        )
+
+        if (itemIds.isNotEmpty()) {
+            mailItemRepository.saveAll(itemIds.map { MailItem(mailId = mail.id, itemId = it, quantity = 1) })
+        }
 
         return mail
     }

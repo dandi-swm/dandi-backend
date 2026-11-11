@@ -226,12 +226,12 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
         val products = List(REQUEST_COUNT) { createProduct(price = 100) }
         products.forEach { createCartItem(userId, it, quantity = 1) }
         repeat(REQUEST_COUNT) {
-            mailService.createRewardBoxMail(
+            mailService.createMealRewardMail(
                 userId = userId,
                 rewardBoxCategory = RewardBoxCategory.BRONZE,
                 coinQuantity = 10,
-                content = "테스트 보상",
-                expiresAt = null,
+                language = Language.KO,
+                expiresAt = Instant.now(clock).plus(Duration.ofDays(7)),
             )
         }
 
@@ -279,6 +279,7 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
                 UUID.randomUUID().toString(),
                 CreateItemPurchaseRequest(listOf(ItemPurchaseProductRequest(product.id, 1, 900))),
                 "1.0.0",
+                Language.KO,
             )
         }
 
@@ -411,6 +412,7 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
             UUID.randomUUID().toString(),
             CreateItemPurchaseRequest(listOf(ItemPurchaseProductRequest(product.id, 1, 700))),
             null,
+            Language.KO,
         )
 
         assertEquals(700, response.purchasePrice)
@@ -616,6 +618,7 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
             products.map { (product, quantity) -> ItemPurchaseProductRequest(product.id, quantity, product.price) },
         ),
         "1.0.0",
+        Language.KO,
     )
 
     private fun getOwnedCount(userId: Long, product: Product): Int = shopItemService.createShopItems(

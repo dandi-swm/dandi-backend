@@ -365,12 +365,12 @@ class AdminItemPurchaseRefundIntegrationTest @Autowired constructor(
             repeat(requestCount) { purchase(userId, createProduct(listOf(500))) }
             val refundLineIds = getItemPurchaseLineIds(userId)
             val mailIds = List(requestCount) {
-                mailService.createRewardBoxMail(
+                mailService.createMealRewardMail(
                     userId = userId,
                     rewardBoxCategory = RewardBoxCategory.BRONZE,
                     coinQuantity = 10,
-                    content = "테스트 보상",
-                    expiresAt = null,
+                    language = Language.KO,
+                    expiresAt = Instant.now(clock).plus(Duration.ofDays(7)),
                 ).id
             }
             val products = List(requestCount) { createProduct(listOf(300)) }
@@ -391,6 +391,7 @@ class AdminItemPurchaseRefundIntegrationTest @Autowired constructor(
                         UUID.randomUUID().toString(),
                         CreateItemPurchaseRequest(listOf(ItemPurchaseProductRequest(product.id, 1, product.price))),
                         "1.0.0",
+                        Language.KO,
                     )
                 }
             }
@@ -537,6 +538,7 @@ class AdminItemPurchaseRefundIntegrationTest @Autowired constructor(
             UUID.randomUUID().toString(),
             CreateItemPurchaseRequest(listOf(ItemPurchaseProductRequest(product.id, quantity, product.price))),
             "1.0.0",
+            Language.KO,
         )
     }
 

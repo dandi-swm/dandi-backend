@@ -130,6 +130,9 @@ class MealE2eTest {
                 body("mails[0].imageId", equalTo(REWARD_BOX_IDS.getValue(created.rewardBoxCategory)))
                 body("mails[0].isClaimed", equalTo(false))
                 body("mails[0].expiresAt", notNullValue())
+                // X-Language 없이 기록했으므로 우편 문구는 예전 앱 빌드가 받던 한국어 그대로다
+                body("mails[0].title", oneOf("브론즈 상자", "실버 상자", "골드 상자"))
+                body("mails[0].content", equalTo("식사 기록 보상"))
             } Extract {
                 jsonPath().getLong("mails[0].mailId")
             }

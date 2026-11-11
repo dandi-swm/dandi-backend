@@ -4,6 +4,8 @@ import com.dandi.nyummy.config.openapi.ApiErrorCodes
 import com.dandi.nyummy.exception.errorcode.ShopErrorCode
 import com.dandi.nyummy.header.CommonHeader
 import com.dandi.nyummy.header.CurrentCommonHeader
+import com.dandi.nyummy.language.CurrentLanguage
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.security.AuthUser
 import com.dandi.nyummy.security.CurrentUser
 import com.dandi.nyummy.shop.dto.CreateItemPurchaseRequest
@@ -58,11 +60,12 @@ class ItemPurchaseController(private val itemPurchaseService: ItemPurchaseServic
     fun createItemPurchase(
         @CurrentUser user: AuthUser,
         @CurrentCommonHeader commonHeader: CommonHeader,
+        @CurrentLanguage language: Language,
         @Parameter(description = "구매 버튼을 누를 때마다 앱이 만드는 UUID. 재시도할 때만 같은 값을 보낸다 (1~64자)")
         @RequestHeader(IDEMPOTENCY_KEY)
         @Size(min = 1, max = 64)
         idempotencyKey: String,
         @Valid @RequestBody request: CreateItemPurchaseRequest,
     ): ItemPurchaseResponse =
-        itemPurchaseService.createItemPurchase(user.userId, idempotencyKey, request, commonHeader.appVersion)
+        itemPurchaseService.createItemPurchase(user.userId, idempotencyKey, request, commonHeader.appVersion, language)
 }
