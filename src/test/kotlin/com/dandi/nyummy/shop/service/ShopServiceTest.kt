@@ -95,6 +95,7 @@ class ShopServiceTest {
         shopBannerRepository = shopBannerRepository,
         coinService = coinService,
         cartItemRepository = cartItemRepository,
+        messageSource = messageSource,
     )
 
     // 테스트마다 채우는 DB 상태
@@ -294,6 +295,37 @@ class ShopServiceTest {
         assertRemainingTime(Duration.ofMinutes(70), "1시간 10분 남았어요", "contentDanger")
         assertRemainingTime(Duration.ofMinutes(47), "47분 남았어요", "contentDanger")
         assertRemainingTime(Duration.ofSeconds(20), "1분 남았어요", "contentDanger")
+    }
+
+    @Test
+    fun `섹션 제목과 남은 시간은 요청 언어로 준다`() {
+        products = listOf(product(101))
+        productItems = products.map { single(it) }
+        promotions = listOf(promotion(3, PromotionCategory.DAILY, endsAt = now.plus(Duration.ofMinutes(70))))
+        promotionProducts = listOf(PromotionProduct(3, 101L, 0))
+
+        val headers = getRecommendPage(language = Language.JA).sduiComponents
+            .filterIsInstance<SectionHeaderComponentResponse>()
+            .map { it.content }
+        val dailyHeader = headers.first()
+        val popularHeader = headers.last()
+
+        assertEquals(
+            messageSource.getMessage("shop.section.dailyPromotion.title", Language.JA),
+            dailyHeader.title.single().text,
+        )
+        assertEquals(
+            messageSource.getMessage("shop.dailyPromotion.remainingHoursMinutes", Language.JA, 1L, 10L),
+            assertNotNull(dailyHeader.trailing).content.last().text,
+        )
+        assertEquals(
+            messageSource.getMessage("shop.section.popular.title", Language.JA),
+            popularHeader.title.single().text,
+        )
+        assertEquals(
+            messageSource.getMessage("shop.section.seeAll", Language.JA),
+            assertNotNull(popularHeader.trailing).content.first().text,
+        )
     }
 
     // 시계 아이콘과 글자가 같은 색인지도 함께 본다

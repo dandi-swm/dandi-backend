@@ -34,6 +34,23 @@ class ShopE2eTest {
         }
     }
 
+    // 섹션은 상품이 있을 때만 오므로, 헤더가 없으면 오는 제목이 한국어 제목 중 하나인지와 일본어 요청에 같은 글자가 안 오는지만 본다.
+    @Smoke
+    @Test
+    fun `추천 탭 섹션 제목은 X-Language 언어로 오고 헤더가 없으면 한국어다`() {
+        val koreanTitles = getRecommendSectionTitles(language = null)
+        val japaneseTitles = getRecommendSectionTitles(language = "ja")
+
+        assertTrue(
+            KOREAN_SECTION_TITLES.containsAll(koreanTitles),
+            "헤더 없이 요청했는데 한국어가 아닌 섹션 제목이 왔습니다: $koreanTitles",
+        )
+        assertTrue(
+            japaneseTitles.none { it in KOREAN_SECTION_TITLES },
+            "일본어 요청에 한국어 섹션 제목이 왔습니다: $japaneseTitles",
+        )
+    }
+
     @Smoke
     @Test
     fun `인테리어 탭 상품 목록을 조회한다`() {
@@ -190,6 +207,17 @@ class ShopE2eTest {
         return items.associate { it["productId"] to it["categoryName"] }
     }
 
+    private fun getRecommendSectionTitles(language: String?): List<String> = Given {
+        spec(RequestSpecs.createAuthorizedSpec())
+        if (language != null) header("X-Language", language) else this
+    } When {
+        get("/api/v1/shop/pages/recommend")
+    } Then {
+        statusCode(200)
+    } Extract {
+        path("sduiComponents.findAll { it.viewType == 'SectionHeader' }.collect { it.content.title[0].text }")
+    }
+
     private fun getRecommendViewTypes(shopLayoutVariant: String?): List<String> = Given {
         spec(RequestSpecs.createAuthorizedSpec())
         if (shopLayoutVariant != null) header("X-Shop-Layout-Variant", shopLayoutVariant) else this
@@ -207,5 +235,9 @@ class ShopE2eTest {
     private fun ValidatableResponse.validateError(status: Int, code: String) {
         statusCode(status)
         body("code", equalTo(code))
+    }
+
+    companion object {
+        private val KOREAN_SECTION_TITLES = setOf("오늘의 할인", "지금 인기 있는 가구")
     }
 }
