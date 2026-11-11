@@ -1,11 +1,14 @@
 package com.dandi.nyummy.report.calculator
 
+import com.dandi.nyummy.language.enum.Language
+import com.dandi.nyummy.language.getMessage
 import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.report.dto.MacroNutrientBalanceResponse
 import com.dandi.nyummy.report.dto.NutritionBalanceResult
 import com.dandi.nyummy.report.dto.ReportDayResponse
 import com.dandi.nyummy.report.enum.MacroNutrient
+import org.springframework.context.MessageSource
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.ZoneId
@@ -37,15 +40,22 @@ private val CALORY_PER_GRAM = mapOf(MacroNutrient.CARBS to 4, MacroNutrient.PROT
  * 양으로 고르면 적게 먹은 주는 모든 영양소가 모자라 보여, 지방이 많은 주에도 가장 덜 먹은 탄수화물을 강조하게 된다.
  * 많이·적게 먹은 것은 칼로리 문장이 따로 말한다.
  *
+ * 서버 문장은 [language]로 만든다. 리포트는 만들 때 한 번 저장하므로, 구매한 요청의 언어로 저장되고 나중에 언어를 바꿔도 그대로다.
+ *
  * @param target 하루 목표 섭취량
  * @param zone 식사 시각을 날짜로 바꿀 시간대(Asia/Seoul)
+ * @param language 리포트를 구매한 요청의 앱 언어
+ * @param messageSource 서버 문장을 꺼낼 서버 고정 문구
  */
 fun calculateNutritionBalance(
     meals: List<Meal>,
     startDate: LocalDate,
     target: Nutrition,
     zone: ZoneId,
+    language: Language,
+    messageSource: MessageSource,
 ): NutritionBalanceResult {
+    val sentences = ReportSentences(language, messageSource)
     val mealsByDate = meals.sortedBy { it.mealAt }.groupBy { LocalDate.ofInstant(it.mealAt, zone) }
     val days = (0L until 7L).map { offset ->
         val date = startDate.plusDays(offset)
@@ -82,14 +92,14 @@ fun calculateNutritionBalance(
         focusedNutrient = focused?.nutrient,
         days = days,
         breakfastDayCount = breakfastDayCount,
-        calorySentence = createCalorySentence(current.calory, target.calory),
-        focusSentence = createFocusSentence(
+        calorySentence = sentences.createCalorySentence(current.calory, target.calory),
+        focusSentence = sentences.createFocusSentence(
             focused,
             hasMacroNutrients =
             current.carbs + current.protein + current.fat > 0,
         ),
-        overTargetSentence = createOverTargetSentence(days.filter { it.isOverTarget }.map { it.dayOfWeek }),
-        breakfastSentence = "기록한 ${recordedDayCount}일 중 아침을 챙긴 날은 ${breakfastDayCount}일이에요",
+        overTargetSentence = sentences.createOverTargetSentence(days.filter { it.isOverTarget }.map { it.dayOfWeek }),
+        breakfastSentence = sentences.createBreakfastSentence(recordedDayCount, breakfastDayCount),
     )
 }
 
@@ -155,29 +165,68 @@ private fun calculateCaloryShares(grams: Map<MacroNutrient, Int>): Map<MacroNutr
 private fun calculatePercentOfTarget(current: Int, target: Int): Int =
     if (target <= 0) 0 else (current * 100.0 / target).roundToInt()
 
-private fun createCalorySentence(current: Int, target: Int): String {
-    val difference = current - target
-    return when {
-        difference > 0 -> "하루 평균 %,dkcal로, 목표보다 %,dkcal 많았어요".format(current, difference)
-        difference < 0 -> "하루 평균 %,dkcal로, 목표보다 %,dkcal 적었어요".format(current, -difference)
-        else -> "하루 평균 %,dkcal로, 목표와 같았어요".format(current)
+/**
+ * 리포트의 서버 숫자 문장을 [language]로 만든다.
+ *
+ * 숫자는 MessageFormat에 맡기지 않고 문자열로 넘긴다. MessageFormat은 언어에 따라 자릿수를 다르게 끊어, 지금 문장(1,850kcal)과 달라질 수 있다.
+ */
+private class ReportSentences(private val language: Language, private val messageSource: MessageSource) {
+
+    fun createCalorySentence(current: Int, target: Int): String {
+        val difference = current - target
+        return when {
+            difference > 0 -> createSentence(
+                "report.calorySentence.over",
+                formatNumber(current),
+                formatNumber(difference),
+            )
+
+            difference < 0 -> createSentence(
+                "report.calorySentence.under",
+                formatNumber(current),
+                formatNumber(-difference),
+            )
+
+            else -> createSentence("report.calorySentence.equal", formatNumber(current))
+        }
     }
-}
 
-private fun createFocusSentence(focused: MacroNutrientBalanceResponse?, hasMacroNutrients: Boolean): String = when {
-    !hasMacroNutrients -> "탄수화물·단백질·지방 기록이 없어 균형을 볼 수 없어요"
+    fun createFocusSentence(focused: MacroNutrientBalanceResponse?, hasMacroNutrients: Boolean): String = when {
+        !hasMacroNutrients -> createSentence("report.focusSentence.noMacroNutrients")
 
-    focused == null -> "탄수화물·단백질·지방을 고르게 먹었어요"
+        focused == null -> createSentence("report.focusSentence.balanced")
 
-    focused.caloryShare < focused.targetCaloryShare ->
-        "${focused.nutrient.label}이 칼로리의 ${focused.caloryShare}%로, 목표 ${focused.targetCaloryShare}%보다 적었어요"
+        focused.caloryShare < focused.targetCaloryShare -> createSentence(
+            "report.focusSentence.under",
+            messageSource.getMessage("macroNutrient.${focused.nutrient.name}", language),
+            focused.caloryShare.toString(),
+            focused.targetCaloryShare.toString(),
+        )
 
-    else ->
-        "${focused.nutrient.label}이 칼로리의 ${focused.caloryShare}%로, 목표 ${focused.targetCaloryShare}%보다 많았어요"
-}
+        else -> createSentence(
+            "report.focusSentence.over",
+            messageSource.getMessage("macroNutrient.${focused.nutrient.name}", language),
+            focused.caloryShare.toString(),
+            focused.targetCaloryShare.toString(),
+        )
+    }
 
-private fun createOverTargetSentence(overTargetDays: List<DayOfWeek>): String = when (overTargetDays.size) {
-    0 -> "목표 칼로리를 넘긴 날은 없었어요"
-    1 -> "${overTargetDays.single().getDisplayName(TextStyle.FULL, Locale.KOREAN)} 하루만 목표 칼로리를 넘겼어요"
-    else -> "${overTargetDays.size}일 목표 칼로리를 넘겼어요"
+    fun createOverTargetSentence(overTargetDays: List<DayOfWeek>): String = when (overTargetDays.size) {
+        0 -> createSentence("report.overTargetSentence.none")
+
+        1 -> createSentence(
+            "report.overTargetSentence.one",
+            overTargetDays.single().getDisplayName(TextStyle.FULL, language.toLocale()),
+        )
+
+        else -> createSentence("report.overTargetSentence.many", overTargetDays.size.toString())
+    }
+
+    fun createBreakfastSentence(recordedDayCount: Int, breakfastDayCount: Int): String =
+        createSentence("report.breakfastSentence", recordedDayCount.toString(), breakfastDayCount.toString())
+
+    private fun createSentence(key: String, vararg args: String): String =
+        messageSource.getMessage(key, language, *args)
+
+    private fun formatNumber(number: Int): String = "%,d".format(Locale.ROOT, number)
 }

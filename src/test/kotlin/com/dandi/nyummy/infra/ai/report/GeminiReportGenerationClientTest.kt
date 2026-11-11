@@ -1,6 +1,8 @@
 package com.dandi.nyummy.infra.ai.report
 
 import com.dandi.nyummy.infra.ai.AiProperties
+import com.dandi.nyummy.language.createTestMessageSource
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.report.calculator.calculateNutritionBalance
 import com.dandi.nyummy.report.dto.MacroNutrientBalanceResponse
@@ -44,13 +46,18 @@ class GeminiReportGenerationClientTest {
     private val server = MockRestServiceServer.bindTo(restClientBuilder).build()
     private val objectMapper = jacksonObjectMapper()
 
-    private val client = GeminiReportGenerationClient(restClientBuilder.build(), aiProperties, objectMapper)
+    private val messageSource = createTestMessageSource()
+
+    private val client =
+        GeminiReportGenerationClient(restClientBuilder.build(), aiProperties, objectMapper, messageSource)
 
     private val nutritionBalance = calculateNutritionBalance(
         meals = emptyList(),
         startDate = LocalDate.parse("2026-11-01"),
         target = Nutrition(2000, 250, 100, 66),
         zone = ZoneId.of("Asia/Seoul"),
+        language = Language.KO,
+        messageSource = messageSource,
     )
 
     private val validText = mapOf(

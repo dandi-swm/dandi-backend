@@ -2,9 +2,12 @@ package com.dandi.nyummy.infra.ai.report
 
 import com.dandi.nyummy.infra.ai.AiProperties
 import com.dandi.nyummy.infra.ai.nutrition.GeminiGenerateContentResponse
+import com.dandi.nyummy.language.enum.Language
+import com.dandi.nyummy.language.getMessage
 import com.dandi.nyummy.report.dto.NutritionBalanceResult
 import com.dandi.nyummy.report.dto.ReportTextResult
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBooleanProperty
+import org.springframework.context.MessageSource
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Component
 import org.springframework.web.client.HttpClientErrorException
@@ -21,6 +24,7 @@ class GeminiReportGenerationClient(
     private val restClient: RestClient,
     private val aiProperties: AiProperties,
     private val objectMapper: ObjectMapper,
+    private val messageSource: MessageSource,
 ) : ReportGenerationClient {
 
     companion object {
@@ -168,7 +172,12 @@ class GeminiReportGenerationClient(
         val focused = nutritionBalance.macroNutrients.firstOrNull { it.isFocused }
             ?: return "탄수화물·단백질·지방이 목표 비율에 가깝게 고르게 균형을 이뤘어. 잘한 점을 칭찬하고, 이 균형을 이어 갈 방법을 써."
         val direction = if (focused.caloryShare < focused.targetCaloryShare) "목표 비율보다 적었어" else "목표 비율보다 많았어"
-        return "${focused.nutrient.label}이 칼로리 중 차지한 비율이 $direction. ${focused.nutrient.label}을 중심으로 써."
+        // 프롬프트의 지시는 한국어라 영양소 이름도 원본 언어로 넣는다
+        val nutrientName = messageSource.getMessage(
+            "macroNutrient.${focused.nutrient.name}",
+            Language.ORIGINAL_LANGUAGE,
+        )
+        return "${nutrientName}이 칼로리 중 차지한 비율이 $direction. ${nutrientName}을 중심으로 써."
     }
 
     /** 401·403은 키·권한, 404는 모델 이름·경로 오류다. 400은 본문의 오류 이유가 API_KEY_로 시작할 때만 설정 오류로 본다. */

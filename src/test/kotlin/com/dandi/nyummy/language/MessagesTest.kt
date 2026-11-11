@@ -5,6 +5,7 @@ import com.dandi.nyummy.coin.enum.CoinHistoryCategory
 import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.mail.enum.RewardBoxCategory
 import com.dandi.nyummy.meal.enum.MealTime
+import com.dandi.nyummy.report.enum.MacroNutrient
 import com.dandi.nyummy.room.enum.RoomItemCategory
 import java.io.InputStreamReader
 import java.text.MessageFormat
@@ -30,6 +31,7 @@ class MessagesTest {
         "catWeight" to CatWeight.entries,
         "coinHistoryCategory" to CoinHistoryCategory.entries,
         "rewardBoxCategory" to RewardBoxCategory.entries,
+        "macroNutrient" to MacroNutrient.entries,
     )
 
     @Test
