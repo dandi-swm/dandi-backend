@@ -7,6 +7,7 @@ import aws.smithy.kotlin.runtime.http.response.HttpResponse
 import com.dandi.nyummy.infra.ai.AiProperties
 import com.dandi.nyummy.infra.storage.s3.S3StorageClient
 import com.dandi.nyummy.infra.storage.s3.dto.S3ObjectContentResult
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.meal.dto.IconSummaryResult
 import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.dto.NutritionAnalysisResult
@@ -41,6 +42,31 @@ class GeminiNutritionAnalysisClient(
 
         private val RECOMMENDATION_CUISINES = listOf("한식", "중식", "일식", "양식", "분식")
         private val RECOMMENDATION_DISH_FORMS = listOf("밥·덮밥", "면", "국·찌개·탕", "구이·조림 정식", "볶음")
+
+        // 한국어가 아닌 언어는 아래 한국어 지시를 그대로 두고, 출력 언어 지시를 맨 끝에 덧붙인다.
+        // 한국어 요청은 덧붙이는 것이 없어 지금까지와 같은 프롬프트로 분석한다.
+        // 메뉴 추천 후보는 그 언어를 쓰는 사람이 평소에 먹는 음식으로 바꾼다. 영어는 어느 나라 사용자인지 몰라 넓게 둔다.
+        private val JA_OUTPUT_LANGUAGE_PROMPT = OutputLanguagePrompt(
+            cuisines = listOf("和食", "中華", "洋食", "韓国料理", "エスニック"),
+            dishForms = listOf("ご飯もの・丼", "麺類", "汁物・鍋", "定食", "炒め物"),
+            instruction = """
+        [출력 언어]
+        rejectReason, name, catComment는 모두 일본어로 써. 한국어를 섞지 마.
+        - name은 일본에서 흔히 부르는 음식 이름으로 써. (예: 김치찌개 → キムチチゲ)
+        - catComment는 일본어 고양이 말투로 쓰고, 문장 끝을 "~にゃ"로 맺어. 추천하는 메뉴 이름도 일본어로 써.
+    """,
+        )
+        private val EN_OUTPUT_LANGUAGE_PROMPT = OutputLanguagePrompt(
+            cuisines = listOf("Korean", "Southeast Asian", "East Asian", "Western", "Mediterranean"),
+            dishForms = listOf("rice bowl", "noodles", "soup or stew", "grilled plate", "stir-fry"),
+            // 영어는 같은 내용이 한국어보다 길어 글자 수를 늘린다. name은 100자, cat_comment는 255자 컬럼이라 여유를 둔다.
+            instruction = """
+        [출력 언어]
+        rejectReason, name, catComment는 모두 영어로 써. 한국어를 섞지 마.
+        - name은 영어권에서 통하는 음식 이름으로, 위의 20자 대신 30자 이내로 써. (예: 김치찌개 → Kimchi stew)
+        - catComment는 장난스러운 고양이 말투의 영어로 쓰고 "meow"를 자연스럽게 넣어. 위의 100자 대신 160자 이내로 써. 추천하는 메뉴 이름도 영어로 써.
+    """,
+        )
 
         private const val PROMPT =
             """
@@ -116,7 +142,7 @@ class GeminiNutritionAnalysisClient(
      *
      * @throws AnalysisFailureException 실패를 [AnalysisFailureCategory]로 나눠 던진다. 분류에 없는 예외는 그대로 올린다.
      */
-    override fun analyzeNutrition(imageKey: String): NutritionAnalysisResult {
+    override fun analyzeNutrition(imageKey: String, language: Language): NutritionAnalysisResult {
         val objectContent = downloadImage(imageKey)
         val encodedContent = Base64.encode(objectContent.bytes, 0, objectContent.bytes.size)
         val mimeType = objectContent.contentType
@@ -124,11 +150,7 @@ class GeminiNutritionAnalysisClient(
         val icons = getIcons()
         val iconsJson = objectMapper.writeValueAsString(icons)
 
-        // 다음 식사 추천이 한 메뉴로 몰리지 않게 음식 종류와 메뉴 형태를 요청마다 무작위로 정한다.
-        val promptWithRecommendation = PROMPT
-            .replace("{cuisine}", RECOMMENDATION_CUISINES.random())
-            .replace("{dishForm}", RECOMMENDATION_DISH_FORMS.random())
-        val prompt = "$promptWithRecommendation 음식 아이콘 목록은 다음과 같아: $iconsJson 만약 뚜렷하게 맞는 것이 없으면 5(밥)를 골라줘."
+        val prompt = createPrompt(language, iconsJson)
 
         val requestBody = mapOf(
             "contents" to listOf(
@@ -200,6 +222,27 @@ class GeminiNutritionAnalysisClient(
             catComment = parsed.catComment,
             iconId = parsed.iconId,
         )
+    }
+
+    /**
+     * 분석 프롬프트. 한국어는 지금까지와 같고, 다른 언어는 메뉴 추천 후보를 바꾸고 출력 언어 지시를 맨 끝에 덧붙인다.
+     * 다음 식사 추천이 한 메뉴로 몰리지 않게 음식 종류와 메뉴 형태를 요청마다 무작위로 정한다.
+     */
+    private fun createPrompt(language: Language, iconsJson: String): String {
+        val outputLanguagePrompt = pickOutputLanguagePrompt(language)
+        val promptWithRecommendation = PROMPT
+            .replace("{cuisine}", outputLanguagePrompt.cuisines.random())
+            .replace("{dishForm}", outputLanguagePrompt.dishForms.random())
+        val prompt = "$promptWithRecommendation 음식 아이콘 목록은 다음과 같아: $iconsJson 만약 뚜렷하게 맞는 것이 없으면 5(밥)를 골라줘."
+
+        return outputLanguagePrompt.instruction?.let { "$prompt\n$it" } ?: prompt
+    }
+
+    // when으로 고르면 언어를 추가할 때 여기서 컴파일이 깨져 빠뜨리지 않는다
+    private fun pickOutputLanguagePrompt(language: Language): OutputLanguagePrompt = when (language) {
+        Language.KO -> OutputLanguagePrompt(RECOMMENDATION_CUISINES, RECOMMENDATION_DISH_FORMS, instruction = null)
+        Language.JA -> JA_OUTPUT_LANGUAGE_PROMPT
+        Language.EN -> EN_OUTPUT_LANGUAGE_PROMPT
     }
 
     /**
@@ -284,4 +327,15 @@ private data class GeminiNutritionResponse(
     val protein: Int,
     val fat: Int,
     val catComment: String,
+)
+
+/**
+ * 언어마다 다른 분석 프롬프트 재료.
+ *
+ * @property instruction 프롬프트 맨 끝에 덧붙일 출력 언어 지시. 한국어는 null이라 기존 프롬프트 그대로다
+ */
+private data class OutputLanguagePrompt(
+    val cuisines: List<String>,
+    val dishForms: List<String>,
+    val instruction: String?,
 )

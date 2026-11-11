@@ -111,7 +111,7 @@ class AnalysisServiceTest {
         AnalysisPushResult(mealId = mealId, userId = userId, mealName = "김치찌개", status = status, isDeleted = isDeleted)
 
     private fun givenAnalysisSuccess(job: MealAnalysisJobResult) {
-        every { nutritionAnalysisClient.analyzeNutrition(job.imageKey) } returns analysisResult
+        every { nutritionAnalysisClient.analyzeNutrition(job.imageKey, job.language) } returns analysisResult
     }
 
     private fun countAnalysis(outcome: String, category: String): Long =
@@ -124,7 +124,7 @@ class AnalysisServiceTest {
     private fun existsElapsed(): Boolean = meterRegistry.find("nyummy.meal.analysis.elapsed").timers().isNotEmpty()
 
     private fun givenAnalysisFailure(job: MealAnalysisJobResult, category: AnalysisFailureCategory) {
-        every { nutritionAnalysisClient.analyzeNutrition(job.imageKey) } throws
+        every { nutritionAnalysisClient.analyzeNutrition(job.imageKey, job.language) } throws
             AnalysisFailureException(category, "실패")
     }
 
@@ -225,7 +225,7 @@ class AnalysisServiceTest {
             AnalysisFailureException(AnalysisFailureCategory.UNAVAILABLE, "종료"),
         )
 
-        verify(exactly = 0) { nutritionAnalysisClient.analyzeNutrition(any()) }
+        verify(exactly = 0) { nutritionAnalysisClient.analyzeNutrition(any(), any()) }
         verify(exactly = 1) { mealAnalysisJobTransactionService.failMealAnalysis(lastJob) }
         assertFailedPushSent(title = "지금은 소화가 안 된다냥 🐾", body = "잠시 뒤에 다시 시도해줄래?")
     }
@@ -280,7 +280,8 @@ class AnalysisServiceTest {
 
     @Test
     fun `분석 중 분류에 없는 예외가 나면 다시 시도할 수 있어도 실패로 끝내고 실패 알림을 보낸다`() {
-        every { nutritionAnalysisClient.analyzeNutrition(retryableJob.imageKey) } throws IllegalStateException("예상 밖")
+        every { nutritionAnalysisClient.analyzeNutrition(retryableJob.imageKey, retryableJob.language) } throws
+            IllegalStateException("예상 밖")
 
         analysisService.analyzeMealAnalysisJob(retryableJob)
 
@@ -377,7 +378,8 @@ class AnalysisServiceTest {
 
     @Test
     fun `분류에 없는 예외로 실패하면 unknown으로 센다`() {
-        every { nutritionAnalysisClient.analyzeNutrition(retryableJob.imageKey) } throws IllegalStateException("예상 밖")
+        every { nutritionAnalysisClient.analyzeNutrition(retryableJob.imageKey, retryableJob.language) } throws
+            IllegalStateException("예상 밖")
 
         analysisService.analyzeMealAnalysisJob(retryableJob)
 

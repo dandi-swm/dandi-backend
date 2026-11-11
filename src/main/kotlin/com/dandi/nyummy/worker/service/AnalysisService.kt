@@ -69,7 +69,7 @@ class AnalysisService(
         val analyzedAt = Instant.now(clock)
 
         try {
-            val analysisResult = nutritionAnalysisClient.analyzeNutrition(job.imageKey)
+            val analysisResult = nutritionAnalysisClient.analyzeNutrition(job.imageKey, job.language)
             val pushResult = mealAnalysisJobTransactionService.confirmMealAnalysis(job, analysisResult)
             if (pushResult != null) {
                 recordAnalysis(job, AnalysisOutcome.COMPLETED, null, analyzedAt)
