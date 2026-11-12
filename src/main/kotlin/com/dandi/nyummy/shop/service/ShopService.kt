@@ -4,6 +4,8 @@ import com.dandi.nyummy.coin.service.CoinService
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.CommonErrorCode
 import com.dandi.nyummy.exception.errorcode.ShopErrorCode
+import com.dandi.nyummy.language.enum.Language
+import com.dandi.nyummy.language.getMessage
 import com.dandi.nyummy.shop.calculator.calculateMaxDiscountRates
 import com.dandi.nyummy.shop.calculator.calculatePurchasePrice
 import com.dandi.nyummy.shop.config.ShopProperties
@@ -38,6 +40,7 @@ import com.dandi.nyummy.shop.repository.CartItemRepository
 import com.dandi.nyummy.shop.repository.ProductRepository
 import com.dandi.nyummy.shop.repository.PromotionProductRepository
 import com.dandi.nyummy.shop.repository.ShopBannerRepository
+import org.springframework.context.MessageSource
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -57,6 +60,7 @@ class ShopService(
     private val productRepository: ProductRepository,
     private val shopBannerRepository: ShopBannerRepository,
     private val cartItemRepository: CartItemRepository,
+    private val messageSource: MessageSource,
 ) {
 
     companion object {
@@ -79,10 +83,11 @@ class ShopService(
      * 가격은 상품이 든 프로모션 중 사용자가 대상인 것의 할인율 가장 큰 것으로 계산한다.
      *
      * @param shopLayoutVariant 앱이 Remote Config에서 받은 배치 그룹. B가 아니면 A로 본다
+     * @param language 요청의 `X-Language`로 정한 앱 언어. 섹션 제목·남은 시간과 상품 카드의 분류 이름·태그를 이 언어로 꺼낸다
      * @throws BusinessException [UserErrorCode.USER_NOT_FOUND] 사용자가 없는 경우
      */
     @Transactional(readOnly = true)
-    fun getRecommendPage(userId: Long, shopLayoutVariant: String?): ShopPageResponse {
+    fun getRecommendPage(userId: Long, shopLayoutVariant: String?, language: Language): ShopPageResponse {
         val now = clock.instant()
         val promotions = shopItemService.getEligiblePromotions(userId, now)
         val promotionProducts = promotionProductRepository.findByPromotionIdInOrderByDisplayOrderAsc(
@@ -101,22 +106,38 @@ class ShopService(
             .sortedWith(compareByDescending<Product> { it.salesCount }.thenByDescending { it.id })
             .take(POPULAR_PRODUCT_COUNT)
         val shownProducts = (dailyProducts + popularProducts).distinctBy { it.id }
-        val shopItems = shopItemService.createShopItems(userId, shownProducts, discountRates, now)
+        val shopItems = shopItemService.createShopItems(userId, shownProducts, discountRates, now, language)
 
         val discountSection = createProductSection(
             header = SectionHeaderContentResponse(
-                title = listOf(RichTextResponse(text = "오늘의 할인", typeScale = "titleS", color = "contentPrimary")),
-                trailing = dailyPromotion?.endsAt?.let { createRemainingTimeTrailing(it, now) },
+                title = listOf(
+                    RichTextResponse(
+                        text = messageSource.getMessage("shop.section.dailyPromotion.title", language),
+                        typeScale = "titleS",
+                        color = "contentPrimary",
+                    ),
+                ),
+                trailing = dailyPromotion?.endsAt?.let { createRemainingTimeTrailing(it, now, language) },
             ),
             items = dailyProducts.map { shopItems.getValue(it.id) },
             createComponent = { ItemListComponentResponse(ShopItemsContentResponse(it)) },
         )
         val popularSection = createProductSection(
             header = SectionHeaderContentResponse(
-                title = listOf(RichTextResponse(text = "지금 인기 있는 가구", typeScale = "titleS", color = "contentPrimary")),
+                title = listOf(
+                    RichTextResponse(
+                        text = messageSource.getMessage("shop.section.popular.title", language),
+                        typeScale = "titleS",
+                        color = "contentPrimary",
+                    ),
+                ),
                 trailing = SectionHeaderTrailingResponse(
                     content = listOf(
-                        RichTextResponse(text = "전체보기", typeScale = "labelS", color = "contentSecondary"),
+                        RichTextResponse(
+                            text = messageSource.getMessage("shop.section.seeAll", language),
+                            typeScale = "labelS",
+                            color = "contentSecondary",
+                        ),
                         RichTextResponse(icon = "chevronRight", color = "contentSecondary"),
                     ),
                     action = createNavigateAction("/shop/interior?sort=POPULAR"),
@@ -144,6 +165,7 @@ class ShopService(
      *
      * @param category 인테리어 탭의 분류 칩. [ShopCategory.LIMITED]는 분류와 관계없이 기간 한정만 거른다
      * @param cursor 직전 묶음의 마지막 productId. null이면 처음부터 조회한다
+     * @param language 요청의 `X-Language`로 정한 앱 언어. 상품 카드의 분류 이름·태그를 이 언어로 꺼낸다
      * @throws BusinessException [CommonErrorCode.INVALID_INPUT_VALUE] 방 배경 탭에 분류 칩을 보냈거나, 커서 상품이 목록에 없는 경우
      */
     @Transactional(readOnly = true)
@@ -154,6 +176,7 @@ class ShopService(
         sort: ProductSort,
         cursor: Long?,
         size: Int,
+        language: Language,
     ): ShopItemsResponse {
         if (tab == ShopTab.BACKGROUND && category != null) throw BusinessException(CommonErrorCode.INVALID_INPUT_VALUE)
 
@@ -175,7 +198,7 @@ class ShopService(
             .sortedWith(createComparator(sort, discountRates))
 
         val page = createPage(sorted, cursor, size) { it.id }
-        val shopItems = shopItemService.createShopItems(userId, page.items, discountRates, now)
+        val shopItems = shopItemService.createShopItems(userId, page.items, discountRates, now, language)
         return ShopItemsResponse(
             items = page.items.map { shopItems.getValue(it.id) },
             nextCursor = page.nextCursor,
@@ -189,12 +212,19 @@ class ShopService(
      * 가격은 추천 탭과 같이 상품이 든 프로모션 중 사용자가 대상인 것의 할인율 가장 큰 것으로 계산한다.
      *
      * @param cursor 직전 묶음의 마지막 productId. null이면 처음부터 조회한다
+     * @param language 요청의 `X-Language`로 정한 앱 언어. 상품 카드의 분류 이름·태그를 이 언어로 꺼낸다
      * @throws BusinessException [ShopErrorCode.PROMOTION_NOT_FOUND] 진행 중인 프로모션이 아니거나, 대상 사용자가 아니거나,
      * 노출 중인 배너가 없는 경우
      * @throws BusinessException [CommonErrorCode.INVALID_INPUT_VALUE] 커서 상품이 목록에 없는 경우
      */
     @Transactional(readOnly = true)
-    fun getPromotionProducts(userId: Long, promotionId: Long, cursor: Long?, size: Int): PromotionProductsResponse {
+    fun getPromotionProducts(
+        userId: Long,
+        promotionId: Long,
+        cursor: Long?,
+        size: Int,
+        language: Language,
+    ): PromotionProductsResponse {
         val now = clock.instant()
         val promotions = shopItemService.getEligiblePromotions(userId, now)
         val promotion = promotions.find { it.id == promotionId }
@@ -211,7 +241,7 @@ class ShopService(
         val products = getPromotionProductsInOrder(promotion.id, promotionProducts, productsById)
 
         val page = createPage(products, cursor, size) { it.id }
-        val shopItems = shopItemService.createShopItems(userId, page.items, discountRates, now)
+        val shopItems = shopItemService.createShopItems(userId, page.items, discountRates, now, language)
         return PromotionProductsResponse(
             banner = shopBanner.toShopBannerResponse(
                 imageUrl = createImageUrl(shopBanner.imageKey),
@@ -289,14 +319,18 @@ class ShopService(
     private fun createImageUrl(imageKey: String): String = "${shopProperties.cdnBaseUrl}/$imageKey"
 
     // 임박하면 빨간색 "N시간 M분 남았어요"(분 단위로 올림), 그 전에는 "N시간 후 바뀌어요"(시간 단위로 올림)
-    private fun createRemainingTimeTrailing(endsAt: Instant, now: Instant): SectionHeaderTrailingResponse {
+    private fun createRemainingTimeTrailing(
+        endsAt: Instant,
+        now: Instant,
+        language: Language,
+    ): SectionHeaderTrailingResponse {
         val remainingSeconds = Duration.between(now, endsAt).seconds
         val isImminent = remainingSeconds <= DAILY_IMMINENT_TIME_TO_LIVE.seconds
         val color = if (isImminent) "contentDanger" else "contentTertiary"
         val text = if (isImminent) {
-            "${createRemainingTimeText((remainingSeconds + 59) / 60)} 남았어요"
+            createRemainingTimeText((remainingSeconds + 59) / 60, language)
         } else {
-            "${(remainingSeconds + 3599) / 3600}시간 후 바뀌어요"
+            messageSource.getMessage("shop.dailyPromotion.changesInHours", language, (remainingSeconds + 3599) / 3600)
         }
 
         return SectionHeaderTrailingResponse(
@@ -308,15 +342,20 @@ class ShopService(
         )
     }
 
-    // 0인 단위는 쓰지 않는다. 2시간 / 2시간 14분 / 47분
-    private fun createRemainingTimeText(remainingMinutes: Long): String {
+    // 0인 단위는 쓰지 않는다. 2시간 / 2시간 14분 / 47분 남았어요.
+    // 언어마다 어순이 달라 조각을 이어 붙이지 않고 경우마다 문장을 고른다.
+    private fun createRemainingTimeText(remainingMinutes: Long, language: Language): String {
         val hours = remainingMinutes / 60
         val minutes = remainingMinutes % 60
 
-        return listOfNotNull(
-            "${hours}시간".takeIf { hours > 0 },
-            "${minutes}분".takeIf { minutes > 0 },
-        ).joinToString(" ")
+        return when {
+            hours > 0 && minutes > 0 ->
+                messageSource.getMessage("shop.dailyPromotion.remainingHoursMinutes", language, hours, minutes)
+
+            hours > 0 -> messageSource.getMessage("shop.dailyPromotion.remainingHours", language, hours)
+
+            else -> messageSource.getMessage("shop.dailyPromotion.remainingMinutes", language, minutes)
+        }
     }
 
     // 상품이 없으면 그 위 제목 줄까지 같이 뺀다. 앱은 빈 칸을 받지 않는다.

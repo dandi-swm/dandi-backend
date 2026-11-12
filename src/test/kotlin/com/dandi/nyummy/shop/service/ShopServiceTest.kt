@@ -6,6 +6,9 @@ import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.CommonErrorCode
 import com.dandi.nyummy.exception.errorcode.ErrorCode
 import com.dandi.nyummy.exception.errorcode.ShopErrorCode
+import com.dandi.nyummy.language.createTestMessageSource
+import com.dandi.nyummy.language.enum.Language
+import com.dandi.nyummy.language.getMessage
 import com.dandi.nyummy.mail.repository.MailItemRepository
 import com.dandi.nyummy.room.dto.OwnedRoomItemCountResult
 import com.dandi.nyummy.room.enum.RoomItemCategory
@@ -71,6 +74,8 @@ class ShopServiceTest {
 
     private val shopProperties = ShopProperties(cdnBaseUrl = "https://cdn.test.com")
 
+    private val messageSource = createTestMessageSource()
+
     private val shopService = ShopService(
         clock = Clock.fixed(now, ZoneOffset.UTC),
         shopItemService = ShopItemService(
@@ -82,6 +87,7 @@ class ShopServiceTest {
             itemPurchaseProductRepository = mockk(),
             mailItemRepository = mailItemRepository,
             shopProperties = shopProperties,
+            messageSource = messageSource,
         ),
         shopProperties = shopProperties,
         promotionProductRepository = promotionProductRepository,
@@ -89,6 +95,7 @@ class ShopServiceTest {
         shopBannerRepository = shopBannerRepository,
         coinService = coinService,
         cartItemRepository = cartItemRepository,
+        messageSource = messageSource,
     )
 
     // 테스트마다 채우는 DB 상태
@@ -165,19 +172,29 @@ class ShopServiceTest {
         adminId = 1,
     ).also { ReflectionTestUtils.setField(it, "id", id) }
 
-    private fun getRecommendPage(shopLayoutVariant: String? = null) =
-        shopService.getRecommendPage(userId, shopLayoutVariant)
+    private fun getRecommendPage(shopLayoutVariant: String? = null, language: Language = Language.KO) =
+        shopService.getRecommendPage(userId, shopLayoutVariant, language)
 
     private inline fun <reified T> ShopPageResponse.componentOf(): T = sduiComponents.filterIsInstance<T>().single()
 
     private fun getPromotionProducts(promotionId: Long, cursor: Long? = null, size: Int = 20) =
-        shopService.getPromotionProducts(userId, promotionId, cursor, size)
+        shopService.getPromotionProducts(userId, promotionId, cursor, size, Language.KO)
 
     private fun getProductIds(
         tab: ShopTab = ShopTab.INTERIOR,
         category: ShopCategory? = null,
         sort: ProductSort = ProductSort.NEW,
-    ) = shopService.getProducts(userId, tab, category, sort, cursor = null, size = 20).items.map { it.productId }
+    ) = shopService.getProducts(
+        userId,
+        tab,
+        category,
+        sort,
+        cursor = null,
+        size = 20,
+        language = Language.KO,
+    ).items.map {
+        it.productId
+    }
 
     private fun assertBusinessException(expected: ErrorCode, block: () -> Unit) {
         val exception = assertFailsWith<BusinessException>(block = block)
@@ -280,6 +297,37 @@ class ShopServiceTest {
         assertRemainingTime(Duration.ofSeconds(20), "1분 남았어요", "contentDanger")
     }
 
+    @Test
+    fun `섹션 제목과 남은 시간은 요청 언어로 준다`() {
+        products = listOf(product(101))
+        productItems = products.map { single(it) }
+        promotions = listOf(promotion(3, PromotionCategory.DAILY, endsAt = now.plus(Duration.ofMinutes(70))))
+        promotionProducts = listOf(PromotionProduct(3, 101L, 0))
+
+        val headers = getRecommendPage(language = Language.JA).sduiComponents
+            .filterIsInstance<SectionHeaderComponentResponse>()
+            .map { it.content }
+        val dailyHeader = headers.first()
+        val popularHeader = headers.last()
+
+        assertEquals(
+            messageSource.getMessage("shop.section.dailyPromotion.title", Language.JA),
+            dailyHeader.title.single().text,
+        )
+        assertEquals(
+            messageSource.getMessage("shop.dailyPromotion.remainingHoursMinutes", Language.JA, 1L, 10L),
+            assertNotNull(dailyHeader.trailing).content.last().text,
+        )
+        assertEquals(
+            messageSource.getMessage("shop.section.popular.title", Language.JA),
+            popularHeader.title.single().text,
+        )
+        assertEquals(
+            messageSource.getMessage("shop.section.seeAll", Language.JA),
+            assertNotNull(popularHeader.trailing).content.first().text,
+        )
+    }
+
     // 시계 아이콘과 글자가 같은 색인지도 함께 본다
     private fun assertRemainingTime(remainingTime: Duration, text: String, color: String) {
         products = listOf(product(101))
@@ -344,6 +392,20 @@ class ShopServiceTest {
         assertEquals(listOf("40%", null, "600 ", "1,000"), item.price.map { it.text })
         assertEquals("contentDanger", item.price.first().color)
         assertEquals("할인", item.tag?.text)
+    }
+
+    @Test
+    fun `상품 카드의 태그와 분류 이름은 요청 언어로 준다`() {
+        products = listOf(product(101, price = 1000))
+        productItems = products.map { single(it) }
+        promotions = listOf(promotion(3, PromotionCategory.DAILY, discountRate = 40))
+        promotionProducts = listOf(PromotionProduct(3, 101, 0))
+
+        val item = getRecommendPage(language = Language.JA)
+            .componentOf<ItemListComponentResponse>().content.items.single()
+
+        assertEquals(messageSource.getMessage("shop.tag.discounted", Language.JA), item.tag?.text)
+        assertEquals(messageSource.getMessage("roomItemCategory.${item.category.name}", Language.JA), item.categoryName)
     }
 
     @Test

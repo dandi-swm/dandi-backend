@@ -15,6 +15,7 @@ import org.hamcrest.Matchers.hasItems
 import org.hamcrest.Matchers.not
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 
@@ -52,6 +53,19 @@ class RoomE2eTest {
 
         // 앱은 받은 순서대로 겹쳐 그리므로 zIndex 오름차순이어야 배경이 맨 뒤에 깔린다.
         assertEquals(zIndexes.sorted(), zIndexes, "장착 아이템이 zIndex 오름차순이 아닙니다: $zIndexes")
+    }
+
+    // 번역문은 바뀔 수 있으므로 일본어는 "한국어가 아님"만 본다. 한국어는 앱 이전 빌드가 받던 문구 그대로여야 한다.
+    @Smoke
+    @Test
+    fun `마이룸 카테고리 이름은 X-Language 언어로 오고 헤더가 없으면 한국어다`() {
+        val koreanNames = getRoomCategoryNames(language = null)
+        val japaneseNames = getRoomCategoryNames(language = "ja")
+
+        assertEquals(listOf("배경", "침대", "캣휠", "러그", "소품"), koreanNames)
+        koreanNames.zip(japaneseNames).forEach { (korean, japanese) ->
+            assertNotEquals(korean, japanese, "일본어 요청에 한국어 카테고리 이름이 왔습니다: $japaneseNames")
+        }
     }
 
     @Smoke
@@ -256,6 +270,18 @@ class RoomE2eTest {
         "zIndex" to this["zIndex"],
         "scale" to this["scale"],
     )
+
+    private fun getRoomCategoryNames(language: String?): List<String> = Given {
+        spec(RequestSpecs.createAuthorizedSpec())
+        if (language != null) header("X-Language", language) else this
+    } When {
+        get("/api/v1/rooms")
+    } Then {
+        statusCode(200)
+        body("categories.category", equalTo(ROOM_ITEM_CATEGORIES))
+    } Extract {
+        path("categories.categoryName")
+    }
 
     // JSON 숫자는 크기에 따라 Integer나 Long으로 읽히므로 Long으로 맞춘다
     private val Map<String, Any?>.ownedRoomItemId: Long

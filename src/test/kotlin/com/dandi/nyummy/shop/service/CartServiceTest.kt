@@ -6,6 +6,9 @@ import com.dandi.nyummy.coin.service.CoinService
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.ErrorCode
 import com.dandi.nyummy.exception.errorcode.ShopErrorCode
+import com.dandi.nyummy.language.createTestMessageSource
+import com.dandi.nyummy.language.enum.Language
+import com.dandi.nyummy.language.getMessage
 import com.dandi.nyummy.mail.repository.MailItemRepository
 import com.dandi.nyummy.room.dto.OwnedRoomItemCountResult
 import com.dandi.nyummy.room.enum.RoomItemCategory
@@ -71,6 +74,8 @@ class CartServiceTest {
     // 상품당 10개, 장바구니 전체 30개
     private val shopProperties = ShopProperties()
 
+    private val messageSource = createTestMessageSource()
+
     private val cartService = CartService(
         clock = Clock.fixed(now, ZoneOffset.UTC),
         shopItemService = ShopItemService(
@@ -82,12 +87,14 @@ class CartServiceTest {
             itemPurchaseProductRepository = itemPurchaseProductRepository,
             mailItemRepository = mailItemRepository,
             shopProperties = shopProperties,
+            messageSource = messageSource,
         ),
         coinService = coinService,
         shopProperties = shopProperties,
         cartItemRepository = cartItemRepository,
         productRepository = productRepository,
         promotionProductRepository = promotionProductRepository,
+        messageSource = messageSource,
     )
 
     // 테스트마다 채우는 DB 상태
@@ -194,7 +201,7 @@ class CartServiceTest {
         // 판매가 끝난 103은 선택돼 있어도 합치지 않는다
         cartItems = listOf(cartItem(bed, quantity = 2), cartItem(rug, isSelected = false), cartItem(ended))
 
-        val cart = cartService.getCart(userId)
+        val cart = cartService.getCart(userId, Language.KO)
 
         assertEquals(1, cart.selectedItemCount)
         assertEquals(2, cart.summary.quantity)
@@ -227,7 +234,7 @@ class CartServiceTest {
             cartItem(ownedBackground),
         )
 
-        val cart = cartService.getCart(userId)
+        val cart = cartService.getCart(userId, Language.KO)
 
         // 30 − (27 − 2) = 5 < 상품당 10
         assertEquals(5, cart.itemOf(bed).maxQuantity)
@@ -247,7 +254,7 @@ class CartServiceTest {
         // 운영자가 한도를 줄이면 담긴 수량이 남은 한도보다 많을 수 있다
         cartItems = listOf(cartItem(limited), cartItem(soldOut), cartItem(overLimit, quantity = 2))
 
-        val cart = cartService.getCart(userId)
+        val cart = cartService.getCart(userId, Language.KO)
 
         assertEquals(2, cart.itemOf(limited).maxQuantity)
         assertTrue(cart.itemOf(limited).canPurchase)
@@ -264,7 +271,11 @@ class CartServiceTest {
         unclaimedPurchasedItemIds = listOf(background.representativeItemId)
         cartItems = listOf(cartItem(background))
 
-        assertEquals("이미 가진 방 배경이에요", cartService.getCart(userId).itemOf(background).unavailableReason)
+        assertEquals("이미 가진 방 배경이에요", cartService.getCart(userId, Language.KO).itemOf(background).unavailableReason)
+        assertEquals(
+            messageSource.getMessage("cart.unavailableReason.alreadyOwned", Language.EN),
+            cartService.getCart(userId, Language.EN).itemOf(background).unavailableReason,
+        )
         assertBusinessException(ShopErrorCode.ALREADY_OWNED) {
             cartService.createCartItem(userId, CreateCartItemRequest(productId = 101, quantity = 1))
         }
@@ -375,7 +386,12 @@ class CartServiceTest {
         val existing = cartItem(bed, quantity = 1)
         cartItems = listOf(existing)
 
-        val cart = cartService.updateCartItemQuantity(userId, 101, UpdateCartItemQuantityRequest(quantity = 4))
+        val cart = cartService.updateCartItemQuantity(
+            userId,
+            101,
+            UpdateCartItemQuantityRequest(quantity = 4),
+            Language.KO,
+        )
 
         assertEquals(4, existing.quantity)
         assertEquals(4, cart.itemOf(bed).quantity)
@@ -391,13 +407,13 @@ class CartServiceTest {
         cartItems = listOf(cartItem(ended), cartItem(ownedBackground))
 
         assertBusinessException(ShopErrorCode.CART_ITEM_NOT_FOUND) {
-            cartService.updateCartItemQuantity(userId, 999, UpdateCartItemQuantityRequest(quantity = 1))
+            cartService.updateCartItemQuantity(userId, 999, UpdateCartItemQuantityRequest(quantity = 1), Language.KO)
         }
         assertBusinessException(ShopErrorCode.PRODUCT_NOT_FOR_SALE) {
-            cartService.updateCartItemQuantity(userId, 101, UpdateCartItemQuantityRequest(quantity = 1))
+            cartService.updateCartItemQuantity(userId, 101, UpdateCartItemQuantityRequest(quantity = 1), Language.KO)
         }
         assertBusinessException(ShopErrorCode.ALREADY_OWNED) {
-            cartService.updateCartItemQuantity(userId, 102, UpdateCartItemQuantityRequest(quantity = 1))
+            cartService.updateCartItemQuantity(userId, 102, UpdateCartItemQuantityRequest(quantity = 1), Language.KO)
         }
     }
 
@@ -416,6 +432,7 @@ class CartServiceTest {
         val cart = cartService.updateCartSelection(
             userId,
             UpdateCartSelectionRequest(productIds = listOf(102, 103, 999)),
+            Language.KO,
         )
 
         assertEquals(false, selectedBed.isSelected)
@@ -433,7 +450,7 @@ class CartServiceTest {
         cartItems = listOf(bedItem, cartItem(rug))
 
         // 장바구니에 없는 999는 무시한다
-        val cart = cartService.deleteCartItems(userId, listOf(101, 999))
+        val cart = cartService.deleteCartItems(userId, listOf(101, 999), Language.KO)
 
         verify { cartItemRepository.deleteAll(listOf(bedItem)) }
         assertEquals(listOf(102L), cart.cartItems.map { it.shopItem.productId })

@@ -3,6 +3,8 @@ package com.dandi.nyummy.shop.service
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.ShopErrorCode
 import com.dandi.nyummy.exception.errorcode.UserErrorCode
+import com.dandi.nyummy.language.enum.Language
+import com.dandi.nyummy.language.getMessage
 import com.dandi.nyummy.mail.repository.MailItemRepository
 import com.dandi.nyummy.room.enum.RoomItemCategory
 import com.dandi.nyummy.room.repository.OwnedRoomItemRepository
@@ -10,14 +12,18 @@ import com.dandi.nyummy.shop.calculator.calculatePurchasePrice
 import com.dandi.nyummy.shop.config.ShopProperties
 import com.dandi.nyummy.shop.dto.ProductAvailabilityResult
 import com.dandi.nyummy.shop.dto.ShopItemResponse
+import com.dandi.nyummy.shop.dto.TagResponse
 import com.dandi.nyummy.shop.entity.Product
 import com.dandi.nyummy.shop.entity.Promotion
+import com.dandi.nyummy.shop.enum.TagTone
+import com.dandi.nyummy.shop.mapper.pickTagMessageKey
 import com.dandi.nyummy.shop.mapper.toShopItemResponse
 import com.dandi.nyummy.shop.repository.ItemPurchaseProductRepository
 import com.dandi.nyummy.shop.repository.ItemPurchaseRepository
 import com.dandi.nyummy.shop.repository.ProductItemRepository
 import com.dandi.nyummy.shop.repository.PromotionRepository
 import com.dandi.nyummy.user.repository.UserRepository
+import org.springframework.context.MessageSource
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import java.time.Instant
@@ -39,6 +45,7 @@ class ShopItemService(
     private val itemPurchaseProductRepository: ItemPurchaseProductRepository,
     private val mailItemRepository: MailItemRepository,
     private val shopProperties: ShopProperties,
+    private val messageSource: MessageSource,
 ) {
 
     /**
@@ -123,13 +130,17 @@ class ShopItemService(
      * 상품 카드를 productId로 찾게 만든다. 보유 개수는 단품만 세고(세트는 0), 우편함에서 아직 받지 않은 구매분도 더한다.
      * 보유 아이템과 안 받은 구매분을 각각 한 번의 쿼리로 센다.
      *
+     * 분류 이름과 태그는 [language]로 꺼낸다. 상품 이름은 아직 번역하지 않는다.
+     *
      * @param discountRates productId별 적용할 할인율. 없는 상품은 정가다
+     * @param language 요청의 `X-Language`로 정한 앱 언어
      */
     fun createShopItems(
         userId: Long,
         products: List<Product>,
         discountRates: Map<Long, Int>,
         now: Instant,
+        language: Language,
     ): Map<Long, ShopItemResponse> {
         if (products.isEmpty()) return emptyMap()
 
@@ -142,10 +153,18 @@ class ShopItemService(
 
         return products.associate { product ->
             val ownedCount = if (itemCounts[product.id] == 1) ownedCounts[product.representativeItemId] ?: 0 else 0
-            product.id to product.toShopItemResponse(
-                purchasePrice = calculatePurchasePrice(product.price, discountRates[product.id]),
+            val purchasePrice = calculatePurchasePrice(product.price, discountRates[product.id])
+            val tagMessageKey = pickTagMessageKey(
+                isLimited = product.isLimited,
+                isDiscounted = purchasePrice < product.price,
                 isNew = product.saleStartsAt.isAfter(newProductStartsAt),
+            )
+
+            product.id to product.toShopItemResponse(
+                purchasePrice = purchasePrice,
                 ownedCount = ownedCount,
+                categoryName = messageSource.getMessage("roomItemCategory.${product.category.name}", language),
+                tag = tagMessageKey?.let { TagResponse(messageSource.getMessage(it, language), TagTone.PROMO) },
             )
         }
     }
