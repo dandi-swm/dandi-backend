@@ -19,7 +19,7 @@ interface ProfileRepository : JpaRepository<Profile, Long> {
     @Query(
         """
             select new com.dandi.nyummy.internal.batch.dto.MealReminderTargetResult(
-                p.userId, c.name, p.breakfastHour, p.lunchHour, p.dinnerHour, d.token
+                p.userId, c.name, p.breakfastHour, p.lunchHour, p.dinnerHour, d.token, d.language
             )
             from Profile as p
                 join Cat as c on c.userId = p.userId

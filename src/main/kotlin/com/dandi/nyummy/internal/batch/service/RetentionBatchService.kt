@@ -5,9 +5,12 @@ import com.dandi.nyummy.config.AppLinkProperties
 import com.dandi.nyummy.infra.push.dto.PushMessage
 import com.dandi.nyummy.infra.push.dto.PushType
 import com.dandi.nyummy.internal.batch.repository.PushDeduplicationRepository
+import com.dandi.nyummy.language.enum.Language
+import com.dandi.nyummy.language.getMessage
 import com.dandi.nyummy.notification.NotificationId
 import com.dandi.nyummy.notification.service.NotificationService
 import org.slf4j.LoggerFactory
+import org.springframework.context.MessageSource
 import org.springframework.stereotype.Service
 import java.time.Clock
 import java.time.Duration
@@ -24,6 +27,7 @@ class RetentionBatchService(
     private val notificationService: NotificationService,
     private val clock: Clock,
     private val appLinkProperties: AppLinkProperties,
+    private val messageSource: MessageSource,
 ) {
     companion object {
         // TODO: 사용자별 timezone으로 수정
@@ -65,7 +69,9 @@ class RetentionBatchService(
             val daysDiff = ChronoUnit.DAYS.between(target.lastMealAt.atZone(ZONE).toLocalDate(), today)
             val notificationId = NotificationId.createRetentionId(target.userId, today)
 
-            convertPushMessage(target.userId, notificationId, target.catName, daysDiff)
+            val language = target.language ?: Language.ORIGINAL_LANGUAGE
+
+            convertPushMessage(target.userId, notificationId, target.catName, daysDiff, language)
                 ?.takeIf { pushDeduplicationRepository.createSentMark(notificationId, DEDUPLICATION_TIME_TO_LIVE) }
                 ?.let { target.token to it }
         }.toMap()
@@ -90,13 +96,14 @@ class RetentionBatchService(
      * 굶은 일수에 따라 문구를 고른다.
      *
      * 위에서부터 먼저 맞는 하나만 보낸다. 전용 문구가 있는 날은 매일 문구를 대체하고,
-     * 15일 이후로는 다시 매일 문구로 돌아간다.
+     * 15일 이후로는 다시 매일 문구로 돌아간다. 문구는 기기 토큰에 저장한 앱 언어로 고른다.
      */
     private fun convertPushMessage(
         userId: Long,
         notificationId: String,
         catName: String,
         daysDiff: Long,
+        language: Language,
     ): PushMessage? = when {
         daysDiff <= 0L -> null
 
@@ -104,8 +111,8 @@ class RetentionBatchService(
             userId = userId,
             type = PushType.RETENTION,
             notificationId = notificationId,
-            title = "잠든 $catName 💤",
-            body = "한 끼 기록하고 깨워주세요!",
+            title = messageSource.getMessage("push.retention.sleep.title", language, catName),
+            body = messageSource.getMessage("push.retention.sleep.body", language),
             appLink = appLinkProperties.home,
         )
 
@@ -113,8 +120,8 @@ class RetentionBatchService(
             userId = userId,
             type = PushType.RETENTION,
             notificationId = notificationId,
-            title = "$catName 홀쭉해지고 있어요 🐾",
-            body = "${daysDiff}일째 밥을 못 먹었어요ㅠㅠ",
+            title = messageSource.getMessage("push.retention.loseWeight.title", language, catName),
+            body = messageSource.getMessage("push.retention.loseWeight.body", language, daysDiff),
             appLink = appLinkProperties.home,
         )
 
@@ -122,8 +129,8 @@ class RetentionBatchService(
             userId = userId,
             type = PushType.RETENTION,
             notificationId = notificationId,
-            title = "$catName 밥 챙겨주라냥 🐾",
-            body = "오늘 하루 밥을 깜빡했다냥!",
+            title = messageSource.getMessage("push.retention.daily.title", language, catName),
+            body = messageSource.getMessage("push.retention.daily.body", language),
             appLink = appLinkProperties.home,
         )
     }
