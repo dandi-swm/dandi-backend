@@ -89,8 +89,9 @@ class ReportGenerationService(
                 profileRepository.findProfileByUserId(job.userId),
                 LocalDate.ofInstant(generatedAt, ZONE),
             )
-            val nutritionBalance = calculateNutritionBalance(meals, job.startDate, target, ZONE)
-            val text = reportGenerationClient.generateReportText(nutritionBalance)
+            val nutritionBalance =
+                calculateNutritionBalance(meals, job.startDate, target, ZONE, job.language, messageSource)
+            val text = reportGenerationClient.generateReportText(nutritionBalance, job.language)
             val content = NutritionBalanceContentResponse(
                 mealCount = nutritionBalance.mealCount,
                 recordedDayCount = nutritionBalance.recordedDayCount,

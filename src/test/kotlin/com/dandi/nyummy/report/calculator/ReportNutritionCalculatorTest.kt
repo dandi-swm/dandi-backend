@@ -1,5 +1,8 @@
 package com.dandi.nyummy.report.calculator
 
+import com.dandi.nyummy.language.createTestMessageSource
+import com.dandi.nyummy.language.enum.Language
+import com.dandi.nyummy.language.getMessage
 import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.enum.MealStatus
@@ -44,7 +47,10 @@ class ReportNutritionCalculatorTest {
         it.fat = fat
     }
 
-    private fun calculate(vararg meals: Meal) = calculateNutritionBalance(meals.toList(), sunday, target, zone)
+    private val messageSource = createTestMessageSource()
+
+    private fun calculate(vararg meals: Meal, language: Language = Language.KO) =
+        calculateNutritionBalance(meals.toList(), sunday, target, zone, language, messageSource)
 
     @Test
     fun `일요일부터 7일 칸을 만들고 기록한 날의 칼로리와 음식을 먹은 순서로 채운다`() {
@@ -160,5 +166,31 @@ class ReportNutritionCalculatorTest {
 
         assertEquals(2, result.breakfastDayCount)
         assertEquals("기록한 4일 중 아침을 챙긴 날은 2일이에요", result.breakfastSentence)
+    }
+
+    @Test
+    fun `서버 문장은 리포트 언어로 만들고 숫자는 지금처럼 자릿수를 끊어 넣는다`() {
+        val result = calculate(meal("2026-11-01T12", 1640), language = Language.EN)
+
+        assertEquals(
+            messageSource.getMessage("report.calorySentence.under", Language.EN, "1,640", "360"),
+            result.calorySentence,
+        )
+        assertEquals(
+            messageSource.getMessage("report.breakfastSentence", Language.EN, "1", "0"),
+            result.breakfastSentence,
+        )
+    }
+
+    @Test
+    fun `요일과 영양소 이름도 리포트 언어로 쓴다`() {
+        val oneDay =
+            calculate(meal("2026-11-01T12", 1500, fat = 140), meal("2026-11-07T12", 2500), language = Language.JA)
+
+        assertEquals(
+            messageSource.getMessage("report.overTargetSentence.one", Language.JA, "土曜日"),
+            oneDay.overTargetSentence,
+        )
+        assertTrue(oneDay.focusSentence.startsWith(messageSource.getMessage("macroNutrient.FAT", Language.JA)))
     }
 }

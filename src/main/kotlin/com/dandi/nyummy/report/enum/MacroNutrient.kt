@@ -1,10 +1,10 @@
 package com.dandi.nyummy.report.enum
 
 /**
- * 탄단지 세 영양소. [label]은 서버가 만드는 리포트 문장에 들어간다(셋 다 받침이 있어 조사는 "이"다).
+ * 탄단지 세 영양소. 리포트 문장과 프롬프트에 쓰는 이름은 서버 고정 문구 파일의 `macroNutrient.<이름>`에 있다.
  */
-enum class MacroNutrient(val label: String) {
-    CARBS("탄수화물"),
-    PROTEIN("단백질"),
-    FAT("지방"),
+enum class MacroNutrient {
+    CARBS,
+    PROTEIN,
+    FAT,
 }

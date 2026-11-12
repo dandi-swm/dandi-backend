@@ -99,13 +99,13 @@ class ReportGenerationServiceTest {
         ReportPushResult(10L, userId, sunday, status, refundedCoinQuantity)
 
     private fun givenGenerationFails(category: ReportGenerationFailureCategory) {
-        every { reportGenerationClient.generateReportText(any()) } throws
+        every { reportGenerationClient.generateReportText(any(), any()) } throws
             ReportGenerationFailureException(category, "실패")
     }
 
     @Test
     fun `AI 문장과 서버 집계를 합쳐 영양 균형 뷰로 확정하고 리포트 상세로 알린다`() {
-        every { reportGenerationClient.generateReportText(any()) } returns
+        every { reportGenerationClient.generateReportText(any(), any()) } returns
             ReportTextResult("제목", "조언", listOf("하나", "둘", "셋"), "마무리")
         val content = slot<String>()
         every {
@@ -124,6 +124,33 @@ class ReportGenerationServiceTest {
     }
 
     @Test
+    fun `AI 문장과 서버 문장을 리포트를 구매한 요청의 언어로 만든다`() {
+        every { reportGenerationClient.generateReportText(any(), Language.JA) } returns
+            ReportTextResult("タイトル", "アドバイス", listOf("一", "二", "三"), "締め")
+        val content = slot<String>()
+        every {
+            transactionService.confirmReportGeneration(any(), "タイトル", NUTRITION_BALANCE_VIEW_TYPE, capture(content))
+        } returns pushResult(ReportStatus.COMPLETED)
+
+        service.generateReport(job().copy(language = Language.JA))
+
+        val savedContent = objectMapper.readTree(content.captured)
+        assertEquals(
+            messageSource.getMessage("report.overTargetSentence.none", Language.JA),
+            savedContent["overTargetSentence"].asString(),
+        )
+        verify(exactly = 1) {
+            reportGenerationClient.generateReportText(
+                match {
+                    it.overTargetSentence ==
+                        savedContent["overTargetSentence"].asString()
+                },
+                Language.JA,
+            )
+        }
+    }
+
+    @Test
     fun `실패 알림은 리포트를 구매한 요청의 언어로 보낸다`() {
         givenGenerationFails(ReportGenerationFailureCategory.UNAVAILABLE)
         every { transactionService.failReportGeneration(any()) } returns pushResult(ReportStatus.FAILED, 1200)
@@ -139,7 +166,7 @@ class ReportGenerationServiceTest {
 
     @Test
     fun `확정할 때 내 작업이 아니면 알리지 않는다`() {
-        every { reportGenerationClient.generateReportText(any()) } returns
+        every { reportGenerationClient.generateReportText(any(), any()) } returns
             ReportTextResult("제목", "조언", listOf("하나", "둘", "셋"), "마무리")
         every { transactionService.confirmReportGeneration(any(), any(), any(), any()) } returns null
 
@@ -206,7 +233,7 @@ class ReportGenerationServiceTest {
 
     @Test
     fun `분류에 없는 예외는 실패로 끝낸다`() {
-        every { reportGenerationClient.generateReportText(any()) } throws IllegalStateException("bug")
+        every { reportGenerationClient.generateReportText(any(), any()) } throws IllegalStateException("bug")
         every { transactionService.failReportGeneration(any()) } returns pushResult(ReportStatus.FAILED, 0)
 
         service.generateReport(job())
