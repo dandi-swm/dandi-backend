@@ -2,6 +2,7 @@ package com.dandi.nyummy.config.openapi
 
 import com.dandi.nyummy.header.CommonHeader
 import com.dandi.nyummy.header.CurrentCommonHeader
+import com.dandi.nyummy.language.CurrentLanguage
 import io.swagger.v3.oas.models.OpenAPI
 import io.swagger.v3.oas.models.media.StringSchema
 import io.swagger.v3.oas.models.parameters.Parameter
@@ -34,8 +35,8 @@ class CommonHeaderOpenApiCustomizer : OpenApiCustomizer {
 
     init {
         // springdoc은 모르는 객체 타입 파라미터를 query 파라미터 묶음으로 펼친다.
-        // @CurrentCommonHeader 값은 위 헤더에서 오므로 파라미터 목록에서 뺀다. (@CurrentUser는 springdoc이 알아서 뺀다)
-        SpringDocUtils.getConfig().addAnnotationsToIgnore(CurrentCommonHeader::class.java)
+        // @CurrentCommonHeader·@CurrentLanguage 값은 위 헤더에서 오므로 파라미터 목록에서 뺀다. (@CurrentUser는 springdoc이 알아서 뺀다)
+        SpringDocUtils.getConfig().addAnnotationsToIgnore(CurrentCommonHeader::class.java, CurrentLanguage::class.java)
     }
 
     override fun customise(openApi: OpenAPI) {
