@@ -14,6 +14,7 @@ import com.dandi.nyummy.exception.errorcode.ErrorCode
 import com.dandi.nyummy.exception.errorcode.RoomErrorCode
 import com.dandi.nyummy.item.entity.Item
 import com.dandi.nyummy.item.repository.ItemRepository
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.mail.enum.RewardBoxCategory
 import com.dandi.nyummy.mail.service.MailService
 import com.dandi.nyummy.room.dto.EquippedRoomItemRequest
@@ -116,7 +117,7 @@ class AdminItemPurchaseRefundIntegrationTest @Autowired constructor(
         assertEquals(emptyList(), mailService.getMails(userId, null, 10).mails)
         assertNull(mailService.claimMails(userId).items)
         assertEquals(0, countOwnedRoomItems(userId))
-        val coinHistory = coinService.getCoinHistories(userId, null, 10).coinHistories.first()
+        val coinHistory = coinService.getCoinHistories(userId, null, 10, Language.KO).coinHistories.first()
         assertEquals("상점 환불", coinHistory.title)
         assertEquals(500, coinHistory.quantity)
         assertEquals(STARTING_BALANCE, coinHistory.balanceAfter)

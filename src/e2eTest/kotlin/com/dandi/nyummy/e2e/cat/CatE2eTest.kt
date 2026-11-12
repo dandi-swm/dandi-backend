@@ -24,6 +24,7 @@ class CatE2eTest {
         private const val NAME_MAX_LENGTH = 8
         private const val FIRST_CAT_NAME = "초코"
         private const val SECOND_CAT_NAME = "나비"
+        private val KOREAN_WEIGHT_NAMES = setOf("홀쭉냥", "날씬냥", "보통냥", "통통냥", "뚱냥이")
     }
 
     @Test
@@ -38,6 +39,19 @@ class CatE2eTest {
             // 앱은 체형을 enum 이름으로 분기한다. 이름이 바뀌거나 새 값이 생기면 앱 화면이 깨진다.
             body("weight", oneOf("LEAN", "SLIM", "NORMAL", "CHUBBY", "PLUMP"))
         }
+    }
+
+    // 조회가 체형을 갱신할 수 있어 @Smoke를 붙이지 않는다. 번역문은 바뀔 수 있어 일본어는 "한국어가 아님"만 본다.
+    @Test
+    fun `체형 이름은 X-Language 언어로 오고 헤더가 없으면 한국어다`() {
+        val koreanWeightName = getCatWeightName(language = null)
+        val japaneseWeightName = getCatWeightName(language = "ja")
+
+        assertTrue(koreanWeightName in KOREAN_WEIGHT_NAMES, "헤더 없이 요청했는데 한국어가 아닌 체형 이름이 왔습니다: $koreanWeightName")
+        assertTrue(
+            japaneseWeightName !in KOREAN_WEIGHT_NAMES,
+            "일본어 요청에 한국어 체형 이름이 왔습니다: $japaneseWeightName",
+        )
     }
 
     // S3에서 체형별 메타데이터를 읽는 경로라 prod에서는 태스크 롤의 S3 읽기 권한 확인을 겸한다.
@@ -162,5 +176,16 @@ class CatE2eTest {
     private fun ValidatableResponse.validateError(status: Int, code: String) {
         statusCode(status)
         body("code", equalTo(code))
+    }
+
+    private fun getCatWeightName(language: String?): String = Given {
+        spec(RequestSpecs.createAuthorizedSpec())
+        if (language != null) header("X-Language", language) else this
+    } When {
+        get("/api/v1/cats")
+    } Then {
+        statusCode(200)
+    } Extract {
+        path("weightName")
     }
 }

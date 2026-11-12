@@ -10,11 +10,12 @@ fun CreateCatRequest.toCat(userId: Long): Cat = Cat(
     userId = userId,
 )
 
-fun Cat.toCatResponse(): CatResponse = CatResponse(
+/** @param weightName 요청 언어로 꺼낸 체형 이름 */
+fun Cat.toCatResponse(weightName: String): CatResponse = CatResponse(
     id = this.id,
     name = this.name,
     weight = CatWeight.fromWeight(this.weight),
-    weightName = CatWeight.fromWeight(this.weight).description,
+    weightName = weightName,
     love = this.love,
     exp = this.exp,
 )

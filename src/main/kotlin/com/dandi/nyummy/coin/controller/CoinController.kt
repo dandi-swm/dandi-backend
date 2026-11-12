@@ -2,6 +2,8 @@ package com.dandi.nyummy.coin.controller
 
 import com.dandi.nyummy.coin.dto.CoinHistoriesResponse
 import com.dandi.nyummy.coin.service.CoinService
+import com.dandi.nyummy.language.CurrentLanguage
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.security.AuthUser
 import com.dandi.nyummy.security.CurrentUser
 import io.swagger.v3.oas.annotations.Operation
@@ -28,11 +30,12 @@ class CoinController(private val coinService: CoinService) {
     @GetMapping("/histories")
     fun getCoinHistories(
         @CurrentUser user: AuthUser,
+        @CurrentLanguage language: Language,
         @Parameter(description = "직전 응답의 nextCursor. 첫 요청에서는 생략한다.") @RequestParam(required = false) cursor: Long?,
         @Parameter(description = "한 번에 조회할 개수 (1~50, 기본 20)")
         @RequestParam(defaultValue = "20")
         @Min(1)
         @Max(50)
         size: Int,
-    ): CoinHistoriesResponse = coinService.getCoinHistories(user.userId, cursor, size)
+    ): CoinHistoriesResponse = coinService.getCoinHistories(user.userId, cursor, size, language)
 }

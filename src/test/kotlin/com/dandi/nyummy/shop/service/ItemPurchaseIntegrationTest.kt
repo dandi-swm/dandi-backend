@@ -164,7 +164,12 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
             ),
         )
         assertEquals(1, countAttempts(userId, "SUCCEEDED"))
-        val coinHistory = coinService.getCoinHistories(userId, cursor = null, size = 10).coinHistories.single()
+        val coinHistory = coinService.getCoinHistories(
+            userId,
+            cursor = null,
+            size = 10,
+            language = Language.KO,
+        ).coinHistories.single()
         assertEquals("상품 외 2개 구매", coinHistory.title)
         assertEquals(-3500, coinHistory.quantity)
         assertEquals(STARTING_BALANCE - 3500, coinHistory.balanceAfter)

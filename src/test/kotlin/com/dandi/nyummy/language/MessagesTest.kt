@@ -1,6 +1,10 @@
 package com.dandi.nyummy.language
 
+import com.dandi.nyummy.cat.enum.CatWeight
+import com.dandi.nyummy.coin.enum.CoinHistoryCategory
 import com.dandi.nyummy.language.enum.Language
+import com.dandi.nyummy.meal.enum.MealTime
+import com.dandi.nyummy.room.enum.RoomItemCategory
 import java.io.InputStreamReader
 import java.text.MessageFormat
 import java.util.Properties
@@ -17,6 +21,23 @@ import kotlin.test.assertNotNull
 class MessagesTest {
 
     private val originalMessages = loadMessages(Language.ORIGINAL_LANGUAGE)
+
+    // 라벨을 문구 파일에 둔 enum. 값을 추가하면 키가 없어 실행 중에 NoSuchMessageException이 나므로 여기서 막는다.
+    private val labeledEnums: Map<String, List<Enum<*>>> = mapOf(
+        "mealTime" to MealTime.entries,
+        "roomItemCategory" to RoomItemCategory.entries,
+        "catWeight" to CatWeight.entries,
+        "coinHistoryCategory" to CoinHistoryCategory.entries,
+    )
+
+    @Test
+    fun `라벨을 문구 파일에 둔 enum은 모든 값의 키가 있다`() {
+        labeledEnums.forEach { (prefix, entries) ->
+            val missingKeys = entries.map { "$prefix.${it.name}" }.filterNot { originalMessages.containsKey(it) }
+
+            assertEquals(emptyList(), missingKeys, "messages.properties에 enum 값의 키가 없다")
+        }
+    }
 
     @Test
     fun `모든 언어 파일이 원본과 같은 키를 가진다`() {

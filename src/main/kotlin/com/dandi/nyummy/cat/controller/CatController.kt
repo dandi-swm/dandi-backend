@@ -10,6 +10,8 @@ import com.dandi.nyummy.config.openapi.ApiErrorCodes
 import com.dandi.nyummy.exception.errorcode.CatErrorCode
 import com.dandi.nyummy.exception.errorcode.S3ErrorCode
 import com.dandi.nyummy.exception.errorcode.UserErrorCode
+import com.dandi.nyummy.language.CurrentLanguage
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.security.AuthUser
 import com.dandi.nyummy.security.CurrentUser
 import io.swagger.v3.oas.annotations.Operation
@@ -54,7 +56,8 @@ class CatController(private val catService: CatService) {
     )
     @ApiErrorCodes(cat = [CatErrorCode.CAT_NOT_FOUND])
     @GetMapping
-    fun getCat(@CurrentUser user: AuthUser): CatResponse = catService.getCat(user.userId)
+    fun getCat(@CurrentUser user: AuthUser, @CurrentLanguage language: Language): CatResponse =
+        catService.getCat(user.userId, language)
 
     @Operation(
         summary = "고양이 변경",
