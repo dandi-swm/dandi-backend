@@ -13,7 +13,6 @@ object RequestSpecs {
     private const val APP_VERSION = "X-App-Version"
     private const val DEVICE_MODEL = "X-Device-Model"
     private const val OS_VERSION = "X-OS-Version"
-    private const val LANGUAGE = "X-Language"
     private const val REGION = "X-Region"
     private const val TIMEZONE_ID = "X-Timezone-Id"
 
@@ -29,6 +28,10 @@ object RequestSpecs {
 
     // 앱이 모든 요청에 싣는 공통 헤더를 똑같이 보낸다.
     // 값은 e2e로 둬서 요청 로그와 문의(inquiries.app_version)에서 E2E 요청을 구분한다.
+    //
+    // X-Language는 넣지 않는다. REST Assured는 같은 이름의 헤더를 덮어쓰지 않고 하나 더 붙이고, 서버는 첫 값을 읽는다.
+    // 여기에 두면 테스트가 붙인 언어가 무시되고, "헤더 없음"(이전 앱 빌드) 요청도 만들 수 없다.
+    // 언어를 보는 테스트가 필요할 때만 직접 붙인다.
     val base: RequestSpecification by lazy {
         RequestSpecBuilder()
             .setBaseUri(E2eProperties.baseUrl)
@@ -39,7 +42,6 @@ object RequestSpecs {
                     APP_VERSION to "e2e",
                     DEVICE_MODEL to "e2e-runner",
                     OS_VERSION to "e2e",
-                    LANGUAGE to "ko",
                     REGION to "KR",
                     TIMEZONE_ID to "Asia/Seoul",
                 ),
