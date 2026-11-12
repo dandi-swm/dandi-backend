@@ -2,6 +2,7 @@ package com.dandi.nyummy.report.service
 
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.ReportErrorCode
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.report.dto.CreateReportPurchaseRequest
 import com.dandi.nyummy.report.dto.ReportPurchaseResponse
 import com.dandi.nyummy.report.enum.ReportPurchaseOutcome
@@ -38,9 +39,16 @@ class ReportPurchaseService(
         idempotencyKey: String,
         request: CreateReportPurchaseRequest,
         appVersion: String?,
+        language: Language,
     ): ReportPurchaseResponse {
         try {
-            return reportPurchaseTransactionService.createReportPurchase(userId, idempotencyKey, request, appVersion)
+            return reportPurchaseTransactionService.createReportPurchase(
+                userId,
+                idempotencyKey,
+                request,
+                appVersion,
+                language,
+            )
         } catch (e: BusinessException) {
             createFailedAttempt(userId, idempotencyKey, request, appVersion, ReportPurchaseOutcome.from(e.errorCode))
             throw e

@@ -106,11 +106,11 @@ class MealTransactionServiceTest {
 
     @Test
     fun `식사를 저장한 뒤 그 식사의 분석 작업을 같은 트랜잭션에 저장한다`() {
-        mealTransactionService.createMeal(meal, rewardBox, rewardMailExpiresAt, Language.KO)
+        mealTransactionService.createMeal(meal, rewardBox, rewardMailExpiresAt, Language.JA)
 
         verifyOrder {
             mealRepository.save(meal)
-            mealAnalysisJobRepository.save(match { it.mealId == meal.id })
+            mealAnalysisJobRepository.save(match { it.mealId == meal.id && it.language == Language.JA })
         }
     }
 

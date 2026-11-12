@@ -1,5 +1,6 @@
 package com.dandi.nyummy.worker.dto
 
+import com.dandi.nyummy.language.enum.Language
 import java.time.Instant
 import java.time.LocalDate
 
@@ -11,6 +12,7 @@ import java.time.LocalDate
  *   결과를 쓸 때 이 번호로 아직 이 Worker의 작업인지 확인한다
  * @property canRetry 이번 시도가 실패하면 다시 시도할 수 있는지. 마지막 시도면 false
  * @property createdAt 작업이 쌓인 시각(= 구매 시각). 구매부터 결과까지 걸린 시간을 잴 때 쓴다
+ * @property language 리포트를 구매한 요청의 앱 언어. 언어를 몰랐던 작업은 원본 언어다
  */
 data class ReportGenerationJobResult(
     val jobId: Long,
@@ -20,6 +22,7 @@ data class ReportGenerationJobResult(
     val leaseCount: Int,
     val canRetry: Boolean,
     val createdAt: Instant,
+    val language: Language,
 )
 
 /**

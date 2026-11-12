@@ -9,6 +9,9 @@ import com.dandi.nyummy.infra.ai.nutrition.NutritionAnalysisClient
 import com.dandi.nyummy.infra.push.dto.PushMessage
 import com.dandi.nyummy.infra.push.dto.PushResult
 import com.dandi.nyummy.infra.push.dto.PushType
+import com.dandi.nyummy.language.createTestMessageSource
+import com.dandi.nyummy.language.enum.Language
+import com.dandi.nyummy.language.getMessage
 import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.dto.NutritionAnalysisResult
 import com.dandi.nyummy.meal.enum.MealStatus
@@ -59,6 +62,8 @@ class AnalysisServiceTest {
 
     private val meterRegistry = SimpleMeterRegistry()
 
+    private val messageSource = createTestMessageSource()
+
     private val analysisService = AnalysisService(
         nutritionAnalysisClient = nutritionAnalysisClient,
         mealAnalysisJobTransactionService = mealAnalysisJobTransactionService,
@@ -67,6 +72,7 @@ class AnalysisServiceTest {
         appLinkProperties = appLinkProperties,
         meterRegistry = meterRegistry,
         clock = clock,
+        messageSource = messageSource,
     )
 
     private val retryableJob = createJob(canRetry = true)
@@ -98,6 +104,7 @@ class AnalysisServiceTest {
         imageKey = "meals/$userId/meal-$mealId.jpg",
         canRetry = canRetry,
         createdAt = now.minusSeconds(30),
+        language = Language.KO,
     )
 
     private fun createPushResult(status: MealStatus, isDeleted: Boolean = false) =
@@ -128,6 +135,23 @@ class AnalysisServiceTest {
     }
 
     // 성공
+
+    @Test
+    fun `완료 알림은 식사를 기록한 요청의 언어로 보낸다`() {
+        val japaneseJob = retryableJob.copy(language = Language.JA)
+        givenAnalysisSuccess(japaneseJob)
+
+        analysisService.analyzeMealAnalysisJob(japaneseJob)
+
+        assertEquals(
+            messageSource.getMessage("push.analysis.completed.title", Language.JA, "나비"),
+            sentMessage.captured.title,
+        )
+        assertEquals(
+            messageSource.getMessage("push.analysis.completed.body", Language.JA, "김치찌개"),
+            sentMessage.captured.body,
+        )
+    }
 
     @Test
     fun `분석에 성공하면 결과를 확정하고 완료 알림을 보낸다`() {

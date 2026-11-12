@@ -4,6 +4,7 @@ import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.ErrorCode
 import com.dandi.nyummy.exception.errorcode.ReportErrorCode
 import com.dandi.nyummy.exception.errorcode.UserErrorCode
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.report.dto.CreateReportPurchaseRequest
 import com.dandi.nyummy.report.dto.ReportPurchaseResponse
 import com.dandi.nyummy.report.enum.ReportPurchaseOutcome
@@ -42,10 +43,12 @@ class ReportPurchaseServiceTest {
         assertEquals(expected, exception.errorCode)
     }
 
-    private fun purchase() = service.createReportPurchase(userId, idempotencyKey, request, "1.0.0")
+    private fun purchase() = service.createReportPurchase(userId, idempotencyKey, request, "1.0.0", Language.KO)
 
     private fun givenFailure(failure: Throwable) {
-        every { reportPurchaseTransactionService.createReportPurchase(userId, idempotencyKey, request, "1.0.0") } throws
+        every {
+            reportPurchaseTransactionService.createReportPurchase(userId, idempotencyKey, request, "1.0.0", Language.KO)
+        } throws
             failure
     }
 
@@ -59,7 +62,7 @@ class ReportPurchaseServiceTest {
     fun `구매 결과를 그대로 돌려주고 시도 기록은 트랜잭션에 맡긴다`() {
         val response = mockk<ReportPurchaseResponse>()
         every {
-            reportPurchaseTransactionService.createReportPurchase(userId, idempotencyKey, request, "1.0.0")
+            reportPurchaseTransactionService.createReportPurchase(userId, idempotencyKey, request, "1.0.0", Language.KO)
         } returns
             response
 

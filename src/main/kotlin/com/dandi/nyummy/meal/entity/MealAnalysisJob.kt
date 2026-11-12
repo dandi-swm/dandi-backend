@@ -1,8 +1,11 @@
 package com.dandi.nyummy.meal.entity
 
+import com.dandi.nyummy.language.enum.Language
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.EntityListeners
+import jakarta.persistence.EnumType
+import jakarta.persistence.Enumerated
 import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
@@ -22,6 +25,12 @@ import java.time.Instant
 class MealAnalysisJob(
     @Column(name = "meal_id", nullable = false, unique = true)
     val mealId: Long,
+
+    // 작업을 만든 요청의 앱 언어. Worker가 결과와 완료 푸시를 이 언어로 만든다.
+    // V0.54 전에 만든 행과 배포 중 구버전이 만든 행은 NULL이고, 원본 언어로 본다.
+    @Enumerated(EnumType.STRING)
+    @Column(name = "language", length = 10)
+    val language: Language?,
 ) {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

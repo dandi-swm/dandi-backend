@@ -5,6 +5,8 @@ import com.dandi.nyummy.exception.errorcode.AuthErrorCode
 import com.dandi.nyummy.exception.errorcode.ReportErrorCode
 import com.dandi.nyummy.header.CommonHeader
 import com.dandi.nyummy.header.CurrentCommonHeader
+import com.dandi.nyummy.language.CurrentLanguage
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.report.dto.CreateReportPurchaseRequest
 import com.dandi.nyummy.report.dto.ReportCancelResponse
 import com.dandi.nyummy.report.dto.ReportPurchaseResponse
@@ -90,13 +92,19 @@ class ReportController(
     fun createReportPurchase(
         @CurrentUser user: AuthUser,
         @CurrentCommonHeader commonHeader: CommonHeader,
+        @CurrentLanguage language: Language,
         @Parameter(description = "받을 주를 골랐을 때 앱이 만드는 UUID. 재시도할 때만 같은 값을 보낸다 (1~64자)")
         @RequestHeader(IDEMPOTENCY_KEY)
         @Size(min = 1, max = 64)
         idempotencyKey: String,
         @Valid @RequestBody request: CreateReportPurchaseRequest,
-    ): ReportPurchaseResponse =
-        reportPurchaseService.createReportPurchase(user.userId, idempotencyKey, request, commonHeader.appVersion)
+    ): ReportPurchaseResponse = reportPurchaseService.createReportPurchase(
+        user.userId,
+        idempotencyKey,
+        request,
+        commonHeader.appVersion,
+        language,
+    )
 
     @Operation(
         summary = "리포트 상세 조회",

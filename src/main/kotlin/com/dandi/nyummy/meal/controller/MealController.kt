@@ -189,8 +189,9 @@ class MealController(
     @PostMapping("/{mealId}/analysis")
     fun retryNutritionAnalysis(
         @CurrentUser user: AuthUser,
+        @CurrentLanguage language: Language,
         @Parameter(description = "식사 ID") @PathVariable @NotNull @Valid mealId: Long,
-    ): MealStatusResponse = mealService.retryNutritionAnalysis(user.userId, mealId)
+    ): MealStatusResponse = mealService.retryNutritionAnalysis(user.userId, mealId, language)
 
     @Operation(
         summary = "영양 분석 평가 등록",

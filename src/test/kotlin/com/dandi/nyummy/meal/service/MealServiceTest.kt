@@ -321,9 +321,11 @@ class MealServiceTest {
         val meal = Meal(status = MealStatus.FAILED, imageKey = imageKey, mealAt = now, userId = userId)
         every { mealRepository.findMealWithLockById(mealId) } returns meal
 
-        val response = mealService.retryNutritionAnalysis(userId, mealId)
+        val response = mealService.retryNutritionAnalysis(userId, mealId, Language.JA)
 
-        verify(exactly = 1) { mealAnalysisJobRepository.save(match { it.mealId == meal.id }) }
+        verify(exactly = 1) {
+            mealAnalysisJobRepository.save(match { it.mealId == meal.id && it.language == Language.JA })
+        }
         assertEquals(MealStatus.WAITING, meal.status)
         assertEquals(meal.id, response.id)
         assertEquals(MealStatus.WAITING, response.status)
@@ -333,7 +335,9 @@ class MealServiceTest {
     fun `재시도할 식사가 없으면 MEAL_NOT_FOUND 예외를 던지고 작업을 쌓지 않는다`() {
         every { mealRepository.findMealWithLockById(mealId) } returns null
 
-        assertBusinessException(MealErrorCode.MEAL_NOT_FOUND) { mealService.retryNutritionAnalysis(userId, mealId) }
+        assertBusinessException(MealErrorCode.MEAL_NOT_FOUND) {
+            mealService.retryNutritionAnalysis(userId, mealId, Language.KO)
+        }
 
         verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
     }
@@ -345,7 +349,9 @@ class MealServiceTest {
         }
         every { mealRepository.findMealWithLockById(mealId) } returns meal
 
-        assertBusinessException(MealErrorCode.MEAL_NOT_FOUND) { mealService.retryNutritionAnalysis(userId, mealId) }
+        assertBusinessException(MealErrorCode.MEAL_NOT_FOUND) {
+            mealService.retryNutritionAnalysis(userId, mealId, Language.KO)
+        }
 
         verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
     }
@@ -356,7 +362,9 @@ class MealServiceTest {
         val meal = Meal(status = MealStatus.FAILED, imageKey = imageKey, mealAt = now, userId = otherUserId)
         every { mealRepository.findMealWithLockById(mealId) } returns meal
 
-        assertBusinessException(AuthErrorCode.FORBIDDEN) { mealService.retryNutritionAnalysis(userId, mealId) }
+        assertBusinessException(AuthErrorCode.FORBIDDEN) {
+            mealService.retryNutritionAnalysis(userId, mealId, Language.KO)
+        }
 
         verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
     }
@@ -370,7 +378,7 @@ class MealServiceTest {
             every { mealRepository.findMealWithLockById(mealId) } returns meal
 
             assertBusinessException(MealErrorCode.ANALYSIS_NOT_RETRYABLE) {
-                mealService.retryNutritionAnalysis(userId, mealId)
+                mealService.retryNutritionAnalysis(userId, mealId, Language.KO)
             }
         }
 

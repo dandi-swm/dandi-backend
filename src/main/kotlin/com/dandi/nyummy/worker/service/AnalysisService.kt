@@ -7,6 +7,8 @@ import com.dandi.nyummy.infra.ai.nutrition.AnalysisFailureException
 import com.dandi.nyummy.infra.ai.nutrition.NutritionAnalysisClient
 import com.dandi.nyummy.infra.push.dto.PushMessage
 import com.dandi.nyummy.infra.push.dto.PushType
+import com.dandi.nyummy.language.enum.Language
+import com.dandi.nyummy.language.getMessage
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.notification.NotificationId
 import com.dandi.nyummy.notification.service.NotificationService
@@ -16,6 +18,7 @@ import com.dandi.nyummy.worker.dto.MealAnalysisJobResult
 import io.micrometer.core.instrument.MeterRegistry
 import io.micrometer.core.instrument.Timer
 import org.slf4j.LoggerFactory
+import org.springframework.context.MessageSource
 import org.springframework.stereotype.Service
 import java.time.Clock
 import java.time.Duration
@@ -31,6 +34,7 @@ class AnalysisService(
     private val appLinkProperties: AppLinkProperties,
     private val meterRegistry: MeterRegistry,
     private val clock: Clock,
+    private val messageSource: MessageSource,
 ) {
     companion object {
         private val logger = LoggerFactory.getLogger(AnalysisService::class.java)
@@ -70,7 +74,7 @@ class AnalysisService(
             if (pushResult != null) {
                 recordAnalysis(job, AnalysisOutcome.COMPLETED, null, analyzedAt)
             }
-            sendAnalysisPush(pushResult, null, analyzedAt)
+            sendAnalysisPush(pushResult, null, analyzedAt, job.language)
         } catch (e: AnalysisFailureException) {
             handleAnalysisFailure(job, e, analyzedAt)
         } catch (e: RuntimeException) {
@@ -79,7 +83,7 @@ class AnalysisService(
             if (pushResult != null) {
                 recordAnalysis(job, AnalysisOutcome.FAILED, UNKNOWN_CATEGORY, analyzedAt)
             }
-            sendAnalysisPush(pushResult, null, analyzedAt)
+            sendAnalysisPush(pushResult, null, analyzedAt, job.language)
         }
     }
 
@@ -141,7 +145,7 @@ class AnalysisService(
         if (pushResult != null) {
             recordAnalysis(job, AnalysisOutcome.FAILED, failure.category, analyzedAt)
         }
-        sendAnalysisPush(pushResult, failure.category, analyzedAt)
+        sendAnalysisPush(pushResult, failure.category, analyzedAt, job.language)
     }
 
     private fun recordAnalysis(
@@ -186,6 +190,7 @@ class AnalysisService(
         pushResult: AnalysisPushResult?,
         failureCategory: AnalysisFailureCategory?,
         analyzedAt: Instant,
+        language: Language,
     ) {
         // 이 Worker의 작업이 아니었으면(다른 Worker가 가져갔으면) 결과를 쓰지 않았으므로 알리지도 않는다.
         if (pushResult == null) {
@@ -205,7 +210,7 @@ class AnalysisService(
 
             val result = notificationService.sendServicePush(
                 pushResult.userId,
-                convertPushMessage(pushResult, failureCategory, catName, analyzedAt),
+                convertPushMessage(pushResult, failureCategory, catName, analyzedAt, language),
             )
 
             notificationService.deleteInvalidDeviceTokens(result.invalidTokens)
@@ -218,12 +223,14 @@ class AnalysisService(
      * 성공·실패에 따라 알림 내용을 고른다. 음식 사진이 아니어서 실패했으면 다시 찍어 달라고 따로 안내한다.
      *
      * 링크는 모두 식사 상세다. 성공은 칼로리를 확인하러, 실패는 재시도하러 같은 화면으로 간다.
+     * 문구는 식사를 기록한 요청의 언어로 고른다.
      */
     private fun convertPushMessage(
         pushResult: AnalysisPushResult,
         failureCategory: AnalysisFailureCategory?,
         catName: String,
         analyzedAt: Instant,
+        language: Language,
     ): PushMessage {
         val notificationId = NotificationId.createAnalysisId(pushResult.mealId, pushResult.status, analyzedAt)
         val appLink = appLinkProperties.createMealDetailLink(pushResult.mealId)
@@ -233,8 +240,8 @@ class AnalysisService(
                 userId = pushResult.userId,
                 type = PushType.ANALYSIS_COMPLETED,
                 notificationId = notificationId,
-                title = "$catName 맛있게 먹었다냥 🐾",
-                body = "${pushResult.mealName} 분석이 끝났어요. 칼로리 확인해줘!",
+                title = messageSource.getMessage("push.analysis.completed.title", language, catName),
+                body = messageSource.getMessage("push.analysis.completed.body", language, pushResult.mealName),
                 appLink = appLink,
             )
 
@@ -242,8 +249,8 @@ class AnalysisService(
                 userId = pushResult.userId,
                 type = PushType.ANALYSIS_FAILED,
                 notificationId = notificationId,
-                title = "음식 사진이 아닌 것 같다냥 🐾",
-                body = "음식이 보이게 다시 찍어줄래?",
+                title = messageSource.getMessage("push.analysis.notFood.title", language),
+                body = messageSource.getMessage("push.analysis.notFood.body", language),
                 appLink = appLink,
             )
 
@@ -252,8 +259,8 @@ class AnalysisService(
                 userId = pushResult.userId,
                 type = PushType.ANALYSIS_FAILED,
                 notificationId = notificationId,
-                title = "지금은 소화가 안 된다냥 🐾",
-                body = "잠시 뒤에 다시 시도해줄래?",
+                title = messageSource.getMessage("push.analysis.unavailable.title", language),
+                body = messageSource.getMessage("push.analysis.unavailable.body", language),
                 appLink = appLink,
             )
 
@@ -261,8 +268,8 @@ class AnalysisService(
                 userId = pushResult.userId,
                 type = PushType.ANALYSIS_FAILED,
                 notificationId = notificationId,
-                title = "사진을 못 알아봤다냥 🐾",
-                body = "다시 시도해줄래?",
+                title = messageSource.getMessage("push.analysis.failed.title", language),
+                body = messageSource.getMessage("push.analysis.failed.body", language),
                 appLink = appLink,
             )
         }

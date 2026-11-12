@@ -2,6 +2,7 @@ package com.dandi.nyummy.worker.service
 
 import com.dandi.nyummy.cat.repository.CatRepository
 import com.dandi.nyummy.cat.service.CatService
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.meal.dto.NutritionAnalysisResult
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.enum.MealStatus
@@ -101,6 +102,7 @@ class MealAnalysisJobTransactionService(
                 imageKey = mealsById.getValue(it.mealId).imageKey,
                 canRetry = leaseCount < workerProperties.analysis.maxLeaseCount,
                 createdAt = it.createdAt,
+                language = it.language ?: Language.ORIGINAL_LANGUAGE,
             )
         }
     }

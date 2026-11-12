@@ -6,6 +6,8 @@ import com.dandi.nyummy.infra.ai.report.ReportGenerationFailureCategory
 import com.dandi.nyummy.infra.ai.report.ReportGenerationFailureException
 import com.dandi.nyummy.infra.push.dto.PushMessage
 import com.dandi.nyummy.infra.push.dto.PushType
+import com.dandi.nyummy.language.enum.Language
+import com.dandi.nyummy.language.getMessage
 import com.dandi.nyummy.meal.calculator.calculateRecommendedDailyIntake
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.repository.MealRepository
@@ -23,6 +25,7 @@ import com.dandi.nyummy.worker.dto.ReportPushResult
 import io.micrometer.core.instrument.MeterRegistry
 import io.micrometer.core.instrument.Timer
 import org.slf4j.LoggerFactory
+import org.springframework.context.MessageSource
 import org.springframework.stereotype.Service
 import tools.jackson.databind.ObjectMapper
 import java.time.Clock
@@ -45,6 +48,7 @@ class ReportGenerationService(
     private val objectMapper: ObjectMapper,
     private val meterRegistry: MeterRegistry,
     private val clock: Clock,
+    private val messageSource: MessageSource,
 ) {
     companion object {
         private val logger = LoggerFactory.getLogger(ReportGenerationService::class.java)
@@ -112,7 +116,7 @@ class ReportGenerationService(
             if (pushResult != null) {
                 recordReportGeneration(job, ReportGenerationOutcome.COMPLETED, "none", generatedAt)
             }
-            sendReportPush(pushResult)
+            sendReportPush(pushResult, job.language)
         } catch (e: ReportGenerationFailureException) {
             handleReportGenerationFailure(job, e, generatedAt)
         } catch (e: RuntimeException) {
@@ -197,7 +201,7 @@ class ReportGenerationService(
         if (pushResult != null) {
             recordReportGeneration(job, ReportGenerationOutcome.FAILED, category, generatedAt)
         }
-        sendReportPush(pushResult)
+        sendReportPush(pushResult, job.language)
     }
 
     /**
@@ -227,22 +231,26 @@ class ReportGenerationService(
     /**
      * 리포트가 끝났음을 푸시로 알린다. 상태가 이미 커밋된 뒤에 보내므로 발송이 실패해도 결과는 남는다.
      * 완료는 리포트 상세로, 실패는 "다시 받기"를 누를 수 있는 리포트 목록으로 보낸다.
+     * 문구는 리포트를 구매한 요청의 언어로 고른다.
      */
-    private fun sendReportPush(pushResult: ReportPushResult?) {
+    private fun sendReportPush(pushResult: ReportPushResult?, language: Language) {
         // 이 Worker의 작업이 아니었으면 결과를 쓰지 않았으므로 알리지도 않는다.
         if (pushResult == null) {
             return
         }
 
         try {
-            val result = notificationService.sendServicePush(pushResult.userId, convertPushMessage(pushResult))
+            val result = notificationService.sendServicePush(
+                pushResult.userId,
+                convertPushMessage(pushResult, language),
+            )
             notificationService.deleteInvalidDeviceTokens(result.invalidTokens)
         } catch (e: RuntimeException) {
             logger.error("리포트 알림 발송 실패: reportId={}, status={}", pushResult.reportId, pushResult.status, e)
         }
     }
 
-    private fun convertPushMessage(pushResult: ReportPushResult): PushMessage {
+    private fun convertPushMessage(pushResult: ReportPushResult, language: Language): PushMessage {
         val notificationId = NotificationId.createReportId(pushResult.reportId, pushResult.status)
         val week = "${pushResult.startDate.format(PUSH_DATE_FORMATTER)}~" +
             pushResult.startDate.plusDays(6).format(PUSH_DATE_FORMATTER)
@@ -252,8 +260,8 @@ class ReportGenerationService(
                 userId = pushResult.userId,
                 type = PushType.REPORT_COMPLETED,
                 notificationId = notificationId,
-                title = "주간 영양 리포트가 도착했다냥 🐾",
-                body = "$week 주간 영양 리포트가 도착했어요",
+                title = messageSource.getMessage("push.report.completed.title", language),
+                body = messageSource.getMessage("push.report.completed.body", language, week),
                 appLink = appLinkProperties.createReportDetailLink(pushResult.reportId),
             )
 
@@ -261,8 +269,14 @@ class ReportGenerationService(
                 userId = pushResult.userId,
                 type = PushType.REPORT_FAILED,
                 notificationId = notificationId,
-                title = "리포트를 만들지 못했다냥 🐾",
-                body = "$week 리포트를 만들지 못해 ${pushResult.refundedCoinQuantity}코인을 돌려드렸어요",
+                title = messageSource.getMessage("push.report.refunded.title", language),
+                // 숫자로 넘기면 MessageFormat이 1,000처럼 자릿수를 끊어 지금 문구와 달라진다
+                body = messageSource.getMessage(
+                    "push.report.refunded.body",
+                    language,
+                    week,
+                    pushResult.refundedCoinQuantity.toString(),
+                ),
                 appLink = appLinkProperties.reports,
             )
 
@@ -270,8 +284,8 @@ class ReportGenerationService(
                 userId = pushResult.userId,
                 type = PushType.REPORT_FAILED,
                 notificationId = notificationId,
-                title = "리포트를 만들지 못했다냥 🐾",
-                body = "$week 리포트를 만들지 못했어요. 다시 무료로 만들 수 있어요",
+                title = messageSource.getMessage("push.report.failed.title", language),
+                body = messageSource.getMessage("push.report.failed.body", language, week),
                 appLink = appLinkProperties.reports,
             )
         }

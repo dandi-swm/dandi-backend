@@ -337,10 +337,11 @@ class MealService(
      * @return 다시 요청한 뒤의 분석 상태(WAITING)를 담은 [MealStatusResponse]
      * @throws BusinessException [MealErrorCode.MEAL_NOT_FOUND] mealId에 해당하는 식사가 없거나, 삭제된 경우
      * @throws BusinessException [AuthErrorCode.FORBIDDEN] userId가 소유자가 아닌 경우
+     * @param language 재시도 요청의 앱 언어. 새 분석 결과와 완료 푸시를 이 언어로 만든다
      * @throws BusinessException [MealErrorCode.ANALYSIS_NOT_RETRYABLE] 식사가 FAILED 상태가 아닌 경우
      */
     @Transactional
-    fun retryNutritionAnalysis(userId: Long, mealId: Long): MealStatusResponse {
+    fun retryNutritionAnalysis(userId: Long, mealId: Long, language: Language): MealStatusResponse {
         val meal = mealRepository.findMealWithLockById(mealId)
             ?.takeIf { it.deletedAt == null }
             ?: throw BusinessException(MealErrorCode.MEAL_NOT_FOUND)
@@ -351,7 +352,7 @@ class MealService(
             throw BusinessException(MealErrorCode.ANALYSIS_NOT_RETRYABLE)
         }
 
-        mealAnalysisJobRepository.save(MealAnalysisJob(mealId = meal.id))
+        mealAnalysisJobRepository.save(MealAnalysisJob(mealId = meal.id, language = language))
         meal.updateStatus(MealStatus.WAITING)
 
         return meal.toMealStatusResponse()

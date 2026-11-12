@@ -51,7 +51,7 @@ class MealTransactionService(
      * @param meal 저장할 식사
      * @param rewardBox 이 식사의 보상으로 뽑은 상자
      * @param rewardMailExpiresAt 보상 상자 우편의 만료 시각
-     * @param language 식사를 기록한 요청의 앱 언어. 보상 상자 우편의 문구를 이 언어로 저장한다
+     * @param language 식사를 기록한 요청의 앱 언어. 보상 상자 우편의 문구를 이 언어로 저장하고, 분석 작업에 실어 결과를 이 언어로 만든다
      * @return 저장된 [Meal]
      * @throws BusinessException [UserErrorCode.PROFILE_NOT_FOUND] 가입 시 만들어져야 할 프로필이 없는 경우
      * @throws BusinessException [com.dandi.nyummy.exception.errorcode.MealErrorCode.DAILY_COUNT_EXCEEDED] 다시 센 오늘 시도 횟수가 상한인 경우
@@ -63,7 +63,7 @@ class MealTransactionService(
         mealAttemptService.validateDailyCount(meal.userId)
 
         mealRepository.save(meal)
-        mealAnalysisJobRepository.save(MealAnalysisJob(mealId = meal.id))
+        mealAnalysisJobRepository.save(MealAnalysisJob(mealId = meal.id, language = language))
         mailService.createMealRewardMail(
             userId = meal.userId,
             rewardBoxCategory = rewardBox.category,
