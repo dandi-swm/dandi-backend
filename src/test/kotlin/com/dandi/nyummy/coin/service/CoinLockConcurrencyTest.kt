@@ -7,6 +7,7 @@ import com.dandi.nyummy.coin.repository.CoinHistoryRepository
 import com.dandi.nyummy.coin.repository.CoinRepository
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.CoinErrorCode
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.mail.enum.RewardBoxCategory
 import com.dandi.nyummy.mail.service.MailService
 import com.dandi.nyummy.user.entity.User
@@ -22,6 +23,7 @@ import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.mysql.MySQLContainer
 import java.time.Duration
+import java.time.Instant
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -175,12 +177,12 @@ class CoinLockConcurrencyTest @Autowired constructor(
     }
 
     private fun createMail(userId: Long) {
-        mailService.createRewardBoxMail(
+        mailService.createMealRewardMail(
             userId = userId,
             rewardBoxCategory = RewardBoxCategory.BRONZE,
             coinQuantity = 10,
-            content = "테스트 보상",
-            expiresAt = null,
+            language = Language.KO,
+            expiresAt = Instant.now().plus(Duration.ofDays(7)),
         )
     }
 }

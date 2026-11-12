@@ -3,6 +3,7 @@ package com.dandi.nyummy.meal.service
 import com.dandi.nyummy.auth.enum.AuthProvider
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.MealErrorCode
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.mail.enum.RewardBoxCategory
 import com.dandi.nyummy.mail.repository.MailRepository
 import com.dandi.nyummy.meal.dto.RewardBoxResult
@@ -87,6 +88,7 @@ class MealTransactionServiceConcurrencyTest @Autowired constructor(
                         createMeal(userId, "concurrent-$index", now),
                         RewardBoxResult(RewardBoxCategory.GOLD, 412),
                         now.plus(Duration.ofDays(7)),
+                        Language.KO,
                     )
                     Unit
                 }

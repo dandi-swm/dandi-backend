@@ -8,6 +8,7 @@ import com.dandi.nyummy.exception.errorcode.UserErrorCode
 import com.dandi.nyummy.image.dto.UploadedImageResult
 import com.dandi.nyummy.image.enum.ImagePurpose
 import com.dandi.nyummy.image.service.ImageService
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.mail.entity.Mail
 import com.dandi.nyummy.mail.enum.RewardBoxCategory
 import com.dandi.nyummy.mail.service.MailService
@@ -105,7 +106,7 @@ class MealServiceTest {
         // 굴린 값 85는 골드(80~99), 골드 범위(350~500)에서 412코인을 뽑는다.
         every { random.nextInt(100) } returns 85
         every { random.nextInt(350, 501) } returns 412
-        every { mealTransactionService.createMeal(capture(savedMeal), any(), any()) } answers { firstArg() }
+        every { mealTransactionService.createMeal(capture(savedMeal), any(), any(), any()) } answers { firstArg() }
         every { mealAnalysisJobRepository.save(any()) } answers { firstArg() }
     }
 
@@ -130,7 +131,7 @@ class MealServiceTest {
         val capturedAt = now.minusSeconds(600)
         givenConfirmUpload(capturedAt)
 
-        val result = mealService.createMeal(userId, request)
+        val result = mealService.createMeal(userId, request, Language.KO)
 
         assertEquals(capturedAt, savedMeal.captured.mealAt)
         assertEquals(imageKey, savedMeal.captured.imageKey)
@@ -138,7 +139,7 @@ class MealServiceTest {
         verifyOrder {
             mealAttemptService.validateDailyCount(userId)
             imageService.confirmUpload(userId, ImagePurpose.MEAL, imageKey, any())
-            mealTransactionService.createMeal(any(), any(), any())
+            mealTransactionService.createMeal(any(), any(), any(), any())
         }
     }
 
@@ -146,7 +147,7 @@ class MealServiceTest {
     fun `식사를 기록해도 분석 작업 저장은 트랜잭션 서비스에 맡기고 WAITING을 돌려준다`() {
         givenConfirmUpload(now)
 
-        val result = mealService.createMeal(userId, request)
+        val result = mealService.createMeal(userId, request, Language.KO)
 
         assertEquals(MealStatus.WAITING, result.status)
         verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
@@ -156,13 +157,14 @@ class MealServiceTest {
     fun `식사를 기록하면 뽑은 상자와 만료 시각으로 식사와 우편을 함께 저장하고 응답에 등급을 담는다`() {
         givenConfirmUpload(now)
 
-        val result = mealService.createMeal(userId, request)
+        val result = mealService.createMeal(userId, request, Language.KO)
 
         verify(exactly = 1) {
             mealTransactionService.createMeal(
                 savedMeal.captured,
                 RewardBoxResult(RewardBoxCategory.GOLD, 412),
                 now.plus(Duration.ofDays(7)),
+                Language.KO,
             )
         }
         assertEquals(RewardBoxCategory.GOLD, result.rewardBoxCategory)
@@ -172,7 +174,7 @@ class MealServiceTest {
     fun `확정 콜백으로 오늘 촬영 검증을 넘긴다`() {
         givenConfirmUpload(now)
 
-        mealService.createMeal(userId, request)
+        mealService.createMeal(userId, request, Language.KO)
 
         verify { mealAttemptService.validateCapturedAt(userId, UploadedImageResult(imageKey, now)) }
     }
@@ -181,7 +183,7 @@ class MealServiceTest {
     fun `EXIF 촬영 시각이 없으면 서버 시각으로 저장한다`() {
         givenConfirmUpload(capturedAt = null)
 
-        mealService.createMeal(userId, request)
+        mealService.createMeal(userId, request, Language.KO)
 
         assertEquals(now, savedMeal.captured.mealAt)
     }
@@ -190,10 +192,12 @@ class MealServiceTest {
     fun `이미 사용된 imageKey면 횟수 검사와 확정 없이 거부한다`() {
         every { mealRepository.existsByImageKey(imageKey) } returns true
 
-        assertBusinessException(MealErrorCode.DUPLICATE_IMAGE_KEY) { mealService.createMeal(userId, request) }
+        assertBusinessException(MealErrorCode.DUPLICATE_IMAGE_KEY) {
+            mealService.createMeal(userId, request, Language.KO)
+        }
         verify(exactly = 0) { mealAttemptService.validateDailyCount(any()) }
         verify(exactly = 0) { imageService.confirmUpload(any(), any(), any(), any()) }
-        verify(exactly = 0) { mealTransactionService.createMeal(any(), any(), any()) }
+        verify(exactly = 0) { mealTransactionService.createMeal(any(), any(), any(), any()) }
     }
 
     @Test
@@ -202,9 +206,11 @@ class MealServiceTest {
         every { mealAttemptService.validateDailyCount(userId) } throws
             BusinessException(MealErrorCode.DAILY_COUNT_EXCEEDED)
 
-        assertBusinessException(MealErrorCode.DAILY_COUNT_EXCEEDED) { mealService.createMeal(userId, request) }
+        assertBusinessException(MealErrorCode.DAILY_COUNT_EXCEEDED) {
+            mealService.createMeal(userId, request, Language.KO)
+        }
         verify(exactly = 0) { imageService.confirmUpload(any(), any(), any(), any()) }
-        verify(exactly = 0) { mealTransactionService.createMeal(any(), any(), any()) }
+        verify(exactly = 0) { mealTransactionService.createMeal(any(), any(), any(), any()) }
     }
 
     @Test
@@ -213,8 +219,8 @@ class MealServiceTest {
         every { mealAttemptService.validateCapturedAt(userId, any()) } throws
             BusinessException(MealErrorCode.STALE_IMAGE)
 
-        assertBusinessException(MealErrorCode.STALE_IMAGE) { mealService.createMeal(userId, request) }
-        verify(exactly = 0) { mealTransactionService.createMeal(any(), any(), any()) }
+        assertBusinessException(MealErrorCode.STALE_IMAGE) { mealService.createMeal(userId, request, Language.KO) }
+        verify(exactly = 0) { mealTransactionService.createMeal(any(), any(), any(), any()) }
     }
 
     // createTutorialMeal
@@ -222,7 +228,7 @@ class MealServiceTest {
     private fun givenProfile(tutorialCompletedAt: Instant? = null): Profile {
         val profile = Profile(userId = userId).apply { this.tutorialCompletedAt = tutorialCompletedAt }
         every { profileRepository.findProfileWithLockByUserId(userId) } returns profile
-        every { mailService.createRewardBoxMail(any(), any(), any(), any(), any(), any()) } returns mockk<Mail>()
+        every { mailService.createTutorialRewardMail(any(), any(), any(), any(), any(), any()) } returns mockk<Mail>()
         return profile
     }
 
@@ -230,15 +236,15 @@ class MealServiceTest {
     fun `튜토리얼 식사를 만들면 완료 시각을 기록하고 골드 상자 우편을 만든다`() {
         val profile = givenProfile()
 
-        mealService.createTutorialMeal(userId)
+        mealService.createTutorialMeal(userId, Language.KO)
 
         assertEquals(now, profile.tutorialCompletedAt)
         verify(exactly = 1) {
-            mailService.createRewardBoxMail(
+            mailService.createTutorialRewardMail(
                 userId = userId,
                 rewardBoxCategory = RewardBoxCategory.GOLD,
                 coinQuantity = 100,
-                content = "첫 기록 보상",
+                language = Language.KO,
                 expiresAt = null,
                 itemIds = listOf(2L, 3L),
             )
@@ -250,29 +256,31 @@ class MealServiceTest {
         val completedAt = now.minus(Duration.ofDays(1))
         val profile = givenProfile(tutorialCompletedAt = completedAt)
 
-        assertBusinessException(MealErrorCode.TUTORIAL_ALREADY_COMPLETED) { mealService.createTutorialMeal(userId) }
+        assertBusinessException(MealErrorCode.TUTORIAL_ALREADY_COMPLETED) {
+            mealService.createTutorialMeal(userId, Language.KO)
+        }
 
         assertEquals(completedAt, profile.tutorialCompletedAt)
-        verify(exactly = 0) { mailService.createRewardBoxMail(any(), any(), any(), any(), any(), any()) }
+        verify(exactly = 0) { mailService.createTutorialRewardMail(any(), any(), any(), any(), any(), any()) }
     }
 
     @Test
     fun `프로필이 없으면 PROFILE_NOT_FOUND 예외를 던진다`() {
         every { profileRepository.findProfileWithLockByUserId(userId) } returns null
 
-        assertBusinessException(UserErrorCode.PROFILE_NOT_FOUND) { mealService.createTutorialMeal(userId) }
+        assertBusinessException(UserErrorCode.PROFILE_NOT_FOUND) { mealService.createTutorialMeal(userId, Language.KO) }
 
-        verify(exactly = 0) { mailService.createRewardBoxMail(any(), any(), any(), any(), any(), any()) }
+        verify(exactly = 0) { mailService.createTutorialRewardMail(any(), any(), any(), any(), any(), any()) }
     }
 
     @Test
     fun `튜토리얼 식사는 식사 기록을 저장하지 않는다`() {
         givenProfile()
 
-        mealService.createTutorialMeal(userId)
+        mealService.createTutorialMeal(userId, Language.KO)
 
         verify(exactly = 0) { mealRepository.save(any()) }
-        verify(exactly = 0) { mealTransactionService.createMeal(any(), any(), any()) }
+        verify(exactly = 0) { mealTransactionService.createMeal(any(), any(), any(), any()) }
     }
 
     // getMealStatus

@@ -5,6 +5,7 @@ import com.dandi.nyummy.coin.enum.CoinHistoryCategory
 import com.dandi.nyummy.coin.service.CoinService
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.ShopErrorCode
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.mail.service.MailService
 import com.dandi.nyummy.room.dto.GrantedRoomItem
 import com.dandi.nyummy.shop.calculator.calculatePurchasePrice
@@ -50,10 +51,6 @@ class ItemPurchaseTransactionService(
     private val itemPurchaseProductRepository: ItemPurchaseProductRepository,
     private val itemPurchaseLineRepository: ItemPurchaseLineRepository,
 ) {
-    companion object {
-        private const val ITEM_PURCHASE_MAIL_CONTENT = "상점 구매"
-    }
-
     /**
      * 장바구니의 상품을 코인으로 사고, 산 아이템은 우편으로 보낸다.
      *
@@ -79,6 +76,7 @@ class ItemPurchaseTransactionService(
         idempotencyKey: String,
         request: CreateItemPurchaseRequest,
         appVersion: String?,
+        language: Language,
     ): ItemPurchaseResponse {
         val coin = coinService.lockCoin(userId)
         val cartItems = cartItemRepository.findByUserIdOrderByCreatedAtDescIdDesc(userId)
@@ -118,6 +116,7 @@ class ItemPurchaseTransactionService(
                 itemPurchase,
                 requestedProduct,
                 productItems.getValue(requestedProduct.product.id),
+                language,
             )
         }
 
@@ -199,6 +198,7 @@ class ItemPurchaseTransactionService(
         itemPurchase: ItemPurchase,
         requestedProduct: RequestedProduct,
         productItems: List<ProductItem>,
+        language: Language,
     ) {
         val product = requestedProduct.product
         val itemPurchaseProducts = itemPurchaseProductRepository.saveAll(
@@ -217,12 +217,12 @@ class ItemPurchaseTransactionService(
                 productItems.map { ItemPurchaseLine(itemPurchaseProduct.id, it.itemId, it.listPrice) }
             },
         )
-        mailService.createItemMail(
+        mailService.createItemPurchaseMail(
             userId = userId,
             title = product.name,
-            content = ITEM_PURCHASE_MAIL_CONTENT,
             representativeItemId = product.representativeItemId,
             items = lines.map { GrantedRoomItem(it.itemId, itemPurchaseLineId = it.id) },
+            language = language,
         )
     }
 

@@ -4,6 +4,7 @@ import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.ErrorCode
 import com.dandi.nyummy.exception.errorcode.MealErrorCode
 import com.dandi.nyummy.exception.errorcode.UserErrorCode
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.mail.entity.Mail
 import com.dandi.nyummy.mail.enum.RewardBoxCategory
 import com.dandi.nyummy.mail.service.MailService
@@ -58,7 +59,7 @@ class MealTransactionServiceTest {
         every { mealAttemptService.validateDailyCount(userId) } just Runs
         every { mealRepository.save(meal) } returns meal
         every { mealAnalysisJobRepository.save(any()) } answers { firstArg() }
-        every { mailService.createRewardBoxMail(any(), any(), any(), any(), any()) } returns mockk<Mail>()
+        every { mailService.createMealRewardMail(any(), any(), any(), any(), any()) } returns mockk<Mail>()
         every { streakService.updateStreak(userId) } just Runs
     }
 
@@ -71,20 +72,41 @@ class MealTransactionServiceTest {
 
     @Test
     fun `프로필을 잠근 뒤 횟수를 세고 식사와 상자 우편을 저장하고 연속 기록을 갱신한다`() {
-        mealTransactionService.createMeal(meal, rewardBox, rewardMailExpiresAt)
+        mealTransactionService.createMeal(meal, rewardBox, rewardMailExpiresAt, Language.KO)
 
         verifyOrder {
             profileRepository.findProfileWithLockByUserId(userId)
             mealAttemptService.validateDailyCount(userId)
             mealRepository.save(meal)
-            mailService.createRewardBoxMail(userId, RewardBoxCategory.GOLD, 412, "식사 기록 보상", rewardMailExpiresAt)
+            mailService.createMealRewardMail(
+                userId,
+                RewardBoxCategory.GOLD,
+                412,
+                rewardMailExpiresAt,
+                Language.KO,
+            )
             streakService.updateStreak(userId)
         }
     }
 
     @Test
+    fun `보상 상자 우편은 식사를 기록한 요청의 언어로 만든다`() {
+        mealTransactionService.createMeal(meal, rewardBox, rewardMailExpiresAt, Language.EN)
+
+        verify(exactly = 1) {
+            mailService.createMealRewardMail(
+                userId,
+                RewardBoxCategory.GOLD,
+                412,
+                rewardMailExpiresAt,
+                Language.EN,
+            )
+        }
+    }
+
+    @Test
     fun `식사를 저장한 뒤 그 식사의 분석 작업을 같은 트랜잭션에 저장한다`() {
-        mealTransactionService.createMeal(meal, rewardBox, rewardMailExpiresAt)
+        mealTransactionService.createMeal(meal, rewardBox, rewardMailExpiresAt, Language.KO)
 
         verifyOrder {
             mealRepository.save(meal)
@@ -98,11 +120,11 @@ class MealTransactionServiceTest {
             BusinessException(MealErrorCode.DAILY_COUNT_EXCEEDED)
 
         assertBusinessException(MealErrorCode.DAILY_COUNT_EXCEEDED) {
-            mealTransactionService.createMeal(meal, rewardBox, rewardMailExpiresAt)
+            mealTransactionService.createMeal(meal, rewardBox, rewardMailExpiresAt, Language.KO)
         }
         verify(exactly = 0) { mealRepository.save(any()) }
         verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
-        verify(exactly = 0) { mailService.createRewardBoxMail(any(), any(), any(), any(), any()) }
+        verify(exactly = 0) { mailService.createMealRewardMail(any(), any(), any(), any(), any()) }
         verify(exactly = 0) { streakService.updateStreak(any()) }
     }
 
@@ -111,7 +133,7 @@ class MealTransactionServiceTest {
         every { profileRepository.findProfileWithLockByUserId(userId) } returns null
 
         assertBusinessException(UserErrorCode.PROFILE_NOT_FOUND) {
-            mealTransactionService.createMeal(meal, rewardBox, rewardMailExpiresAt)
+            mealTransactionService.createMeal(meal, rewardBox, rewardMailExpiresAt, Language.KO)
         }
         verify(exactly = 0) { mealAttemptService.validateDailyCount(any()) }
         verify(exactly = 0) { mealRepository.save(any()) }
@@ -121,11 +143,11 @@ class MealTransactionServiceTest {
     @Test
     fun `우편 저장이 실패하면 예외를 그대로 던진다`() {
         // 예외가 밖으로 나가야 @Transactional이 먼저 저장한 식사까지 롤백한다.
-        every { mailService.createRewardBoxMail(any(), any(), any(), any(), any()) } throws
+        every { mailService.createMealRewardMail(any(), any(), any(), any(), any()) } throws
             DataAccessResourceFailureException("mail insert failed")
 
         assertFailsWith<DataAccessResourceFailureException> {
-            mealTransactionService.createMeal(meal, rewardBox, rewardMailExpiresAt)
+            mealTransactionService.createMeal(meal, rewardBox, rewardMailExpiresAt, Language.KO)
         }
     }
 
@@ -135,7 +157,7 @@ class MealTransactionServiceTest {
         every { streakService.updateStreak(userId) } throws DataAccessResourceFailureException("streak insert failed")
 
         assertFailsWith<DataAccessResourceFailureException> {
-            mealTransactionService.createMeal(meal, rewardBox, rewardMailExpiresAt)
+            mealTransactionService.createMeal(meal, rewardBox, rewardMailExpiresAt, Language.KO)
         }
     }
 }

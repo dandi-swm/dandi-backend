@@ -6,6 +6,7 @@ import com.dandi.nyummy.exception.errorcode.MealErrorCode
 import com.dandi.nyummy.exception.errorcode.UserErrorCode
 import com.dandi.nyummy.image.enum.ImagePurpose
 import com.dandi.nyummy.image.service.ImageService
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.mail.enum.RewardBoxCategory
 import com.dandi.nyummy.mail.service.MailService
 import com.dandi.nyummy.meal.calculator.calculateDailyNutritionEvaluation
@@ -63,7 +64,6 @@ class MealService(
 
     companion object {
         private val logger = LoggerFactory.getLogger(MealService::class.java)
-        private const val TUTORIAL_REWARD_CONTENT = "첫 기록 보상"
     }
 
     /**
@@ -98,7 +98,7 @@ class MealService(
      * @throws BusinessException [S3ErrorCode.UNSUPPORTED_CONTENT_TYPE] 실제 콘텐츠에서 감지된 MIME 타입이 허용되지 않거나, imageKey의 확장자와 다른 경우
      * @throws BusinessException [MealErrorCode.STALE_IMAGE] 오늘 촬영한 사진이 아닌 경우
      */
-    fun createMeal(userId: Long, request: CreateMealRequest): CreateMealResponse {
+    fun createMeal(userId: Long, request: CreateMealRequest, language: Language): CreateMealResponse {
         if (mealRepository.existsByImageKey(request.imageKey)) {
             throw BusinessException(MealErrorCode.DUPLICATE_IMAGE_KEY)
         }
@@ -131,7 +131,7 @@ class MealService(
         val rewardBox = pickRewardBox(mealProperties.rewardBoxes, random)
         val rewardMailExpiresAt = Instant.now(clock).plus(mealProperties.rewardMailTimeToLive)
 
-        mealTransactionService.createMeal(meal, rewardBox, rewardMailExpiresAt)
+        mealTransactionService.createMeal(meal, rewardBox, rewardMailExpiresAt, language)
 
         return meal.toCreateMealResponse(rewardBox.category)
     }
@@ -151,11 +151,12 @@ class MealService(
      * 잠금보다 먼저 프로필을 일반 조회하면 REPEATABLE READ 스냅샷 때문에 앞 요청의 완료를 못 보므로 잠금 조회가 첫 조회다.
      *
      * @param userId 튜토리얼을 하는 사용자 ID
+     * @param language 요청의 앱 언어. 보상 상자 우편의 문구를 이 언어로 저장한다
      * @throws BusinessException [UserErrorCode.PROFILE_NOT_FOUND] 가입 시 만들어져야 할 프로필이 없는 경우
      * @throws BusinessException [MealErrorCode.TUTORIAL_ALREADY_COMPLETED] 이미 튜토리얼을 완료한 경우
      */
     @Transactional
-    fun createTutorialMeal(userId: Long) {
+    fun createTutorialMeal(userId: Long, language: Language) {
         val profile = profileRepository.findProfileWithLockByUserId(userId)
             ?: throw BusinessException(UserErrorCode.PROFILE_NOT_FOUND)
 
@@ -164,13 +165,13 @@ class MealService(
         }
 
         profile.updateTutorialCompletedAt(Instant.now(clock))
-        mailService.createRewardBoxMail(
+        mailService.createTutorialRewardMail(
             userId = userId,
             rewardBoxCategory = RewardBoxCategory.GOLD,
             coinQuantity = mealProperties.tutorialRewardBox.coinQuantity,
-            content = TUTORIAL_REWARD_CONTENT,
             expiresAt = null,
             itemIds = mealProperties.tutorialRewardBox.itemIds,
+            language = language,
         )
     }
 

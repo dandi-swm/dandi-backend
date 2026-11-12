@@ -4,6 +4,8 @@ import com.dandi.nyummy.config.openapi.ApiErrorCodes
 import com.dandi.nyummy.exception.errorcode.AuthErrorCode
 import com.dandi.nyummy.exception.errorcode.MealErrorCode
 import com.dandi.nyummy.exception.errorcode.S3ErrorCode
+import com.dandi.nyummy.language.CurrentLanguage
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.meal.dto.CreateAnalysisFeedbackRequest
 import com.dandi.nyummy.meal.dto.CreateMealRequest
 import com.dandi.nyummy.meal.dto.CreateMealResponse
@@ -141,8 +143,11 @@ class MealController(
         ],
     )
     @PostMapping
-    fun createMeal(@CurrentUser user: AuthUser, @Valid @RequestBody request: CreateMealRequest): CreateMealResponse =
-        mealService.createMeal(user.userId, request)
+    fun createMeal(
+        @CurrentUser user: AuthUser,
+        @CurrentLanguage language: Language,
+        @Valid @RequestBody request: CreateMealRequest,
+    ): CreateMealResponse = mealService.createMeal(user.userId, request, language)
 
     @Operation(
         summary = "튜토리얼 식사 생성",
@@ -154,8 +159,8 @@ class MealController(
     @ApiResponse(responseCode = "204", description = "생성 성공")
     @ApiErrorCodes(meal = [MealErrorCode.TUTORIAL_ALREADY_COMPLETED])
     @PostMapping("/tutorial")
-    fun createTutorialMeal(@CurrentUser user: AuthUser): ResponseEntity<Void> {
-        mealService.createTutorialMeal(user.userId)
+    fun createTutorialMeal(@CurrentUser user: AuthUser, @CurrentLanguage language: Language): ResponseEntity<Void> {
+        mealService.createTutorialMeal(user.userId, language)
         return ResponseEntity.noContent().build()
     }
 

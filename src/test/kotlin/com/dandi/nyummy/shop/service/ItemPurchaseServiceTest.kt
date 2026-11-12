@@ -5,6 +5,7 @@ import com.dandi.nyummy.exception.errorcode.CommonErrorCode
 import com.dandi.nyummy.exception.errorcode.ErrorCode
 import com.dandi.nyummy.exception.errorcode.ShopErrorCode
 import com.dandi.nyummy.exception.errorcode.UserErrorCode
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.shop.dto.CreateItemPurchaseRequest
 import com.dandi.nyummy.shop.dto.ItemPurchaseProductRequest
 import com.dandi.nyummy.shop.dto.ItemPurchaseResponse
@@ -38,12 +39,14 @@ class ItemPurchaseServiceTest {
     }
 
     private fun givenFailure(failure: Throwable) {
-        every { itemPurchaseTransactionService.createItemPurchase(userId, idempotencyKey, request, "1.0.0") } throws
+        every {
+            itemPurchaseTransactionService.createItemPurchase(userId, idempotencyKey, request, "1.0.0", Language.KO)
+        } throws
             failure
     }
 
     private fun purchase(request: CreateItemPurchaseRequest = this.request) =
-        service.createItemPurchase(userId, idempotencyKey, request, "1.0.0")
+        service.createItemPurchase(userId, idempotencyKey, request, "1.0.0", Language.KO)
 
     private fun assertBusinessException(expected: ErrorCode, block: () -> Unit) {
         val exception = assertFailsWith<BusinessException>(block = block)
@@ -59,7 +62,9 @@ class ItemPurchaseServiceTest {
     @Test
     fun `구매 결과를 그대로 돌려주고 시도 기록은 트랜잭션에 맡긴다`() {
         val response = ItemPurchaseResponse(500, 1, 1000, 9000, 0)
-        every { itemPurchaseTransactionService.createItemPurchase(userId, idempotencyKey, request, "1.0.0") } returns
+        every {
+            itemPurchaseTransactionService.createItemPurchase(userId, idempotencyKey, request, "1.0.0", Language.KO)
+        } returns
             response
 
         assertEquals(response, purchase())
@@ -75,7 +80,7 @@ class ItemPurchaseServiceTest {
         )
 
         assertBusinessException(CommonErrorCode.INVALID_INPUT_VALUE) { purchase(duplicated) }
-        verify(exactly = 0) { itemPurchaseTransactionService.createItemPurchase(any(), any(), any(), any()) }
+        verify(exactly = 0) { itemPurchaseTransactionService.createItemPurchase(any(), any(), any(), any(), any()) }
     }
 
     @Test

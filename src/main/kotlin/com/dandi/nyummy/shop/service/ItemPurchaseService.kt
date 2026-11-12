@@ -3,6 +3,7 @@ package com.dandi.nyummy.shop.service
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.CommonErrorCode
 import com.dandi.nyummy.exception.errorcode.ShopErrorCode
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.shop.dto.CreateItemPurchaseRequest
 import com.dandi.nyummy.shop.dto.ItemPurchaseResponse
 import com.dandi.nyummy.shop.enum.ItemPurchaseOutcome
@@ -40,12 +41,19 @@ class ItemPurchaseService(
         idempotencyKey: String,
         request: CreateItemPurchaseRequest,
         appVersion: String?,
+        language: Language,
     ): ItemPurchaseResponse {
         val productIds = request.products.map { it.productId }
         if (productIds.size != productIds.toSet().size) throw BusinessException(CommonErrorCode.INVALID_INPUT_VALUE)
 
         try {
-            return itemPurchaseTransactionService.createItemPurchase(userId, idempotencyKey, request, appVersion)
+            return itemPurchaseTransactionService.createItemPurchase(
+                userId,
+                idempotencyKey,
+                request,
+                appVersion,
+                language,
+            )
         } catch (e: BusinessException) {
             createFailedAttempt(userId, idempotencyKey, request, appVersion, ItemPurchaseOutcome.from(e.errorCode))
             throw e
