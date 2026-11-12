@@ -36,6 +36,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
@@ -176,13 +177,28 @@ class GeminiNutritionAnalysisClientTest {
         return objectMapper.readTree(requestBody)["contents"][0]["parts"][1]["text"].asString()
     }
 
+    // 추천 음식 종류는 요청마다 무작위라, 고른 값을 꺼내 후보 안에 있는지 본다
+    private fun extractRecommendationCuisine(prompt: String): String =
+        assertNotNull(Regex("이번 추천은 (.+?) 메뉴 중에서 골라").find(prompt)).groupValues[1]
+
     @Test
     fun `한국어는 출력 언어 지시를 덧붙이지 않고 한국 메뉴 중에서 추천하게 한다`() {
         val prompt = capturePrompt(Language.KO)
 
         assertFalse(prompt.contains("[출력 언어]"))
         assertTrue(prompt.endsWith("만약 뚜렷하게 맞는 것이 없으면 5(밥)를 골라줘."))
-        assertTrue(listOf("한식", "중식", "일식", "양식", "분식").any { prompt.contains("이번 추천은 $it 메뉴 중에서") })
+        assertTrue(extractRecommendationCuisine(prompt) in setOf("한식", "중식", "일식", "양식"))
+    }
+
+    @Test
+    fun `메뉴 추천은 대중적이고 더 건강한 메뉴로 고르게 하고 메뉴 형태는 정하지 않는다`() {
+        val prompt = capturePrompt(Language.KO)
+
+        assertTrue(prompt.contains("누구나 아는 메뉴 이름으로 써."))
+        assertTrue(prompt.contains("같은 조건이면 더 건강한 메뉴를 골라."))
+        assertTrue(prompt.contains("닭가슴살·샐러드만 먹는 다이어트 식단은 이 식사에 그 영양소가 정말 부족할 때만 추천해."))
+        assertFalse(prompt.contains("{dishForm}"))
+        assertFalse(prompt.contains("형태로 골라"))
     }
 
     @Test
@@ -192,7 +208,7 @@ class GeminiNutritionAnalysisClientTest {
         assertTrue(prompt.contains("[isFood 판단 기준]"), "한국어 지시는 그대로 둔다")
         assertTrue(prompt.trimEnd().endsWith("추천하는 메뉴 이름도 일본어로 써."))
         assertTrue(prompt.contains("rejectReason, name, catComment는 모두 일본어로 써."))
-        assertTrue(listOf("和食", "中華", "洋食", "韓国料理", "エスニック").any { prompt.contains("이번 추천은 $it 메뉴 중에서") })
+        assertTrue(extractRecommendationCuisine(prompt) in setOf("和食", "中華", "洋食", "韓国料理", "定食"))
     }
 
     @Test
@@ -203,8 +219,8 @@ class GeminiNutritionAnalysisClientTest {
         assertTrue(prompt.contains("위의 20자 대신 30자 이내로 써."))
         assertTrue(prompt.contains("위의 100자 대신 160자 이내로 써."))
         assertTrue(
-            listOf("Korean", "Southeast Asian", "East Asian", "Western", "Mediterranean")
-                .any { prompt.contains("이번 추천은 $it 메뉴 중에서") },
+            extractRecommendationCuisine(prompt) in
+                setOf("Korean", "Southeast Asian", "East Asian", "Western", "Mediterranean"),
         )
     }
 
