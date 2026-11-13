@@ -238,8 +238,8 @@ app:
     weight-update-interval-days: 1
     weight-update-tolerance: 0.2
   ai:
-    # Gemini 빈(연결 풀·클라이언트)을 만들지. 기본은 Worker 설정을 따라 Worker에서만 켜지고, API 서비스는 GEMINI_API_KEY가 필요 없다.
-    enabled: ${app.worker.enabled}
+    # Gemini 빈(연결 풀·클라이언트)은 모든 서비스에서 만든다. Worker뿐 아니라 API 서비스도 식사 인식 v2에서 Gemini를 부른다.
+    # 그래서 GEMINI_API_KEY가 없으면 어느 서비스도 뜨지 않는다.
     api-key: ${GEMINI_API_KEY}
     model: "gemini-3.6-flash"
     base-url: "https://aiplatform.googleapis.com"
