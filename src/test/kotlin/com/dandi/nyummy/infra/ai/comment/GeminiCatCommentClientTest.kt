@@ -14,6 +14,7 @@ import com.dandi.nyummy.meal.enum.MacroNutrient
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
+import io.mockk.verify
 import tools.jackson.module.kotlin.jacksonObjectMapper
 import java.math.BigDecimal
 import java.time.Duration
@@ -97,6 +98,15 @@ class GeminiCatCommentClientTest {
         givenCatComment("  든든하게 먹었다냥  ")
 
         assertEquals("든든하게 먹었다냥", client.createCatComment(createInput(), Language.KO))
+    }
+
+    @Test
+    fun `받은 응답 대기 제한을 Gemini 호출에 그대로 넘긴다`() {
+        givenCatComment("든든하게 먹었다냥")
+
+        client.createCatComment(createInput(), Language.KO, Duration.ofSeconds(10))
+
+        verify(exactly = 1) { geminiClient.createContent(any(), any(), any(), Duration.ofSeconds(10)) }
     }
 
     @Test

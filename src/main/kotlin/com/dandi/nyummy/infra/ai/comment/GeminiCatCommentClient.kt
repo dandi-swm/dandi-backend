@@ -14,6 +14,7 @@ import com.dandi.nyummy.meal.enum.MacroNutrient
 import org.springframework.stereotype.Component
 import tools.jackson.core.JacksonException
 import tools.jackson.databind.ObjectMapper
+import java.time.Duration
 import java.time.format.DateTimeFormatter
 
 /**
@@ -101,11 +102,12 @@ class GeminiCatCommentClient(
         )
     }
 
-    override fun createCatComment(input: CatCommentInput, language: Language): String {
+    override fun createCatComment(input: CatCommentInput, language: Language, timeout: Duration?): String {
         val resultJson = geminiClient.createContent(
             model = aiProperties.catCommentModel,
             parts = listOf(createGeminiTextPart(createPrompt(input, language))),
             responseSchema = RESPONSE_SCHEMA,
+            timeout = timeout,
         )
         val catComment = convertCatCommentResponse(resultJson).catComment.trim()
         if (catComment.isEmpty()) {

@@ -11,13 +11,23 @@ import com.dandi.nyummy.cat.repository.CatRepository
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.CatErrorCode
 import com.dandi.nyummy.exception.errorcode.ErrorCode
+import com.dandi.nyummy.infra.ai.comment.CatCommentClient
+import com.dandi.nyummy.infra.ai.nutrition.AnalysisFailureCategory
+import com.dandi.nyummy.infra.ai.nutrition.AnalysisFailureException
 import com.dandi.nyummy.language.createTestMessageSource
 import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.language.getMessage
+import com.dandi.nyummy.meal.calculator.calculateCaloryShareBalance
+import com.dandi.nyummy.meal.calculator.calculateRecommendedDailyIntake
+import com.dandi.nyummy.meal.dto.CatCommentInput
+import com.dandi.nyummy.meal.dto.CatCommentMealFoodInput
+import com.dandi.nyummy.meal.dto.CatCommentMealInput
+import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.repository.MealRepository
 import com.dandi.nyummy.user.entity.Profile
+import com.dandi.nyummy.user.enum.Gender
 import com.dandi.nyummy.user.repository.ProfileRepository
 import io.mockk.every
 import io.mockk.mockk
@@ -27,13 +37,19 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.EnumSource
+import org.springframework.dao.QueryTimeoutException
+import java.math.BigDecimal
 import java.time.Clock
+import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.LocalTime
 import java.time.ZoneId
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 
 /**
  * 프로필을 null로 고정해 목표 섭취량을 기본 권장량(2000 * 1일 = 2000)으로 단순화한다.
@@ -49,6 +65,7 @@ class CatServiceTest {
     private val mealRepository: MealRepository = mockk()
     private val profileRepository: ProfileRepository = mockk()
     private val catAnimationLoader: CatAnimationLoader = mockk()
+    private val catCommentClient: CatCommentClient = mockk()
     private val catProperties = CatProperties(
         weightUpdateIntervalDays = 1,
         weightUpdateTolerance = 0.2,
@@ -73,6 +90,7 @@ class CatServiceTest {
         clock = clock,
         catAnimationLoader = catAnimationLoader,
         messageSource = messageSource,
+        catCommentClient = catCommentClient,
     )
 
     @BeforeEach
@@ -597,6 +615,280 @@ class CatServiceTest {
         assertBusinessException(CatErrorCode.CAT_NOT_FOUND) {
             catService.updateCat(userId, UpdateCatRequest(name = "초코"))
         }
+    }
+
+    // ---------------------------------------------------------------- 고양이 코멘트
+    // 하루 문맥을 어떻게 모으는지와, 코멘트를 만들지 못했을 때 고정 문구로 대신하는지 다룬다.
+    // 프롬프트와 모델 응답 정리는 GeminiCatCommentClientTest가 맡는다.
+
+    /** 코멘트를 만들 식사. 오늘 19:00에 먹었다. */
+    private val commentMealAt: Instant = today.atTime(19, 0).atZone(zone).toInstant()
+    private val commentMealFoods = listOf(
+        CatCommentMealFoodInput("불고기", BigDecimal("1.5"), Nutrition(calory = 525, carbs = 23, protein = 38, fat = 30)),
+        CatCommentMealFoodInput("잡곡밥", BigDecimal("1.0"), Nutrition(calory = 300, carbs = 65, protein = 6, fat = 1)),
+    )
+    private val commentMealNutrition = Nutrition(calory = 825, carbs = 88, protein = 44, fat = 31)
+    private val defaultTarget = Nutrition(calory = 2000, carbs = 250, protein = 100, fat = 70)
+    private val defaultCatComment = "맛있게 먹었다냥! 다음 식사도 꼭 기록해 달라냥."
+
+    private val catCommentInput = slot<CatCommentInput>()
+
+    private fun givenCatComment() {
+        givenCat(evaluatedDaysAgo = 0)
+        every { catCommentClient.createCatComment(capture(catCommentInput), any(), any()) } returns "든든하게 먹었다냥"
+    }
+
+    private fun createCatComment(mealAt: Instant = commentMealAt, language: Language = Language.KO): String =
+        catService.createCatComment(userId, mealAt, commentMealFoods, commentMealNutrition, language)
+
+    /** [date]의 [time]에 먹은, 이름과 영양이 있는 식사. */
+    private fun namedMeal(
+        time: LocalTime,
+        name: String,
+        nutrition: Nutrition?,
+        status: MealStatus = MealStatus.COMPLETED,
+        date: LocalDate = today,
+    ): Meal = Meal(
+        status = status,
+        imageKey = "test-image.jpg",
+        mealAt = date.atTime(time).atZone(zone).toInstant(),
+        userId = userId,
+    ).apply {
+        updateName(name)
+        if (nutrition != null) updateNutrition(nutrition)
+    }
+
+    @Test
+    fun `코멘트에는 같은 날 이 식사보다 앞선 완료 식사만 먹은 순서대로 넣는다`() {
+        // given
+        givenCatComment()
+        givenMeals(
+            namedMeal(LocalTime.of(12, 30), "비빔밥", Nutrition(600, 90, 20, 15)),
+            namedMeal(LocalTime.of(8, 0), "토스트", Nutrition(300, 40, 10, 10)),
+            // 아직 영양을 모르는 식사와 실패한 식사
+            namedMeal(LocalTime.of(14, 0), "간식", null, status = MealStatus.WAITING),
+            namedMeal(LocalTime.of(15, 0), "", null, status = MealStatus.FAILED),
+            // 이 식사보다 나중에 먹은 식사
+            namedMeal(LocalTime.of(20, 0), "야식", Nutrition(400, 50, 10, 15)),
+            // 어제 먹은 식사
+            namedMeal(LocalTime.of(23, 59), "어제 저녁", Nutrition(700, 80, 30, 25), date = today.minusDays(1)),
+        )
+
+        // when
+        createCatComment()
+
+        // then
+        assertEquals(
+            listOf(
+                CatCommentMealInput(LocalTime.of(8, 0), "토스트", Nutrition(300, 40, 10, 10)),
+                CatCommentMealInput(LocalTime.of(12, 30), "비빔밥", Nutrition(600, 90, 20, 15)),
+            ),
+            catCommentInput.captured.earlierMeals,
+        )
+    }
+
+    @Test
+    fun `먹은 시각이 이 식사와 같은 식사는 앞선 식사로 넣지 않는다`() {
+        // given
+        givenCatComment()
+        givenMeals(namedMeal(LocalTime.of(19, 0), "같은 시각", Nutrition(300, 40, 10, 10)))
+
+        // when
+        createCatComment()
+
+        // then
+        assertEquals(emptyList(), catCommentInput.captured.earlierMeals)
+    }
+
+    @Test
+    fun `자정을 막 넘긴 식사의 코멘트에는 넘긴 날의 식사만 넣는다`() {
+        // given: 오늘 00:30에 먹은 식사. 어제 저녁은 앞선 식사가 아니다.
+        givenCatComment()
+        givenMeals(
+            namedMeal(LocalTime.of(0, 10), "새벽 간식", Nutrition(200, 30, 5, 5)),
+            namedMeal(LocalTime.of(23, 0), "어제 저녁", Nutrition(700, 80, 30, 25), date = today.minusDays(1)),
+        )
+
+        // when
+        createCatComment(mealAt = today.atTime(0, 30).atZone(zone).toInstant())
+
+        // then
+        assertEquals(listOf("새벽 간식"), catCommentInput.captured.earlierMeals.map { it.name })
+    }
+
+    @Test
+    fun `코멘트의 오늘 합계는 앞선 식사에 이 식사를 더한 값이다`() {
+        // given
+        givenCatComment()
+        givenMeals(
+            namedMeal(LocalTime.of(8, 0), "토스트", Nutrition(300, 40, 10, 10)),
+            namedMeal(LocalTime.of(12, 30), "비빔밥", Nutrition(600, 90, 20, 15)),
+        )
+
+        // when
+        createCatComment()
+
+        // then
+        assertEquals(Nutrition(calory = 1725, carbs = 218, protein = 74, fat = 56), catCommentInput.captured.current)
+    }
+
+    @Test
+    fun `앞선 식사가 없으면 이 식사가 코멘트의 오늘 합계다`() {
+        // given
+        givenCatComment()
+
+        // when
+        createCatComment()
+
+        // then
+        assertEquals(commentMealNutrition, catCommentInput.captured.current)
+    }
+
+    @Test
+    fun `코멘트의 하루 목표는 프로필이 비어 있으면 기본 권장량이다`() {
+        // given
+        givenCatComment()
+
+        // when
+        createCatComment()
+
+        // then
+        assertEquals(defaultTarget, catCommentInput.captured.target)
+    }
+
+    @Test
+    fun `코멘트의 하루 목표는 프로필과 식사 날짜로 계산한 권장 섭취량이다`() {
+        // given
+        givenCatComment()
+        val profile = Profile(
+            userId = userId,
+            birth = LocalDate.of(1998, 5, 1),
+            gender = Gender.FEMALE,
+            height = 162,
+            weight = 55,
+        )
+        every { profileRepository.findProfileByUserId(userId) } returns profile
+
+        // when
+        createCatComment()
+
+        // then
+        assertEquals(calculateRecommendedDailyIntake(profile, today), catCommentInput.captured.target)
+    }
+
+    @Test
+    fun `코멘트의 많은 영양소와 부족한 영양소는 오늘 합계와 하루 목표로 정한다`() {
+        // given
+        givenCatComment()
+
+        // when
+        createCatComment()
+
+        // then
+        val caloryShareBalance = assertNotNull(catCommentInput.captured.caloryShareBalance)
+        assertEquals(calculateCaloryShareBalance(commentMealNutrition, defaultTarget), caloryShareBalance)
+    }
+
+    @Test
+    fun `탄단지 기록이 없으면 코멘트에 영양 균형을 넘기지 않는다`() {
+        // given
+        givenCatComment()
+
+        // when
+        catService.createCatComment(userId, commentMealAt, commentMealFoods, Nutrition(120, 0, 0, 0), Language.KO)
+
+        // then
+        assertNull(catCommentInput.captured.caloryShareBalance)
+    }
+
+    @Test
+    fun `코멘트에 고양이 이름과 음식 줄을 넘기고 요청 언어로 쓰게 하며 응답은 10초까지만 기다린다`() {
+        // given
+        givenCatComment()
+
+        // when
+        createCatComment(language = Language.JA)
+
+        // then
+        assertEquals("나비", catCommentInput.captured.catName)
+        assertEquals(commentMealFoods, catCommentInput.captured.mealFoods)
+        verify(exactly = 1) { catCommentClient.createCatComment(any(), Language.JA, Duration.ofSeconds(10)) }
+    }
+
+    @Test
+    fun `모델이 쓴 코멘트를 그대로 돌려준다`() {
+        // given
+        givenCatComment()
+
+        // when & then
+        assertEquals("든든하게 먹었다냥", createCatComment())
+    }
+
+    @Test
+    fun `코멘트를 만들어도 체형은 평가하지 않는다`() {
+        // given: 어제 평가했으니 조회라면 어제를 평가할 차례다.
+        givenCatComment()
+        val cat = givenCat(evaluatedDaysAgo = 1)
+
+        // when
+        createCatComment()
+
+        // then
+        assertEquals(0, cat.weight)
+        assertEquals(midnight(1), cat.weightUpdatedAt)
+    }
+
+    @Test
+    fun `코멘트를 만들지 못하면 예외를 던지지 않고 요청 언어의 고정 문구를 돌려준다`() {
+        // given
+        givenCatComment()
+        every { catCommentClient.createCatComment(any(), any(), any()) } throws
+            AnalysisFailureException(AnalysisFailureCategory.UNAVAILABLE, "응답 대기 시간을 넘겼습니다.")
+
+        // when & then
+        assertEquals(defaultCatComment, createCatComment(language = Language.KO))
+        assertEquals("おいしく食べたにゃ！次のごはんも記録してほしいにゃ。", createCatComment(language = Language.JA))
+        assertEquals(
+            "That was a tasty meal, meow! Don't forget to log your next one.",
+            createCatComment(language = Language.EN),
+        )
+    }
+
+    @ParameterizedTest
+    @EnumSource(
+        value = AnalysisFailureCategory::class,
+        names = ["MISCONFIGURED", "INVALID_RESPONSE", "INVALID_REQUEST"],
+    )
+    fun `다시 해도 실패할 이유로 코멘트를 만들지 못해도 고정 문구를 돌려준다`(category: AnalysisFailureCategory) {
+        // given
+        givenCatComment()
+        every { catCommentClient.createCatComment(any(), any(), any()) } throws
+            AnalysisFailureException(category, "실패")
+
+        // when & then
+        assertEquals(defaultCatComment, createCatComment())
+    }
+
+    @Test
+    fun `하루 문맥을 조회하지 못하면 모델을 부르지 않고 고정 문구를 돌려준다`() {
+        // given
+        givenCatComment()
+        every { mealRepository.findMealsByUserIdAndPeriod(userId, any(), any()) } throws
+            QueryTimeoutException("timeout")
+
+        // when & then
+        assertEquals(defaultCatComment, createCatComment())
+        verify(exactly = 0) { catCommentClient.createCatComment(any(), any(), any()) }
+    }
+
+    @Test
+    fun `고양이가 없으면 코멘트 모델을 부르지 않고 고정 문구를 돌려준다`() {
+        // given
+        every { catRepository.findByUserId(userId) } returns null
+
+        // when & then
+        assertEquals(defaultCatComment, createCatComment())
+        verify(exactly = 0) { catCommentClient.createCatComment(any(), any(), any()) }
     }
 
     // ---------------------------------------------------------------- 픽스처
