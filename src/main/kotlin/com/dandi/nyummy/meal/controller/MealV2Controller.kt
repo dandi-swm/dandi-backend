@@ -125,15 +125,17 @@ class MealV2Controller(
     ): MealStatusResponse = mealService.updateMealFoodsV2(request)
 
     @Operation(
-        summary = "식사 이름 수정 v2 (Stub)",
-        description = "대표 이름을 본문으로 받는다(1~20자). 지금은 고정 응답으로 받은 이름을 넣은 단건 모양을 준다.",
+        summary = "식사 이름 수정 v2",
+        description = "대표 이름을 본문으로 받는다(1~20자). 음식 줄과 영양은 바뀌지 않고 다시 계산하지 않는다. " +
+            "응답은 단건 조회와 같은 모양이다.",
     )
+    @ApiErrorCodes(meal = [MealErrorCode.MEAL_NOT_FOUND], auth = [AuthErrorCode.FORBIDDEN])
     @PutMapping("/{mealId}")
     fun updateMealNameV2(
         @CurrentUser user: AuthUser,
         @Parameter(description = "식사 ID") @PathVariable("mealId") mealId: Long,
         @Valid @RequestBody request: UpdateMealNameRequest,
-    ): MealV2Response = mealService.updateMealNameV2(request)
+    ): MealV2Response = mealService.updateMealNameV2(user.userId, mealId, request)
 
     @Operation(
         summary = "식사 기록 취소 v2 (Stub)",

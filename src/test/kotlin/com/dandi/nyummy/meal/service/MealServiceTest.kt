@@ -26,6 +26,7 @@ import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.dto.NutritionAnalysisResult
 import com.dandi.nyummy.meal.dto.RewardBoxResult
 import com.dandi.nyummy.meal.dto.ServingNutrition
+import com.dandi.nyummy.meal.dto.UpdateMealNameRequest
 import com.dandi.nyummy.meal.dto.UpdateMealNutritionRequest
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.entity.MealFood
@@ -932,6 +933,69 @@ class MealServiceTest {
 
         assertBusinessException(AuthErrorCode.FORBIDDEN) { mealService.getMealV2(userId, mealId) }
         verify(exactly = 0) { mealFoodService.getMealFoods(any()) }
+    }
+
+    // updateMealNameV2
+
+    private fun givenLockedMeal(meal: Meal) {
+        every { mealRepository.findMealWithLockById(mealId) } returns meal
+        every { imageService.createImageUrl(imageKey) } returns "https://image"
+        every { analysisFeedbackService.canCreateAnalysisFeedback(meal) } returns false
+    }
+
+    @Test
+    fun `대표 이름을 바꾸면 잠가 읽은 식사의 이름만 바뀌고 음식 줄과 영양은 그대로인 단건을 돌려준다`() {
+        val meal = createMealV2(MealStatus.COMPLETED).apply {
+            updateName("불고기 백반")
+            updateNutrition(Nutrition(calory = 825, carbs = 88, protein = 44, fat = 31))
+        }
+        givenLockedMeal(meal)
+        every { mealFoodService.getMealFoods(meal.id) } returns recognizedMealFoods
+
+        val response = mealService.updateMealNameV2(userId, mealId, UpdateMealNameRequest(name = "점심 불고기"))
+
+        assertEquals("점심 불고기", meal.name)
+        assertEquals("점심 불고기", response.name)
+        assertEquals(MealStatus.COMPLETED, response.status)
+        assertEquals(Nutrition(calory = 825, carbs = 88, protein = 44, fat = 31), response.nutrition)
+        assertEquals(listOf("불고기", "잡곡밥"), response.foods?.map { it.name })
+    }
+
+    @Test
+    fun `V1 식사의 대표 이름도 v2 경로로 바꿀 수 있고 응답의 분석 버전은 V1이다`() {
+        val meal = givenAnalyzedMeal()
+
+        val response = mealService.updateMealNameV2(userId, mealId, UpdateMealNameRequest(name = "참치김밥"))
+
+        assertEquals("참치김밥", meal.name)
+        assertEquals(MealAnalysisVersion.V1, response.analysisVersion)
+        assertNull(response.foods)
+    }
+
+    @Test
+    fun `대표 이름을 바꿀 식사가 없거나 삭제됐으면 MEAL_NOT_FOUND 예외를 던진다`() {
+        every { mealRepository.findMealWithLockById(mealId) } returns null
+        assertBusinessException(MealErrorCode.MEAL_NOT_FOUND) {
+            mealService.updateMealNameV2(userId, mealId, UpdateMealNameRequest(name = "점심"))
+        }
+
+        val deletedMeal = createMealV2(MealStatus.COMPLETED).apply { updateDeletedAt(now) }
+        every { mealRepository.findMealWithLockById(mealId) } returns deletedMeal
+        assertBusinessException(MealErrorCode.MEAL_NOT_FOUND) {
+            mealService.updateMealNameV2(userId, mealId, UpdateMealNameRequest(name = "점심"))
+        }
+    }
+
+    @Test
+    fun `다른 사용자의 식사면 대표 이름을 바꾸지 않고 FORBIDDEN 예외를 던진다`() {
+        val meal = createMealV2(MealStatus.COMPLETED, ownerId = 2L).apply { updateName("불고기 백반") }
+        givenLockedMeal(meal)
+
+        assertBusinessException(AuthErrorCode.FORBIDDEN) {
+            mealService.updateMealNameV2(userId, mealId, UpdateMealNameRequest(name = "점심"))
+        }
+
+        assertEquals("불고기 백반", meal.name)
     }
 
     // getDailyMeals·getDailyMealsV2

@@ -151,3 +151,23 @@ Authorization: Bearer {{accessToken}}
 # 식사마다 analysisVersion(V1·V2)이 온다. 계산이 끝나지 않은 식사는 영양이 0이다.
 GET {{url}}/api/v2/meals/daily?year=2026&month=11&day=14
 Authorization: Bearer {{accessToken}}
+
+### 식사 이름 수정 API v2
+# 대표 이름(1~20자)을 본문으로 보낸다. 음식 줄과 영양은 그대로이고 다시 계산하지 않는다.
+# 응답은 단건 조회와 같은 모양이다.
+PUT {{url}}/api/v2/meals/{{mealIdV2}}
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "name": "점심 불고기 백반"
+}
+
+### [실패] 20자를 넘는 이름으로 수정 → api.common.invalidInputValue
+PUT {{url}}/api/v2/meals/{{mealIdV2}}
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "name": "스무 글자를 넘기려고 일부러 길게 쓴 대표 이름"
+}

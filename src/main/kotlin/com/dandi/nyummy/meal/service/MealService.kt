@@ -303,38 +303,32 @@ class MealService(
     }
 
     /**
-     * v2 대표 이름 수정. 지금은 고정 응답(Stub)으로 받은 이름을 넣은 단건 모양을 준다.
+     * v2 식사의 대표 이름을 수정한다. AI가 추천한 이름을 사용자가 바꿀 때 쓴다.
+     *
+     * 이름만 바꾼다. 음식 줄과 영양은 그대로이고 다시 계산하지 않는다.
+     * 이름 길이(1~[Meal.NAME_MAX_LENGTH]자)는 요청 DTO가 검사한다.
+     *
+     * [updateMeal]과 같은 이유로 식사를 잠가 읽는다.
+     *
+     * @param userId 수정하는 사용자 ID
+     * @param mealId 수정할 식사 ID
+     * @param request 바꿀 대표 이름을 담은 [UpdateMealNameRequest]
+     * @return 수정된 식사 정보와 음식 줄을 담은 [MealV2Response]. 단건 조회와 같은 모양이다
+     * @throws BusinessException [MealErrorCode.MEAL_NOT_FOUND] mealId에 해당하는 식사가 없거나, 삭제된 경우
+     * @throws BusinessException [AuthErrorCode.FORBIDDEN] mealId에 해당하는 userId가 아닌 경우
      */
-    fun updateMealNameV2(request: UpdateMealNameRequest): MealV2Response = MealV2Response(
-        mealId = 2L,
-        analysisVersion = MealAnalysisVersion.V2,
-        name = request.name,
-        mealAt = Instant.parse("2026-11-13T03:10:00Z"),
-        status = MealStatus.COMPLETED,
-        nutrition = Nutrition(calory = 726, carbs = 82, protein = 34, fat = 29),
-        imageUrl = "https://cdn.nyummy.co.kr/stub/meal.jpg",
-        canCreateAnalysisFeedback = true,
-        catComment = "탄수화물은 넉넉한데 단백질이 조금 아쉽다냥. 저녁엔 두부조림 어때?",
-        iconId = 3L,
-        foods = listOf(
-            MealFoodResponse(
-                mealFoodId = 11L,
-                name = "제육볶음",
-                portion = BigDecimal("1.5"),
-                nutrition = Nutrition(calory = 416, carbs = 14, protein = 27, fat = 28),
-                isNutritionFixed = false,
-                iconId = 3L,
-            ),
-            MealFoodResponse(
-                mealFoodId = 12L,
-                name = "밥",
-                portion = BigDecimal("1.0"),
-                nutrition = Nutrition(calory = 310, carbs = 68, protein = 7, fat = 1),
-                isNutritionFixed = false,
-                iconId = 5L,
-            ),
-        ),
-    )
+    @Transactional
+    fun updateMealNameV2(userId: Long, mealId: Long, request: UpdateMealNameRequest): MealV2Response {
+        val meal = mealRepository.findMealWithLockById(mealId)
+            ?.takeIf { it.deletedAt == null }
+            ?: throw BusinessException(MealErrorCode.MEAL_NOT_FOUND)
+
+        meal.validateOwnership(userId)
+
+        meal.updateName(request.name)
+
+        return convertMealV2Response(meal)
+    }
 
     /**
      * v2 기록 취소. 지금은 Stub이라 아무것도 하지 않는다.
