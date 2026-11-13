@@ -130,6 +130,26 @@ class MealFoodService(
     }
 
     /**
+     * 식사의 음식 줄과 스냅샷을 모두 지운다. 실패한 식사를 처음부터 다시 인식하기 전에 쓴다.
+     * 스냅샷은 식사당 하나라, 지우지 않으면 다시 인식한 결과를 저장할 수 없다.
+     *
+     * 스냅샷 줄은 스냅샷을 지우면 DB가 함께 지운다(ON DELETE CASCADE).
+     *
+     * 지울 행을 먼저 읽어 id로 지운다. 없는 행을 `meal_id`로 지우려 하면 InnoDB가 인덱스의 빈 구간을 잠가,
+     * 그 구간에 줄을 넣으려는 다른 식사의 요청을 막는다. 음식이 아니라고 판정된 식사는 음식 줄도 스냅샷도 없다.
+     *
+     * 식사의 상태를 바꾸고 인식 작업을 만드는 일과 함께 커밋돼야 하므로 호출하는 쪽 트랜잭션에 합류한다.
+     *
+     * @param mealId 음식 줄과 스냅샷을 지울 식사 ID
+     */
+    @Transactional
+    fun deleteMealFoods(mealId: Long) {
+        mealFoodRepository.deleteAllInBatch(mealFoodRepository.findAllByMealIdOrderByDisplayOrderAsc(mealId))
+        mealSnapshotRepository.findByMealId(mealId)
+            ?.let { mealSnapshotRepository.deleteAllInBatch(listOf(it)) }
+    }
+
+    /**
      * 인식 결과를 스냅샷(AI가 처음 낸 목록)과 음식 줄(사용자가 고치는 지금 값)로 저장한다.
      * 음식 줄은 짝이 되는 스냅샷 줄을 가리키고, 순서는 인식이 낸 순서(맨 앞이 대표 음식)다.
      *

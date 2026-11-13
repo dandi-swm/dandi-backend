@@ -200,7 +200,12 @@ class MealV2Controller(
         return ResponseEntity.noContent().build()
     }
 
-    @Operation(summary = "영양 분석 재시도 v2", description = "v1과 같다.")
+    @Operation(
+        summary = "영양 분석 재시도 v2",
+        description = "FAILED 식사만 다시 분석한다. V2 식사는 어느 단계에서 실패했든 처음부터 다시 인식한다. " +
+            "음식 줄을 지우고(고친 목록도 사라진다) RECOGNIZING으로 응답하며, 인식이 끝나면 WAITING이 된다. " +
+            "V1 식사는 v1과 같이 WAITING으로 응답한다.",
+    )
     @ApiErrorCodes(
         meal = [MealErrorCode.MEAL_NOT_FOUND, MealErrorCode.ANALYSIS_NOT_RETRYABLE],
         auth = [AuthErrorCode.FORBIDDEN],
@@ -210,7 +215,7 @@ class MealV2Controller(
         @CurrentUser user: AuthUser,
         @CurrentLanguage language: Language,
         @Parameter(description = "식사 ID") @PathVariable("mealId") mealId: Long,
-    ): MealStatusResponse = mealService.retryNutritionAnalysis(user.userId, mealId, language)
+    ): MealStatusResponse = mealService.retryNutritionAnalysisV2(user.userId, mealId, language)
 
     @Operation(summary = "영양 분석 평가 등록 v2", description = "v1과 같다.")
     @ApiResponse(responseCode = "201", description = "평가 등록 성공")

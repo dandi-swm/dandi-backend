@@ -442,4 +442,33 @@ class MealFoodServiceTest {
 
         verify(exactly = 0) { mealFoodRepository.findAllByMealIdOrderByDisplayOrderAsc(any()) }
     }
+
+    // deleteMealFoods
+
+    @Test
+    fun `음식 줄과 스냅샷을 읽어서 있는 것을 id로 지운다`() {
+        val bulgogi = createMealFood(displayOrder = 1, name = "불고기")
+        val rice = createMealFood(displayOrder = 2, name = "잡곡밥")
+        givenMealFoodsToUpdate(bulgogi, rice)
+        val savedMealSnapshot = mockk<MealSnapshot>()
+        every { mealSnapshotRepository.findByMealId(mealId) } returns savedMealSnapshot
+        every { mealSnapshotRepository.deleteAllInBatch(any<Iterable<MealSnapshot>>()) } just Runs
+
+        mealFoodService.deleteMealFoods(mealId)
+
+        assertEquals(listOf(bulgogi, rice), deletedMealFoods.captured.toList())
+        // 스냅샷 줄은 스냅샷을 지우면 DB가 함께 지운다.
+        verify(exactly = 1) { mealSnapshotRepository.deleteAllInBatch(listOf(savedMealSnapshot)) }
+    }
+
+    @Test
+    fun `음식이 아니라고 판정돼 스냅샷이 없는 식사는 스냅샷을 지우지 않는다`() {
+        givenMealFoodsToUpdate()
+        every { mealSnapshotRepository.findByMealId(mealId) } returns null
+
+        mealFoodService.deleteMealFoods(mealId)
+
+        assertTrue(deletedMealFoods.captured.toList().isEmpty())
+        verify(exactly = 0) { mealSnapshotRepository.deleteAllInBatch(any<Iterable<MealSnapshot>>()) }
+    }
 }

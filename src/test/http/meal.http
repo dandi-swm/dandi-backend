@@ -295,3 +295,15 @@ Authorization: Bearer {{accessToken}}
 ### [실패] 이미 지운 식사를 다시 삭제 → api.meal.notFound
 DELETE {{url}}/api/v2/meals/{{mealIdV2}}
 Authorization: Bearer {{accessToken}}
+
+### 재분석 요청 API v2
+# FAILED 식사만 다시 분석한다. V2 식사는 어느 단계에서 실패했든 처음부터 다시 인식한다.
+# 음식 줄을 지우고 RECOGNIZING으로 응답한다. 인식이 끝나면 WAITING이 되고, 5분 뒤(또는 목록을 보내면 바로) 영양을 계산한다.
+# V1 식사는 v1과 같이 WAITING으로 응답한다.
+@failedMealIdV2 = 4
+POST {{url}}/api/v2/meals/{{failedMealIdV2}}/analysis
+Authorization: Bearer {{accessToken}}
+
+### [실패] FAILED가 아닌 식사를 재분석 → api.meal.analysisNotRetryable
+POST {{url}}/api/v2/meals/{{mealIdV2}}/analysis
+Authorization: Bearer {{accessToken}}

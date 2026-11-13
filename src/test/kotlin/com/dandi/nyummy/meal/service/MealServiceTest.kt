@@ -1348,6 +1348,123 @@ class MealServiceTest {
         assertBusinessException(MealErrorCode.MEAL_NOT_FOUND) { mealService.cancelMealV2(userId, mealId) }
     }
 
+    // retryNutritionAnalysisV2
+
+    private fun givenMealToRetry(meal: Meal?) {
+        givenMealToUpdate(meal)
+        every { mealFoodService.deleteMealFoods(any()) } just Runs
+    }
+
+    @Test
+    fun `실패한 V2 식사를 재분석하면 음식 줄을 지우고 요청 언어의 인식 작업을 만들어 RECOGNIZING으로 돌린다`() {
+        val meal = createMealV2(MealStatus.FAILED).apply { updateName("불고기 백반") }
+        givenMealToRetry(meal)
+        val job = slot<MealAnalysisJob>()
+        every { mealAnalysisJobRepository.save(capture(job)) } answers { firstArg() }
+
+        val response = mealService.retryNutritionAnalysisV2(userId, mealId, Language.JA)
+
+        assertEquals(MealStatus.RECOGNIZING, response.status)
+        assertEquals(MealStatus.RECOGNIZING, meal.status)
+        verify(exactly = 1) { mealFoodService.deleteMealFoods(meal.id) }
+        assertEquals(MealAnalysisJobCategory.RECOGNITION, job.captured.category)
+        assertEquals(Language.JA, job.captured.language)
+        // 인식 작업은 미루지 않는다.
+        verify(exactly = 0) { mealAnalysisJobRepository.updateAvailableAt(any(), any()) }
+    }
+
+    @Test
+    fun `실패한 V2 식사를 재분석하면 대표 이름과 합계, 아이콘을 비우고 고양이 코멘트는 그대로 둔다`() {
+        // 완료됐던 식사를 고쳐 다시 계산하다 실패한 식사
+        val meal = createCompletedMealV2().apply { updateStatus(MealStatus.FAILED) }
+        givenMealToRetry(meal)
+
+        mealService.retryNutritionAnalysisV2(userId, mealId, Language.KO)
+
+        assertEquals("", meal.name)
+        assertNull(meal.calory)
+        assertNull(meal.iconId)
+        assertEquals("든든하게 먹었다냥", meal.catComment)
+    }
+
+    @Test
+    fun `재분석은 프로필 행을 먼저 잠가 같은 사용자의 요청을 줄 세운다`() {
+        givenMealToRetry(createMealV2(MealStatus.FAILED))
+
+        mealService.retryNutritionAnalysisV2(userId, mealId, Language.KO)
+
+        verifyOrder {
+            profileRepository.findProfileWithLockByUserId(userId)
+            mealRepository.findMealWithLockById(mealId)
+        }
+    }
+
+    @Test
+    fun `실패한 V1 식사를 v2 경로로 재분석하면 v1 분석 작업을 쌓고 WAITING으로 돌리며 음식 줄은 건드리지 않는다`() {
+        val meal = Meal(status = MealStatus.FAILED, imageKey = imageKey, mealAt = now, userId = userId)
+        givenMealToRetry(meal)
+        val job = slot<MealAnalysisJob>()
+        every { mealAnalysisJobRepository.save(capture(job)) } answers { firstArg() }
+
+        val response = mealService.retryNutritionAnalysisV2(userId, mealId, Language.EN)
+
+        assertEquals(MealStatus.WAITING, response.status)
+        assertNull(job.captured.category)
+        assertEquals(Language.EN, job.captured.language)
+        verify(exactly = 0) { mealFoodService.deleteMealFoods(any()) }
+    }
+
+    @Test
+    fun `FAILED가 아닌 식사는 ANALYSIS_NOT_RETRYABLE이고 음식 줄과 작업을 건드리지 않는다`() {
+        listOf(
+            MealStatus.RECOGNIZING,
+            MealStatus.WAITING,
+            MealStatus.ANALYZING,
+            MealStatus.COMPLETED,
+        ).forEach { status ->
+            val meal = createMealV2(status).apply { updateName("불고기 백반") }
+            givenMealToRetry(meal)
+
+            assertBusinessException(MealErrorCode.ANALYSIS_NOT_RETRYABLE) {
+                mealService.retryNutritionAnalysisV2(userId, mealId, Language.KO)
+            }
+
+            assertEquals(status, meal.status)
+            assertEquals("불고기 백반", meal.name)
+        }
+        verify(exactly = 0) { mealFoodService.deleteMealFoods(any()) }
+        verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
+    }
+
+    @Test
+    fun `v2 경로로 재분석할 식사가 없거나 삭제됐으면 MEAL_NOT_FOUND 예외를 던지고 작업을 쌓지 않는다`() {
+        givenMealToRetry(null)
+        assertBusinessException(MealErrorCode.MEAL_NOT_FOUND) {
+            mealService.retryNutritionAnalysisV2(userId, mealId, Language.KO)
+        }
+
+        givenMealToRetry(createMealV2(MealStatus.FAILED).apply { updateDeletedAt(now) })
+        assertBusinessException(MealErrorCode.MEAL_NOT_FOUND) {
+            mealService.retryNutritionAnalysisV2(userId, mealId, Language.KO)
+        }
+
+        verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
+    }
+
+    @Test
+    fun `다른 사용자의 식사를 v2 경로로 재분석하면 FORBIDDEN 예외를 던지고 작업을 쌓지 않는다`() {
+        val meal = createMealV2(MealStatus.FAILED, ownerId = 2L)
+        givenMealToRetry(meal)
+
+        assertBusinessException(AuthErrorCode.FORBIDDEN) {
+            mealService.retryNutritionAnalysisV2(userId, mealId, Language.KO)
+        }
+
+        assertEquals(MealStatus.FAILED, meal.status)
+        verify(exactly = 0) { mealFoodService.deleteMealFoods(any()) }
+        verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
+    }
+
     // getDailyMeals·getDailyMealsV2
 
     // 서울 2026-10-10 하루는 [10-09 15:00Z, 10-10 15:00Z)다.

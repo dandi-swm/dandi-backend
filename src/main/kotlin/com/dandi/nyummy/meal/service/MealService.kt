@@ -680,6 +680,55 @@ class MealService(
     }
 
     /**
+     * FAILED 상태의 식사를 v2 경로로 다시 분석한다. V2 식사는 어느 단계에서 실패했든 처음부터, 음식 인식부터 다시 한다.
+     *
+     * V2 식사가 FAILED가 되는 경우는 셋이다: 음식이 아니라고 판정됨, 인식 실패, 영양 계산 실패. 앱에서는 모두 같은 실패로 보이므로
+     * 재분석도 하나로 한다. 음식 줄과 스냅샷을 지우고(사용자가 고친 목록도 사라진다) 인식 작업을 만들어 RECOGNIZING으로 둔다.
+     * 대표 이름과 합계·아이콘도 비운다. 고양이 코멘트가 이미 있으면 그대로 둔다(식사당 한 번만 만든다).
+     *
+     * V1 식사는 분석 버전을 바꿀 수 없으므로 [retryNutritionAnalysis]와 같이 v1 분석 작업을 쌓고 WAITING으로 둔다.
+     * 새 앱의 하루 목록에는 V1 식사도 나오므로 이 경로로 들어올 수 있다.
+     *
+     * 작업 행을 만드는 요청이라 [deleteMealAnalysisJobAndGetMealWithLock]으로 시작한다. FAILED 식사에는 지울 작업이 없지만
+     * 같은 사용자의 요청을 줄 세워, 재분석을 두 번 눌러도 하나만 작업을 만들고 나머지는 거절된다.
+     *
+     * 음식이 아니라고 잘못 판정한 식사를 세려고(재분석해서 성공한 식사) 다시 분석하는 식사의 id와 직전 입력 유형을 로그로 남긴다.
+     *
+     * @param userId 재분석을 요청한 사용자 ID
+     * @param mealId 재분석할 식사 ID
+     * @param language 요청의 앱 언어. 새 인식 결과와 푸시를 이 언어로 만든다
+     * @return 다시 요청한 뒤의 분석 상태를 담은 [MealStatusResponse]. V2 식사는 RECOGNIZING, V1 식사는 WAITING이다
+     * @throws BusinessException [MealErrorCode.MEAL_NOT_FOUND] mealId에 해당하는 식사가 없거나, 삭제된 경우
+     * @throws BusinessException [AuthErrorCode.FORBIDDEN] userId가 소유자가 아닌 경우
+     * @throws BusinessException [MealErrorCode.ANALYSIS_NOT_RETRYABLE] 식사가 FAILED 상태가 아닌 경우
+     */
+    @Transactional
+    fun retryNutritionAnalysisV2(userId: Long, mealId: Long, language: Language): MealStatusResponse {
+        val meal = deleteMealAnalysisJobAndGetMealWithLock(userId, mealId)
+        if (meal.status != MealStatus.FAILED) {
+            throw BusinessException(MealErrorCode.ANALYSIS_NOT_RETRYABLE)
+        }
+
+        if (meal.analysisVersion != MealAnalysisVersion.V2) {
+            mealAnalysisJobRepository.save(MealAnalysisJob(mealId = meal.id, language = language))
+            meal.updateStatus(MealStatus.WAITING)
+
+            return meal.toMealStatusResponse()
+        }
+
+        logger.info("실패한 v2 식사를 처음부터 다시 분석합니다: mealId={}, inputCategory={}", meal.id, meal.inputCategory)
+        mealFoodService.deleteMealFoods(meal.id)
+        mealAnalysisJobRepository.save(
+            MealAnalysisJob(mealId = meal.id, language = language, category = MealAnalysisJobCategory.RECOGNITION),
+        )
+        meal.updateName("")
+        meal.resetNutrition()
+        meal.updateStatus(MealStatus.RECOGNIZING)
+
+        return meal.toMealStatusResponse()
+    }
+
+    /**
      * 식사 이름을 수정한다.
      *
      * 식사를 잠가 읽는다. 엔티티 전체를 다시 쓰므로, 잠그지 않으면 읽은 뒤 Worker가 확정한 분석 결과를

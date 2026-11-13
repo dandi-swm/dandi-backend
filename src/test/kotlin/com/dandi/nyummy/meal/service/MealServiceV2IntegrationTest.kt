@@ -1,9 +1,13 @@
 package com.dandi.nyummy.meal.service
 
 import com.dandi.nyummy.auth.enum.AuthProvider
+import com.dandi.nyummy.exception.BusinessException
+import com.dandi.nyummy.exception.errorcode.MealErrorCode
 import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.meal.dto.MealFoodNutritionRequest
+import com.dandi.nyummy.meal.dto.MealFoodRecognitionResult
 import com.dandi.nyummy.meal.dto.MealFoodRequest
+import com.dandi.nyummy.meal.dto.MealRecognitionResult
 import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.dto.ServingNutrition
 import com.dandi.nyummy.meal.dto.UpdateMealFoodsRequest
@@ -13,11 +17,15 @@ import com.dandi.nyummy.meal.entity.MealAnalysisJob
 import com.dandi.nyummy.meal.entity.MealFood
 import com.dandi.nyummy.meal.enum.MealAnalysisJobCategory
 import com.dandi.nyummy.meal.enum.MealAnalysisVersion
+import com.dandi.nyummy.meal.enum.MealInputCategory
+import com.dandi.nyummy.meal.enum.MealRecognitionCategory
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.repository.IconRepository
 import com.dandi.nyummy.meal.repository.MealAnalysisJobRepository
 import com.dandi.nyummy.meal.repository.MealFoodRepository
+import com.dandi.nyummy.meal.repository.MealFoodSnapshotRepository
 import com.dandi.nyummy.meal.repository.MealRepository
+import com.dandi.nyummy.meal.repository.MealSnapshotRepository
 import com.dandi.nyummy.user.entity.Profile
 import com.dandi.nyummy.user.entity.User
 import com.dandi.nyummy.user.repository.ProfileRepository
@@ -60,6 +68,9 @@ class MealServiceV2IntegrationTest @Autowired constructor(
     private val mealFoodRepository: MealFoodRepository,
     private val mealAnalysisJobRepository: MealAnalysisJobRepository,
     private val iconRepository: IconRepository,
+    private val mealFoodService: MealFoodService,
+    private val mealSnapshotRepository: MealSnapshotRepository,
+    private val mealFoodSnapshotRepository: MealFoodSnapshotRepository,
     transactionManager: PlatformTransactionManager,
     private val clock: Clock,
 ) {
@@ -346,6 +357,74 @@ class MealServiceV2IntegrationTest @Autowired constructor(
 
         assertNotNull(mealRepository.findById(meal.id).orElseThrow().deletedAt)
         assertNull(findJob(meal.id))
+    }
+
+    private val recognition = MealRecognitionResult(
+        inputCategory = MealInputCategory.FOOD_PHOTO,
+        name = "불고기 백반",
+        foods = listOf(
+            MealFoodRecognitionResult(name = "불고기", portion = BigDecimal("1.5")),
+            MealFoodRecognitionResult(name = "잡곡밥", portion = BigDecimal("1.0")),
+        ),
+        model = "gemini-recognition-test",
+        promptVersion = "v1",
+    )
+
+    @Test
+    fun `실패한 식사를 재분석하면 음식 줄과 스냅샷이 스냅샷 줄까지 사라지고 바로 가져갈 인식 작업이 생긴다`() {
+        // 인식까지 됐다가(스냅샷·음식 줄 있음) 영양 계산에서 실패한 식사
+        val userId = userRepository.save(User(provider = AuthProvider.EMAIL, email = "retry@nyummy.co.kr")).id
+        profileRepository.save(Profile(userId = userId))
+        val meal = mealRepository.save(
+            Meal(
+                status = MealStatus.FAILED,
+                imageKey = "meals/$userId/2026/11/14/retry.jpg",
+                mealAt = Instant.now(clock),
+                userId = userId,
+                analysisVersion = MealAnalysisVersion.V2,
+            ).apply { updateName("불고기 백반") },
+        )
+        mealFoodService.createMealFoods(meal.id, recognition, MealRecognitionCategory.SYNC)
+        val mealSnapshotId = mealSnapshotRepository.findByMealId(meal.id)!!.id
+
+        val response = mealService.retryNutritionAnalysisV2(userId, meal.id, Language.JA)
+
+        assertEquals(MealStatus.RECOGNIZING, response.status)
+        assertTrue(mealFoodRepository.findAllByMealIdOrderByDisplayOrderAsc(meal.id).isEmpty())
+        assertNull(mealSnapshotRepository.findByMealId(meal.id))
+        assertTrue(mealFoodSnapshotRepository.findAll().none { it.mealSnapshotId == mealSnapshotId })
+        val job = assertNotNull(findJob(meal.id))
+        assertEquals(MealAnalysisJobCategory.RECOGNITION, job.category)
+        assertEquals(Language.JA, job.language)
+        assertNull(job.leaseExpiresAt)
+        val savedMeal = mealRepository.findById(meal.id).orElseThrow()
+        assertEquals(MealStatus.RECOGNIZING, savedMeal.status)
+        assertEquals("", savedMeal.name)
+
+        // 스냅샷은 식사당 하나다. 지웠으므로 다시 인식한 결과를 저장할 수 있다.
+        mealFoodService.createMealFoods(meal.id, recognition, MealRecognitionCategory.WORKER)
+        assertEquals(MealRecognitionCategory.WORKER, mealSnapshotRepository.findByMealId(meal.id)?.recognitionCategory)
+    }
+
+    @Test
+    fun `재분석을 동시에 두 번 눌러도 인식 작업은 하나만 생기고 나머지는 거절된다`() {
+        val userId = userRepository.save(User(provider = AuthProvider.EMAIL, email = "retry-twice@nyummy.co.kr")).id
+        profileRepository.save(Profile(userId = userId))
+        val meal = mealRepository.save(
+            Meal(
+                status = MealStatus.FAILED,
+                imageKey = "meals/$userId/2026/11/14/retry-twice.jpg",
+                mealAt = Instant.now(clock),
+                userId = userId,
+                analysisVersion = MealAnalysisVersion.V2,
+            ),
+        )
+
+        val failures = runConcurrently(2) { mealService.retryNutritionAnalysisV2(userId, meal.id, Language.KO) }
+
+        assertEquals(1, failures.size, "실패: $failures")
+        assertEquals(MealErrorCode.ANALYSIS_NOT_RETRYABLE, (failures.single() as BusinessException).errorCode)
+        assertEquals(1, mealAnalysisJobRepository.findAll().count { it.mealId == meal.id })
     }
 
     /** [count]개의 스레드가 같은 순간에 [action]을 실행하게 하고, 실패한 것의 예외를 돌려준다. */
