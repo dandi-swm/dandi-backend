@@ -47,6 +47,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -425,6 +426,33 @@ class MealServiceV2IntegrationTest @Autowired constructor(
         assertEquals(1, failures.size, "실패: $failures")
         assertEquals(MealErrorCode.ANALYSIS_NOT_RETRYABLE, (failures.single() as BusinessException).errorCode)
         assertEquals(1, mealAnalysisJobRepository.findAll().count { it.mealId == meal.id })
+    }
+
+    // 끼니 알림이 보는 최근 식사 (MealRepository.existsMealAfter)
+
+    @Test
+    fun `최근에 먹은 식사는 실패한 식사와 지운 식사만 빼고 상태와 상관없이 기록한 것으로 본다`() {
+        val now = Instant.now(clock)
+        val oneHourAgo = now.minusSeconds(3600)
+
+        fun existsRecentMeal(email: String, status: MealStatus, mealAt: Instant, isDeleted: Boolean = false): Boolean {
+            val userId = userRepository.save(User(provider = AuthProvider.EMAIL, email = email)).id
+            mealRepository.save(
+                Meal(status = status, imageKey = "meals/$userId/$email.jpg", mealAt = mealAt, userId = userId).apply {
+                    if (isDeleted) updateDeletedAt(now)
+                },
+            )
+            return mealRepository.existsMealAfter(userId, MealStatus.FAILED, oneHourAgo)
+        }
+        val recently = now.minusSeconds(600)
+
+        assertTrue(existsRecentMeal("recent-recognizing@nyummy.co.kr", MealStatus.RECOGNIZING, recently))
+        assertTrue(existsRecentMeal("recent-waiting@nyummy.co.kr", MealStatus.WAITING, recently))
+        assertTrue(existsRecentMeal("recent-analyzing@nyummy.co.kr", MealStatus.ANALYZING, recently))
+        assertTrue(existsRecentMeal("recent-completed@nyummy.co.kr", MealStatus.COMPLETED, recently))
+        assertFalse(existsRecentMeal("recent-failed@nyummy.co.kr", MealStatus.FAILED, recently))
+        assertFalse(existsRecentMeal("recent-deleted@nyummy.co.kr", MealStatus.COMPLETED, recently, isDeleted = true))
+        assertFalse(existsRecentMeal("old-completed@nyummy.co.kr", MealStatus.COMPLETED, now.minusSeconds(7200)))
     }
 
     /** [count]개의 스레드가 같은 순간에 [action]을 실행하게 하고, 실패한 것의 예외를 돌려준다. */

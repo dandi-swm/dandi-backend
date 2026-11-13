@@ -34,19 +34,20 @@ interface MealRepository : JpaRepository<Meal, Long> {
 
     fun existsByImageKey(imageKey: String): Boolean
 
+    // [mealAt] 뒤에 먹은, 지우지 않은 식사 중 상태가 [excludedStatus]가 아닌 식사가 있는지.
     @Query(
         """
         select COUNT(m) > 0
         from Meal as m
         where m.userId = :userId
             and m.deletedAt is null
-            and m.status = :status
+            and m.status <> :excludedStatus
             and m.mealAt > :mealAt
     """,
     )
-    fun existsCompletedMealAfter(
+    fun existsMealAfter(
         @Param("userId") userId: Long,
-        @Param("status") status: MealStatus,
+        @Param("excludedStatus") excludedStatus: MealStatus,
         @Param("mealAt") mealAt: Instant,
     ): Boolean
 
