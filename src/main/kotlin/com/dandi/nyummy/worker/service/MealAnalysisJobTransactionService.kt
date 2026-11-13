@@ -3,12 +3,16 @@ package com.dandi.nyummy.worker.service
 import com.dandi.nyummy.cat.repository.CatRepository
 import com.dandi.nyummy.cat.service.CatService
 import com.dandi.nyummy.language.enum.Language
+import com.dandi.nyummy.meal.dto.MealRecognitionResult
 import com.dandi.nyummy.meal.dto.NutritionAnalysisResult
 import com.dandi.nyummy.meal.entity.Meal
+import com.dandi.nyummy.meal.entity.MealAnalysisJob
 import com.dandi.nyummy.meal.enum.MealAnalysisJobCategory
+import com.dandi.nyummy.meal.enum.MealRecognitionCategory
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.repository.MealAnalysisJobRepository
 import com.dandi.nyummy.meal.repository.MealRepository
+import com.dandi.nyummy.meal.service.MealFoodService
 import com.dandi.nyummy.worker.config.ConditionalOnAnalysisWorkerEnabled
 import com.dandi.nyummy.worker.config.WorkerJobProperties
 import com.dandi.nyummy.worker.config.WorkerProperties
@@ -34,6 +38,7 @@ import java.time.Instant
 class MealAnalysisJobTransactionService(
     private val mealAnalysisJobRepository: MealAnalysisJobRepository,
     private val mealRepository: MealRepository,
+    private val mealFoodService: MealFoodService,
     private val catRepository: CatRepository,
     private val catService: CatService,
     private val workerProperties: WorkerProperties,
@@ -139,6 +144,50 @@ class MealAnalysisJobTransactionService(
         }
 
         return convertAnalysisPushResult(meal)
+    }
+
+    /**
+     * 인식 결과를 저장하고 식사를 WAITING으로 바꾼 뒤, 인식 작업을 지우고 [nutritionDelay] 뒤부터 가져갈 영양 작업을 만든다.
+     * 그 시간 안에 사용자가 음식 목록을 보내면 그 작업을 지우고 바로 계산한다.
+     *
+     * 인식 작업 행을 영양 작업으로 바꿔 쓰지 않고 새 행을 만든다. 같은 행을 쓰면 영양 작업의 시도 횟수를 0부터 다시 세야 하는데,
+     * 그러면 늦게 끝난 인식 Worker의 번호가 영양 작업의 번호와 같아져 결과를 쓸 수 있다. 새 행은 id가 달라 그럴 일이 없다.
+     *
+     * 인식하는 동안 사용자가 식사를 지웠으면 인식 작업만 지우고 끝낸다. 음식 줄과 영양 작업을 만들지 않아 더 계산하지 않는다.
+     *
+     * @param recognition 음식 인식 결과
+     * @param nutritionDelay 영양 작업을 가져가기까지 기다리는 시간
+     * @return 이 Worker의 작업이라 인식 작업을 끝냈으면 true. lease가 만료돼 다른 Worker가 가져갔으면 false
+     */
+    @Transactional
+    fun confirmMealRecognition(
+        job: MealAnalysisJobResult,
+        recognition: MealRecognitionResult,
+        nutritionDelay: Duration,
+    ): Boolean {
+        val meal = deleteJobAndGetMeal(job) ?: return false
+        if (meal.deletedAt != null) {
+            logger.info("인식하는 동안 지워진 식사라 음식 줄과 영양 작업을 만들지 않습니다: mealId={}", meal.id)
+            return true
+        }
+
+        meal.updateName(recognition.name)
+        meal.updateInputCategory(recognition.inputCategory)
+        meal.updateStatus(MealStatus.WAITING)
+        mealFoodService.createMealFoods(meal.id, recognition, MealRecognitionCategory.WORKER)
+
+        val nutritionJob = mealAnalysisJobRepository.save(
+            MealAnalysisJob(
+                mealId = meal.id,
+                language = job.language,
+                category = MealAnalysisJobCategory.NUTRITION,
+            ),
+        )
+        if (nutritionDelay.toSeconds() > 0) {
+            mealAnalysisJobRepository.updateLeaseExpiresAt(nutritionJob.id, nutritionDelay.toSeconds())
+        }
+
+        return true
     }
 
     /**

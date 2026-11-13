@@ -3,17 +3,25 @@ package com.dandi.nyummy.worker.service
 import com.dandi.nyummy.cat.entity.Cat
 import com.dandi.nyummy.cat.repository.CatRepository
 import com.dandi.nyummy.config.AppLinkProperties
+import com.dandi.nyummy.infra.ai.AnalysisImageClient
 import com.dandi.nyummy.infra.ai.nutrition.AnalysisFailureCategory
 import com.dandi.nyummy.infra.ai.nutrition.AnalysisFailureException
 import com.dandi.nyummy.infra.ai.nutrition.NutritionAnalysisClient
+import com.dandi.nyummy.infra.ai.recognition.MealRecognitionClient
 import com.dandi.nyummy.infra.push.dto.PushMessage
 import com.dandi.nyummy.infra.push.dto.PushResult
 import com.dandi.nyummy.infra.push.dto.PushType
+import com.dandi.nyummy.infra.storage.s3.dto.S3ObjectContentResult
 import com.dandi.nyummy.language.createTestMessageSource
 import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.language.getMessage
+import com.dandi.nyummy.meal.config.MealProperties
+import com.dandi.nyummy.meal.dto.MealFoodRecognitionResult
+import com.dandi.nyummy.meal.dto.MealRecognitionResult
 import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.dto.NutritionAnalysisResult
+import com.dandi.nyummy.meal.enum.MealAnalysisJobCategory
+import com.dandi.nyummy.meal.enum.MealInputCategory
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.notification.NotificationId
 import com.dandi.nyummy.notification.service.NotificationService
@@ -27,6 +35,7 @@ import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
 import org.springframework.dao.QueryTimeoutException
+import java.math.BigDecimal
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
@@ -38,6 +47,7 @@ import kotlin.test.assertFalse
 
 /**
  * analyzeMealAnalysisJob이 분석 결과와 실패 분류에 따라 확정·재시도·실패를 고르고, 알맞은 알림을 보내는지 다룬다.
+ * 인식 작업은 음식을 인식해 넘기고 알리지 않는지, 실패는 다른 작업과 같은 규칙으로 다루는지도 다룬다.
  * 트랜잭션 안의 동작(fencing·상태 변경)은 MealAnalysisJobTransactionServiceTest가 맡는다.
  */
 class AnalysisServiceTest {
@@ -47,8 +57,15 @@ class AnalysisServiceTest {
     private val userId = 1L
     private val mealId = 10L
 
+    private val nutritionDelay = Duration.ofMinutes(5)
+
     private val nutritionAnalysisClient = mockk<NutritionAnalysisClient>()
+    private val analysisImageClient = mockk<AnalysisImageClient>()
+    private val mealRecognitionClient = mockk<MealRecognitionClient>()
     private val mealAnalysisJobTransactionService = mockk<MealAnalysisJobTransactionService>()
+    private val mealProperties = mockk<MealProperties> {
+        every { recognition.nutritionDelay } returns nutritionDelay
+    }
     private val catRepository = mockk<CatRepository>()
     private val notificationService = mockk<NotificationService>()
     private val appLinkProperties = AppLinkProperties(
@@ -66,7 +83,10 @@ class AnalysisServiceTest {
 
     private val analysisService = AnalysisService(
         nutritionAnalysisClient = nutritionAnalysisClient,
+        analysisImageClient = analysisImageClient,
+        mealRecognitionClient = mealRecognitionClient,
         mealAnalysisJobTransactionService = mealAnalysisJobTransactionService,
+        mealProperties = mealProperties,
         catRepository = catRepository,
         notificationService = notificationService,
         appLinkProperties = appLinkProperties,
@@ -405,5 +425,156 @@ class AnalysisServiceTest {
         analysisService.analyzeMealAnalysisJob(retryableJob)
 
         assertEquals(0, countAnalysis("retried", "unavailable"))
+    }
+
+    // 인식 작업
+
+    private val recognitionJob = retryableJob.copy(category = MealAnalysisJobCategory.RECOGNITION)
+    private val imageBytes = byteArrayOf(1, 2, 3)
+    private val recognition = MealRecognitionResult(
+        inputCategory = MealInputCategory.FOOD_PHOTO,
+        name = "불고기 백반",
+        foods = listOf(MealFoodRecognitionResult(name = "불고기", portion = BigDecimal("1.5"))),
+        model = "gemini-recognition-test",
+        promptVersion = "v1",
+    )
+
+    private fun givenImage(job: MealAnalysisJobResult, contentType: String? = "image/jpeg") {
+        every { analysisImageClient.downloadImage(job.imageKey) } returns
+            S3ObjectContentResult(bytes = imageBytes, contentType = contentType)
+    }
+
+    private fun givenRecognitionSuccess(job: MealAnalysisJobResult) {
+        givenImage(job)
+        every { mealRecognitionClient.recognizeMeal(imageBytes, "image/jpeg", job.language, null) } returns recognition
+        every { mealAnalysisJobTransactionService.confirmMealRecognition(any(), any(), any()) } returns true
+    }
+
+    private fun givenRecognitionFailure(job: MealAnalysisJobResult, category: AnalysisFailureCategory) {
+        givenImage(job)
+        every { mealRecognitionClient.recognizeMeal(imageBytes, "image/jpeg", job.language, null) } throws
+            AnalysisFailureException(category, "실패")
+    }
+
+    @Test
+    fun `인식 작업은 사진을 받아 인식하고 영양 작업을 미룰 시간과 함께 확정한다`() {
+        givenRecognitionSuccess(recognitionJob)
+
+        analysisService.analyzeMealAnalysisJob(recognitionJob)
+
+        verify(exactly = 1) {
+            mealAnalysisJobTransactionService.confirmMealRecognition(recognitionJob, recognition, nutritionDelay)
+        }
+        // 인식 작업은 v1 분석을 부르지 않는다.
+        verify(exactly = 0) { nutritionAnalysisClient.analyzeNutrition(any(), any()) }
+        verify(exactly = 0) { mealAnalysisJobTransactionService.confirmMealAnalysis(any(), any()) }
+    }
+
+    @Test
+    fun `인식 작업은 식사를 기록한 요청의 언어로 인식한다`() {
+        val japaneseJob = recognitionJob.copy(language = Language.JA)
+        givenRecognitionSuccess(japaneseJob)
+
+        analysisService.analyzeMealAnalysisJob(japaneseJob)
+
+        verify(exactly = 1) { mealRecognitionClient.recognizeMeal(imageBytes, "image/jpeg", Language.JA, null) }
+    }
+
+    @Test
+    fun `인식에 성공해도 알림을 보내지 않는다`() {
+        givenRecognitionSuccess(recognitionJob)
+
+        analysisService.analyzeMealAnalysisJob(recognitionJob)
+
+        verify(exactly = 0) { notificationService.sendServicePush(any(), any()) }
+    }
+
+    @Test
+    fun `인식에 성공하면 recognized로 세고 작업이 쌓인 때부터 걸린 시간을 남긴다`() {
+        givenRecognitionSuccess(recognitionJob)
+
+        analysisService.analyzeMealAnalysisJob(recognitionJob)
+
+        assertEquals(1, countAnalysis("recognized", "none"))
+        assertEquals(30.0, findElapsed("recognized")?.totalTime(TimeUnit.SECONDS))
+    }
+
+    @Test
+    fun `다른 Worker가 가져가 인식 결과를 쓰지 못했으면 아무것도 세지 않는다`() {
+        givenRecognitionSuccess(recognitionJob)
+        every { mealAnalysisJobTransactionService.confirmMealRecognition(any(), any(), any()) } returns false
+
+        analysisService.analyzeMealAnalysisJob(recognitionJob)
+
+        assertEquals(0, countAnalysis("recognized", "none"))
+        assertFalse(existsElapsed())
+    }
+
+    @Test
+    fun `인식 작업이 음식이 아니라고 하면 FAILED로 끝내고 음식 사진이 아니라고 알린다`() {
+        givenRecognitionFailure(recognitionJob, AnalysisFailureCategory.NOT_FOOD)
+
+        analysisService.analyzeMealAnalysisJob(recognitionJob)
+
+        verify(exactly = 1) { mealAnalysisJobTransactionService.failMealAnalysis(recognitionJob) }
+        verify(exactly = 0) { mealAnalysisJobTransactionService.confirmMealRecognition(any(), any(), any()) }
+        assertFailedPushSent(title = "음식 사진이 아닌 것 같다냥 🐾", body = "음식이 보이게 다시 찍어줄래?")
+        assertEquals(1, countAnalysis("failed", "not_food"))
+    }
+
+    @Test
+    fun `인식이 일시적으로 실패하고 다시 시도할 수 있으면 대기로 되돌리고 알리지 않는다`() {
+        givenRecognitionFailure(recognitionJob, AnalysisFailureCategory.UNAVAILABLE)
+
+        analysisService.analyzeMealAnalysisJob(recognitionJob)
+
+        verify(exactly = 1) { mealAnalysisJobTransactionService.retryMealAnalysis(recognitionJob) }
+        verify(exactly = 0) { mealAnalysisJobTransactionService.failMealAnalysis(any()) }
+        verify(exactly = 0) { notificationService.sendServicePush(any(), any()) }
+    }
+
+    @Test
+    fun `인식이 재시도까지 실패하면 FAILED로 끝내고 잠시 뒤에 다시 하라고 알린다`() {
+        val lastRecognitionJob = lastJob.copy(category = MealAnalysisJobCategory.RECOGNITION)
+        givenRecognitionFailure(lastRecognitionJob, AnalysisFailureCategory.UNAVAILABLE)
+
+        analysisService.analyzeMealAnalysisJob(lastRecognitionJob)
+
+        verify(exactly = 1) { mealAnalysisJobTransactionService.failMealAnalysis(lastRecognitionJob) }
+        assertFailedPushSent(title = "지금은 소화가 안 된다냥 🐾", body = "잠시 뒤에 다시 시도해줄래?")
+    }
+
+    @Test
+    fun `인식할 사진을 받지 못하면 인식을 부르지 않고 그 실패 분류대로 끝낸다`() {
+        every { analysisImageClient.downloadImage(recognitionJob.imageKey) } throws
+            AnalysisFailureException(AnalysisFailureCategory.INVALID_REQUEST, "분석할 이미지가 없습니다")
+
+        analysisService.analyzeMealAnalysisJob(recognitionJob)
+
+        verify(exactly = 0) { mealRecognitionClient.recognizeMeal(any(), any(), any(), any()) }
+        verify(exactly = 1) { mealAnalysisJobTransactionService.failMealAnalysis(recognitionJob) }
+        assertEquals(1, countAnalysis("failed", "invalid_request"))
+    }
+
+    @Test
+    fun `인식할 사진의 콘텐츠 타입이 없으면 인식을 부르지 않고 FAILED로 끝낸다`() {
+        givenImage(recognitionJob, contentType = null)
+
+        analysisService.analyzeMealAnalysisJob(recognitionJob)
+
+        verify(exactly = 0) { mealRecognitionClient.recognizeMeal(any(), any(), any(), any()) }
+        verify(exactly = 1) { mealAnalysisJobTransactionService.failMealAnalysis(recognitionJob) }
+        assertEquals(1, countAnalysis("failed", "invalid_request"))
+    }
+
+    @Test
+    fun `종류가 없는 작업은 인식하지 않고 v1 분석을 한다`() {
+        givenAnalysisSuccess(retryableJob)
+
+        analysisService.analyzeMealAnalysisJob(retryableJob)
+
+        verify(exactly = 1) { nutritionAnalysisClient.analyzeNutrition(retryableJob.imageKey, retryableJob.language) }
+        verify(exactly = 0) { analysisImageClient.downloadImage(any()) }
+        verify(exactly = 0) { mealRecognitionClient.recognizeMeal(any(), any(), any(), any()) }
     }
 }

@@ -2,13 +2,17 @@ package com.dandi.nyummy.worker.service
 
 import com.dandi.nyummy.cat.repository.CatRepository
 import com.dandi.nyummy.config.AppLinkProperties
+import com.dandi.nyummy.infra.ai.AnalysisImageClient
 import com.dandi.nyummy.infra.ai.nutrition.AnalysisFailureCategory
 import com.dandi.nyummy.infra.ai.nutrition.AnalysisFailureException
 import com.dandi.nyummy.infra.ai.nutrition.NutritionAnalysisClient
+import com.dandi.nyummy.infra.ai.recognition.MealRecognitionClient
 import com.dandi.nyummy.infra.push.dto.PushMessage
 import com.dandi.nyummy.infra.push.dto.PushType
 import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.language.getMessage
+import com.dandi.nyummy.meal.config.MealProperties
+import com.dandi.nyummy.meal.enum.MealAnalysisJobCategory
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.notification.NotificationId
 import com.dandi.nyummy.notification.service.NotificationService
@@ -28,7 +32,10 @@ import java.time.Instant
 @ConditionalOnAnalysisWorkerEnabled
 class AnalysisService(
     private val nutritionAnalysisClient: NutritionAnalysisClient,
+    private val analysisImageClient: AnalysisImageClient,
+    private val mealRecognitionClient: MealRecognitionClient,
     private val mealAnalysisJobTransactionService: MealAnalysisJobTransactionService,
+    private val mealProperties: MealProperties,
     private val catRepository: CatRepository,
     private val notificationService: NotificationService,
     private val appLinkProperties: AppLinkProperties,
@@ -53,10 +60,11 @@ class AnalysisService(
     }
 
     /**
-     * Worker가 lease로 가져간 작업 한 건을 분석하고 결과를 알린다. 실행기 스레드에서 돈다.
+     * Worker가 lease로 가져간 작업 한 건을 작업 종류에 맞게 처리하고 결과를 알린다. 실행기 스레드에서 돈다.
+     * 인식 작업은 음식을 인식해 음식 줄을 저장하고, 그 밖의 작업은 영양을 분석한다. 실패를 다루는 규칙은 종류와 상관없이 같다.
      *
      * Gemini 호출은 트랜잭션 밖에서 하고, 결과는 [MealAnalysisJobTransactionService]의 짧은 트랜잭션으로 남긴다.
-     * - 성공하면 COMPLETED로 확정한다.
+     * - 성공하면 COMPLETED로 확정한다. 인식 작업은 음식 줄을 저장하고 영양 작업으로 넘긴다.
      * - 요청 한도 초과·서버 오류·타임아웃처럼 일시적인 실패는 재시도할 수 있으면 대기로 되돌리고 알리지 않는다.
      * - 키·권한 같은 설정 오류는 시도 횟수를 쓰지 않고 잠시 뒤로 되돌리고 알리지 않는다. 설정을 고치면 그대로 처리된다.
      * - 그 밖의 실패(재시도를 다 쓴 일시적 실패, 음식 아님, 응답 해석 실패, 거부, 분류에 없는 예외)는 FAILED로 끝낸다.
@@ -69,12 +77,11 @@ class AnalysisService(
         val analyzedAt = Instant.now(clock)
 
         try {
-            val analysisResult = nutritionAnalysisClient.analyzeNutrition(job.imageKey, job.language)
-            val pushResult = mealAnalysisJobTransactionService.confirmMealAnalysis(job, analysisResult)
-            if (pushResult != null) {
-                recordAnalysis(job, AnalysisOutcome.COMPLETED, null, analyzedAt)
+            if (job.category == MealAnalysisJobCategory.RECOGNITION) {
+                recognizeMeal(job, analyzedAt)
+            } else {
+                analyzeNutrition(job, analyzedAt)
             }
-            sendAnalysisPush(pushResult, null, analyzedAt, job.language)
         } catch (e: AnalysisFailureException) {
             handleAnalysisFailure(job, e, analyzedAt)
         } catch (e: RuntimeException) {
@@ -84,6 +91,41 @@ class AnalysisService(
                 recordAnalysis(job, AnalysisOutcome.FAILED, UNKNOWN_CATEGORY, analyzedAt)
             }
             sendAnalysisPush(pushResult, null, analyzedAt, job.language)
+        }
+    }
+
+    /** 사진 한 장에서 이름·영양·코멘트를 한 번에 구해 COMPLETED로 확정하고 알린다(v1 분석). */
+    private fun analyzeNutrition(job: MealAnalysisJobResult, analyzedAt: Instant) {
+        val analysisResult = nutritionAnalysisClient.analyzeNutrition(job.imageKey, job.language)
+        val pushResult = mealAnalysisJobTransactionService.confirmMealAnalysis(job, analysisResult)
+        if (pushResult != null) {
+            recordAnalysis(job, AnalysisOutcome.COMPLETED, null, analyzedAt)
+        }
+        sendAnalysisPush(pushResult, null, analyzedAt, job.language)
+    }
+
+    /**
+     * 식사 기록 요청 안에서 끝내지 못한 음식 인식을 한다. 사진을 받아 인식하고, 음식 줄을 저장한 뒤 영양 작업으로 넘긴다.
+     *
+     * 인식이 끝났다는 알림은 보내지 않는다. 사용자는 대기 화면에서 상태를 조회하다 음식 목록으로 넘어간다.
+     * 음식이 아니거나 인식에 실패한 것은 [handleAnalysisFailure]가 다른 작업과 같은 규칙으로 다루고 알린다.
+     */
+    private fun recognizeMeal(job: MealAnalysisJobResult, analyzedAt: Instant) {
+        val image = analysisImageClient.downloadImage(job.imageKey)
+        val contentType = image.contentType
+            ?: throw AnalysisFailureException(
+                AnalysisFailureCategory.INVALID_REQUEST,
+                "인식할 이미지의 콘텐츠 타입이 없습니다: ${job.imageKey}",
+            )
+
+        val recognition = mealRecognitionClient.recognizeMeal(image.bytes, contentType, job.language)
+        val isConfirmed = mealAnalysisJobTransactionService.confirmMealRecognition(
+            job = job,
+            recognition = recognition,
+            nutritionDelay = mealProperties.recognition.nutritionDelay,
+        )
+        if (isConfirmed) {
+            recordAnalysis(job, AnalysisOutcome.RECOGNIZED, null, analyzedAt)
         }
     }
 
@@ -159,7 +201,7 @@ class AnalysisService(
 
     /**
      * 이 Worker가 결과를 실제로 남긴 시도만 기록한다. 다른 Worker가 가져가 아무것도 쓰지 못한 시도는 세지 않는다.
-     * COMPLETED·FAILED로 끝났으면 작업이 쌓인 때부터 걸린 시간도 기록한다.
+     * 작업이 끝났으면(COMPLETED·RECOGNIZED·FAILED) 작업이 쌓인 때부터 걸린 시간도 기록한다.
      */
     private fun recordAnalysis(
         job: MealAnalysisJobResult,
@@ -279,10 +321,13 @@ class AnalysisService(
 /**
  * 분석 시도 한 번이 어떻게 끝났는지. 지표의 outcome 태그 값이다.
  *
- * @property isFinal 식사가 COMPLETED·FAILED로 끝났는지. 재시도·미룸은 작업이 큐에 남아 아직 끝나지 않았다
+ * @property isFinal 작업이 끝났는지. 재시도·미룸은 작업이 큐에 남아 아직 끝나지 않았다
  */
 private enum class AnalysisOutcome(val tagValue: String, val isFinal: Boolean) {
     COMPLETED("completed", true),
+
+    // 인식 작업이 음식 줄을 저장하고 끝났다. 식사는 영양 작업을 기다린다.
+    RECOGNIZED("recognized", true),
     RETRIED("retried", false),
     DELAYED("delayed", false),
     FAILED("failed", true),

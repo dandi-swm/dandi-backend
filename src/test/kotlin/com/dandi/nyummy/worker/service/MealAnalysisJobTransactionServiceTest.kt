@@ -3,14 +3,20 @@ package com.dandi.nyummy.worker.service
 import com.dandi.nyummy.cat.repository.CatRepository
 import com.dandi.nyummy.cat.service.CatService
 import com.dandi.nyummy.language.enum.Language
+import com.dandi.nyummy.meal.dto.MealFoodRecognitionResult
+import com.dandi.nyummy.meal.dto.MealRecognitionResult
 import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.dto.NutritionAnalysisResult
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.entity.MealAnalysisJob
 import com.dandi.nyummy.meal.enum.MealAnalysisJobCategory
+import com.dandi.nyummy.meal.enum.MealAnalysisVersion
+import com.dandi.nyummy.meal.enum.MealInputCategory
+import com.dandi.nyummy.meal.enum.MealRecognitionCategory
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.repository.MealAnalysisJobRepository
 import com.dandi.nyummy.meal.repository.MealRepository
+import com.dandi.nyummy.meal.service.MealFoodService
 import com.dandi.nyummy.worker.config.WorkerJobProperties
 import com.dandi.nyummy.worker.config.WorkerProperties
 import com.dandi.nyummy.worker.dto.AnalysisPushResult
@@ -20,6 +26,8 @@ import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
 import io.mockk.verify
+import io.mockk.verifyOrder
+import java.math.BigDecimal
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
@@ -49,12 +57,14 @@ class MealAnalysisJobTransactionServiceTest {
 
     private val mealAnalysisJobRepository = mockk<MealAnalysisJobRepository>()
     private val mealRepository = mockk<MealRepository>()
+    private val mealFoodService = mockk<MealFoodService>()
     private val catRepository = mockk<CatRepository>()
     private val catService = mockk<CatService>()
 
     private val mealAnalysisJobTransactionService = MealAnalysisJobTransactionService(
         mealAnalysisJobRepository = mealAnalysisJobRepository,
         mealRepository = mealRepository,
+        mealFoodService = mealFoodService,
         catRepository = catRepository,
         catService = catService,
         workerProperties = WorkerProperties(
@@ -392,6 +402,125 @@ class MealAnalysisJobTransactionServiceTest {
 
         assertEquals(true, result?.isDeleted)
     }
+
+    // confirmMealRecognition
+
+    private val nutritionDelay = Duration.ofMinutes(5)
+    private val recognitionJob = leasedJob.copy(category = MealAnalysisJobCategory.RECOGNITION, language = Language.JA)
+    private val recognition = MealRecognitionResult(
+        inputCategory = MealInputCategory.PACKAGE,
+        name = "불고기 백반",
+        foods = listOf(MealFoodRecognitionResult(name = "불고기", portion = BigDecimal("1.5"))),
+        model = "gemini-recognition-test",
+        promptVersion = "v1",
+    )
+
+    private fun createRecognizingMeal(deletedAt: Instant? = null) = Meal(
+        status = MealStatus.RECOGNIZING,
+        imageKey = recognitionJob.imageKey,
+        mealAt = mealAt,
+        userId = userId,
+        analysisVersion = MealAnalysisVersion.V2,
+    ).apply {
+        if (deletedAt != null) updateDeletedAt(deletedAt)
+    }
+
+    /** 인식 작업이 아직 이 Worker의 것이고, 잠가 읽은 식사가 [meal]이다. */
+    private fun givenOwnedRecognitionJob(meal: Meal) {
+        givenOwnedJob(meal)
+        every { mealFoodService.createMealFoods(any(), any(), any()) } returns emptyList()
+        every { mealAnalysisJobRepository.save(any()) } answers { firstArg() }
+        every { mealAnalysisJobRepository.updateLeaseExpiresAt(any(), any()) } returns 1
+    }
+
+    @Test
+    fun `인식을 확정할 때 다른 Worker가 가져간 작업이면 아무것도 쓰지 않고 false를 돌려준다`() {
+        givenLostJob()
+
+        val isConfirmed =
+            mealAnalysisJobTransactionService.confirmMealRecognition(recognitionJob, recognition, nutritionDelay)
+
+        assertFalse(isConfirmed)
+        verify(exactly = 0) { mealRepository.findMealWithLockById(any()) }
+        verify(exactly = 0) { mealFoodService.createMealFoods(any(), any(), any()) }
+        verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
+    }
+
+    @Test
+    fun `인식을 확정하면 대표 이름과 입력 유형을 저장하고 식사를 WAITING으로 바꾼다`() {
+        val meal = createRecognizingMeal()
+        givenOwnedRecognitionJob(meal)
+
+        val isConfirmed =
+            mealAnalysisJobTransactionService.confirmMealRecognition(recognitionJob, recognition, nutritionDelay)
+
+        assertTrue(isConfirmed)
+        assertEquals("불고기 백반", meal.name)
+        assertEquals(MealInputCategory.PACKAGE, meal.inputCategory)
+        assertEquals(MealStatus.WAITING, meal.status)
+    }
+
+    @Test
+    fun `인식을 확정하면 Worker가 인식한 것으로 음식 줄을 저장한다`() {
+        val meal = createRecognizingMeal()
+        givenOwnedRecognitionJob(meal)
+
+        mealAnalysisJobTransactionService.confirmMealRecognition(recognitionJob, recognition, nutritionDelay)
+
+        verify(exactly = 1) { mealFoodService.createMealFoods(meal.id, recognition, MealRecognitionCategory.WORKER) }
+    }
+
+    @Test
+    fun `인식을 확정하면 인식 작업을 지운 뒤 같은 언어의 영양 작업을 만들고 지연 시간 뒤부터 가져가게 미룬다`() {
+        val meal = createRecognizingMeal()
+        givenOwnedRecognitionJob(meal)
+
+        mealAnalysisJobTransactionService.confirmMealRecognition(recognitionJob, recognition, nutritionDelay)
+
+        // 식사 하나에 작업은 하나라(유니크 제약) 인식 작업을 먼저 지워야 영양 작업을 만들 수 있다.
+        verifyOrder {
+            mealAnalysisJobRepository.deleteByIdAndLeaseCount(recognitionJob.jobId, recognitionJob.leaseCount)
+            mealAnalysisJobRepository.save(
+                match {
+                    it.mealId == meal.id &&
+                        it.category == MealAnalysisJobCategory.NUTRITION &&
+                        it.language == Language.JA
+                },
+            )
+            mealAnalysisJobRepository.updateLeaseExpiresAt(any(), 300L)
+        }
+    }
+
+    @Test
+    fun `지연 시간이 0이면 영양 작업을 미루지 않는다`() {
+        givenOwnedRecognitionJob(createRecognizingMeal())
+
+        mealAnalysisJobTransactionService.confirmMealRecognition(recognitionJob, recognition, Duration.ZERO)
+
+        verify(exactly = 1) { mealAnalysisJobRepository.save(any()) }
+        verify(exactly = 0) { mealAnalysisJobRepository.updateLeaseExpiresAt(any(), any()) }
+    }
+
+    @Test
+    fun `인식하는 동안 식사가 지워졌으면 인식 작업만 지우고 음식 줄과 영양 작업을 만들지 않는다`() {
+        val meal = createRecognizingMeal(deletedAt = now.minusSeconds(5))
+        givenOwnedRecognitionJob(meal)
+
+        val isConfirmed =
+            mealAnalysisJobTransactionService.confirmMealRecognition(recognitionJob, recognition, nutritionDelay)
+
+        // 작업은 이 Worker가 끝냈으므로 true다.
+        assertTrue(isConfirmed)
+        assertEquals(MealStatus.RECOGNIZING, meal.status)
+        assertEquals("", meal.name)
+        verify(exactly = 1) {
+            mealAnalysisJobRepository.deleteByIdAndLeaseCount(recognitionJob.jobId, recognitionJob.leaseCount)
+        }
+        verify(exactly = 0) { mealFoodService.createMealFoods(any(), any(), any()) }
+        verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
+    }
+
+    // retryMealAnalysis·cancelMealAnalysis·failMealAnalysis
 
     @Test
     fun `재시도할 때 다른 Worker가 가져간 작업이면 false이고 식사 상태를 바꾸지 않는다`() {
