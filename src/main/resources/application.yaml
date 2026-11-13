@@ -226,6 +226,19 @@ app:
       # 호박 쿠션(침대), 스크래처 타워(기타)
       item-ids: [2, 3]
       coin-quantity: 100
+    # 식사 인식 v2의 식사 기록(POST /api/v2/meals). 요청 안에서 음식을 인식해 응답에 담고, 못 끝내면 Worker의 인식 작업으로 넘긴다.
+    recognition:
+      # 서버가 요청을 받은 때부터 응답까지의 기한. 앱의 컷신 5초에서 네트워크 여유 500ms를 뺐다.
+      response-time-to-live: 4500ms
+      # 인식 뒤의 저장과 응답에 남겨 두는 시간. 인식은 기한에서 지금까지 쓴 시간과 이 값을 뺀 만큼만 기다린다.
+      reserved-save-time: 400ms
+      # 인식에 줄 수 있는 시간이 이보다 적으면 모델을 부르지 않고 바로 Worker의 인식 작업으로 넘긴다.
+      min-recognition-time: 2s
+      # 식사 기록 요청 안에서 동시에 도는 인식 수. 다 차면 기다리지 않고 Worker의 인식 작업으로 넘긴다.
+      # app.ai.max-connections 이하여야 한다. 넘으면 앱이 뜨지 않는다(MealRecognitionConfig).
+      max-threads: 30
+      # 인식한 뒤 Worker가 영양 작업을 가져가기까지 기다리는 시간. 그 안에 사용자가 음식 목록을 보내면 바로 계산한다.
+      nutrition-delay: 5m
   report:
     # 리포트 가격(코인). 첫 리포트는 무료다.
     list-price: 100

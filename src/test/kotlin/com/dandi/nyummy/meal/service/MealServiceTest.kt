@@ -13,6 +13,7 @@ import com.dandi.nyummy.mail.entity.Mail
 import com.dandi.nyummy.mail.enum.RewardBoxCategory
 import com.dandi.nyummy.mail.service.MailService
 import com.dandi.nyummy.meal.config.MealProperties
+import com.dandi.nyummy.meal.config.MealRecognitionProperties
 import com.dandi.nyummy.meal.config.RewardBoxProperties
 import com.dandi.nyummy.meal.config.TutorialRewardBoxProperties
 import com.dandi.nyummy.meal.dto.CreateMealRequest
@@ -90,6 +91,13 @@ class MealServiceTest {
             rewardBoxes = rewardBoxes,
             rewardMailTimeToLive = Duration.ofDays(7),
             tutorialRewardBox = TutorialRewardBoxProperties(itemIds = listOf(2L, 3L), coinQuantity = 100),
+            recognition = MealRecognitionProperties(
+                responseTimeToLive = Duration.ofMillis(4500),
+                reservedSaveTime = Duration.ofMillis(400),
+                minRecognitionTime = Duration.ofSeconds(2),
+                maxThreads = 30,
+                nutritionDelay = Duration.ofMinutes(5),
+            ),
         ),
         analysisFeedbackService = analysisFeedbackService,
         mealTransactionService = mealTransactionService,

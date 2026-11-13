@@ -21,6 +21,13 @@ class MealPropertiesTest {
         rewardBoxes = rewardBoxes,
         rewardMailTimeToLive = Duration.ofDays(7),
         tutorialRewardBox = TutorialRewardBoxProperties(itemIds = listOf(2L, 3L), coinQuantity = 100),
+        recognition = MealRecognitionProperties(
+            responseTimeToLive = Duration.ofMillis(4500),
+            reservedSaveTime = Duration.ofMillis(400),
+            minRecognitionTime = Duration.ofSeconds(2),
+            maxThreads = 30,
+            nutritionDelay = Duration.ofMinutes(5),
+        ),
     )
 
     // rewardBoxes
