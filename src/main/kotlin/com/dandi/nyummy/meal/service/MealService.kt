@@ -40,9 +40,11 @@ import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.mapper.toCreateMealResponse
 import com.dandi.nyummy.meal.mapper.toCreateMealV2Response
 import com.dandi.nyummy.meal.mapper.toDailyMealResponse
+import com.dandi.nyummy.meal.mapper.toDailyMealV2Response
 import com.dandi.nyummy.meal.mapper.toEntity
 import com.dandi.nyummy.meal.mapper.toMealResponse
 import com.dandi.nyummy.meal.mapper.toMealStatusResponse
+import com.dandi.nyummy.meal.mapper.toMealV2Response
 import com.dandi.nyummy.meal.mapper.toNutrition
 import com.dandi.nyummy.meal.repository.MealAnalysisJobRepository
 import com.dandi.nyummy.meal.repository.MealRepository
@@ -71,6 +73,7 @@ class MealService(
     private val analysisFeedbackService: AnalysisFeedbackService,
     private val mealTransactionService: MealTransactionService,
     private val mealRecognitionService: MealRecognitionService,
+    private val mealFoodService: MealFoodService,
     private val random: Random,
     private val mailService: MailService,
 ) {
@@ -228,19 +231,84 @@ class MealService(
     }
 
     /**
-     * v2 분석 상태 조회. 지금은 고정 응답(Stub)으로 계산이 끝난 상태를 준다.
+     * v2 식사 단건을 조회한다. v1 응답에 분석 버전과 음식 줄을 더한다.
+     *
+     * 음식 줄은 목록 순서대로 주고, 줄 영양은 1인분 × 인분이다(아직 계산하지 않은 줄은 null).
+     * 음식 줄이 없는 식사는 foods가 null이다. V1 식사, 아직 인식 중인 식사, 음식이 아닌 식사가 그렇다.
+     *
+     * @param userId 조회하는 사용자 ID
+     * @param mealId 조회할 식사 ID
+     * @return 식사 정보와 음식 줄, 이미지 URL, 평가 가능 여부를 담은 [MealV2Response]
+     * @throws BusinessException [MealErrorCode.MEAL_NOT_FOUND] mealId에 해당하는 식사가 없거나, 삭제된 경우
+     * @throws BusinessException [AuthErrorCode.FORBIDDEN] mealId에 해당하는 userId가 아닌 경우
      */
-    fun getMealStatusV2(): MealStatusResponse = MealStatusResponse(id = 2L, status = MealStatus.COMPLETED)
+    @Transactional(readOnly = true)
+    fun getMealV2(userId: Long, mealId: Long): MealV2Response {
+        val meal = mealRepository.findMealByIdAndDeletedAtIsNull(mealId)
+            ?: throw BusinessException(MealErrorCode.MEAL_NOT_FOUND)
+
+        meal.validateOwnership(userId)
+
+        return convertMealV2Response(meal)
+    }
+
+    /** 음식 줄을 읽어 v2 단건 응답으로 바꾼다. V1 식사는 음식 줄이 없으므로 조회하지 않는다. */
+    private fun convertMealV2Response(meal: Meal): MealV2Response {
+        val mealFoods = if (meal.analysisVersion == MealAnalysisVersion.V2) {
+            mealFoodService.getMealFoods(meal.id)
+        } else {
+            emptyList()
+        }
+
+        return meal.toMealV2Response(
+            imageUrl = imageService.createImageUrl(meal.imageKey),
+            canCreateAnalysisFeedback = analysisFeedbackService.canCreateAnalysisFeedback(meal),
+            mealFoods = mealFoods,
+        )
+    }
 
     /**
-     * v2 식사 단건 조회. 지금은 고정 응답(Stub)으로 계산이 끝난 V2 식사를 준다.
+     * v2 하루 식사 목록을 조회한다. [getDailyMeals]와 같고, 식사마다 분석 버전을 더한다.
+     * 앱은 이 값으로 상세 화면(음식 줄 화면, 기존 화면)을 고른다.
      *
-     * @param name 대표 이름. 이름 수정 Stub이 받은 이름을 넣어 돌려줄 때 쓴다
+     * @param userId 조회하는 사용자 ID
+     * @param year 조회할 날짜의 연도
+     * @param month 조회할 날짜의 월
+     * @param day 조회할 날짜의 일
+     * @return 해당 날짜의 식사 목록과 [DailyNutritionResponse]를 담은 [DailyMealsV2Response]
      */
-    fun getMealV2(name: String = "제육볶음 정식"): MealV2Response = MealV2Response(
+    @Transactional(readOnly = true)
+    fun getDailyMealsV2(userId: Long, year: Int, month: Int, day: Int): DailyMealsV2Response {
+        val date = LocalDate.of(year, month, day)
+        val meals = getMealsByDate(userId, date)
+
+        return DailyMealsV2Response(
+            date = date,
+            meals = meals.map { it.toDailyMealV2Response() },
+            dailyNutrition = createDailyNutritionResponse(userId, date, meals),
+        )
+    }
+
+    /**
+     * v2 음식 목록 보내기. 지금은 고정 응답(Stub)이다. 인분이 0.5 단위인지만 검사하고, 다시 계산을 기다리는 상태를 준다.
+     * 줄 수·이름 길이·인분 범위·영양 범위는 요청 DTO가 검사한다. DB를 보지 않으므로 없는 식사·음식 줄·아이콘 id는 가려내지 않는다.
+     *
+     * @throws BusinessException [CommonErrorCode.INVALID_INPUT_VALUE] 인분이 0.5 단위가 아닌 경우
+     */
+    fun updateMealFoodsV2(request: UpdateMealFoodsRequest): MealStatusResponse {
+        if (request.foods.any { it.portion.remainder(BigDecimal("0.5")).signum() != 0 }) {
+            throw BusinessException(CommonErrorCode.INVALID_INPUT_VALUE)
+        }
+        return MealStatusResponse(id = 2L, status = MealStatus.WAITING)
+    }
+
+    /**
+     * v2 대표 이름 수정. 지금은 고정 응답(Stub)으로 받은 이름을 넣은 단건 모양을 준다.
+     */
+    fun updateMealNameV2(request: UpdateMealNameRequest): MealV2Response = MealV2Response(
         mealId = 2L,
         analysisVersion = MealAnalysisVersion.V2,
-        name = name,
+        name = request.name,
         mealAt = Instant.parse("2026-11-13T03:10:00Z"),
         status = MealStatus.COMPLETED,
         nutrition = Nutrition(calory = 726, carbs = 82, protein = 34, fat = 29),
@@ -267,61 +335,6 @@ class MealService(
             ),
         ),
     )
-
-    /**
-     * v2 하루 식사 목록. 지금은 고정 응답(Stub)으로 날짜와 상관없이 V2 식사와 V1 식사를 하나씩 준다.
-     */
-    fun getDailyMealsV2(): DailyMealsV2Response = DailyMealsV2Response(
-        date = LocalDate.of(2026, 11, 13),
-        meals = listOf(
-            DailyMealV2Response(
-                mealId = 2L,
-                analysisVersion = MealAnalysisVersion.V2,
-                name = "제육볶음 정식",
-                mealAt = Instant.parse("2026-11-13T03:10:00Z"),
-                calory = 726,
-                carbs = 82,
-                protein = 34,
-                fat = 29,
-                status = MealStatus.COMPLETED,
-                iconId = 3L,
-            ),
-            DailyMealV2Response(
-                mealId = 1L,
-                analysisVersion = MealAnalysisVersion.V1,
-                name = "토스트",
-                mealAt = Instant.parse("2026-11-12T23:20:00Z"),
-                calory = 320,
-                carbs = 40,
-                protein = 10,
-                fat = 12,
-                status = MealStatus.COMPLETED,
-                iconId = 5L,
-            ),
-        ),
-        dailyNutrition = DailyNutritionResponse(
-            current = Nutrition(calory = 1046, carbs = 122, protein = 44, fat = 41),
-            target = Nutrition(calory = 2000, carbs = 300, protein = 60, fat = 55),
-        ),
-    )
-
-    /**
-     * v2 음식 목록 보내기. 지금은 고정 응답(Stub)이다. 인분이 0.5 단위인지만 검사하고, 다시 계산을 기다리는 상태를 준다.
-     * 줄 수·이름 길이·인분 범위·영양 범위는 요청 DTO가 검사한다. DB를 보지 않으므로 없는 식사·음식 줄·아이콘 id는 가려내지 않는다.
-     *
-     * @throws BusinessException [CommonErrorCode.INVALID_INPUT_VALUE] 인분이 0.5 단위가 아닌 경우
-     */
-    fun updateMealFoodsV2(request: UpdateMealFoodsRequest): MealStatusResponse {
-        if (request.foods.any { it.portion.remainder(BigDecimal("0.5")).signum() != 0 }) {
-            throw BusinessException(CommonErrorCode.INVALID_INPUT_VALUE)
-        }
-        return MealStatusResponse(id = 2L, status = MealStatus.WAITING)
-    }
-
-    /**
-     * v2 대표 이름 수정. 지금은 고정 응답(Stub)으로 받은 이름을 넣은 단건 모양을 준다.
-     */
-    fun updateMealNameV2(request: UpdateMealNameRequest): MealV2Response = getMealV2(request.name)
 
     /**
      * v2 기록 취소. 지금은 Stub이라 아무것도 하지 않는다.
@@ -378,29 +391,33 @@ class MealService(
      */
     @Transactional(readOnly = true)
     fun getDailyMeals(userId: Long, year: Int, month: Int, day: Int): DailyMealsResponse {
+        val date = LocalDate.of(year, month, day)
+        val meals = getMealsByDate(userId, date)
+
+        return DailyMealsResponse(
+            date = date,
+            meals = meals.map { it.toDailyMealResponse() },
+            dailyNutrition = createDailyNutritionResponse(userId, date, meals),
+        )
+    }
+
+    /** [date] 하루([0시, 다음 날 0시))에 먹은, 지우지 않은 식사. */
+    private fun getMealsByDate(userId: Long, date: LocalDate): List<Meal> {
         // TODO: 사용자별 timezone에 맞게 계산
         val zone = ZoneId.of("Asia/Seoul")
-        val date = LocalDate.of(year, month, day)
         val start = date.atStartOfDay(zone).toInstant()
         val end = date.plusDays(1).atStartOfDay(zone).toInstant()
 
-        val mealsByPeriod = mealRepository.findMealsByUserIdAndPeriod(userId, start, end)
+        return mealRepository.findMealsByUserIdAndPeriod(userId, start, end)
+    }
 
-        val meals = mealsByPeriod.map { it.toDailyMealResponse() }
-
+    /** 하루 섭취 합계와 목표. 합계는 모든 식사를 더하고, 영양을 아직 모르는 식사는 0으로 더해진다. */
+    private fun createDailyNutritionResponse(userId: Long, date: LocalDate, meals: List<Meal>): DailyNutritionResponse {
         val profile = profileRepository.findProfileByUserId(userId)
 
-        val recommended = calculateRecommendedDailyIntake(profile, LocalDate.of(year, month, day))
-
-        val dailyNutrition = DailyNutritionResponse(
-            current = mealsByPeriod.fold(Nutrition.ZERO) { acc, meal -> acc + meal.toNutrition() },
-            target = recommended,
-        )
-
-        return DailyMealsResponse(
-            date = LocalDate.of(year, month, day),
-            meals = meals,
-            dailyNutrition = dailyNutrition,
+        return DailyNutritionResponse(
+            current = meals.fold(Nutrition.ZERO) { acc, meal -> acc + meal.toNutrition() },
+            target = calculateRecommendedDailyIntake(profile, date),
         )
     }
 

@@ -71,31 +71,35 @@ class MealV2Controller(
     ): CreateMealV2Response = mealService.createMealV2(user.userId, request, language)
 
     @Operation(
-        summary = "영양 분석 상태 조회 v2 (Stub)",
-        description = "지금은 고정 응답으로 COMPLETED를 준다. 실제 구현에서는 5초를 넘긴 식사가 RECOGNIZING으로 시작한다.",
+        summary = "영양 분석 상태 조회 v2",
+        description = "대기 화면과 계산 중 화면에서 폴링한다. 5초 안에 인식하지 못한 식사는 RECOGNIZING으로 시작해 " +
+            "인식이 끝나면 WAITING(음식 목록 있음)이 되고, 영양 계산이 끝나면 COMPLETED가 된다.",
     )
+    @ApiErrorCodes(meal = [MealErrorCode.MEAL_NOT_FOUND], auth = [AuthErrorCode.FORBIDDEN])
     @GetMapping("/{mealId}/analysis")
     fun getMealStatusV2(
         @CurrentUser user: AuthUser,
         @Parameter(description = "식사 ID") @PathVariable("mealId") mealId: Long,
-    ): MealStatusResponse = mealService.getMealStatusV2()
+    ): MealStatusResponse = mealService.getMealStatus(user.userId, mealId)
 
     @Operation(
-        summary = "식사 단건 조회 v2 (Stub)",
-        description = "지금은 고정 응답이다. v1 응답에 analysisVersion(V1·V2)과 음식 줄(foods)을 더했다. " +
-            "V1 식사는 foods가 null이다. 음식 줄마다 iconId가 있고, 맨 위 줄(대표 음식)의 아이콘이 식사 iconId다. " +
+        summary = "식사 단건 조회 v2",
+        description = "v1 응답에 analysisVersion(V1·V2)과 음식 줄(foods)을 더했다. " +
+            "V1 식사, 아직 인식 중인 식사, 음식이 아닌 식사는 foods가 null이다. " +
+            "음식 줄의 영양과 iconId는 계산 전이면 null이고, 맨 위 줄(대표 음식)의 아이콘이 식사 iconId다. " +
             "고양이 한마디(catComment)는 처음 계산이 끝날 때 한 번만 만들고 바뀌지 않는다.",
     )
+    @ApiErrorCodes(meal = [MealErrorCode.MEAL_NOT_FOUND], auth = [AuthErrorCode.FORBIDDEN])
     @GetMapping("/{mealId}")
     fun getMealV2(
         @CurrentUser user: AuthUser,
         @Parameter(description = "식사 ID") @PathVariable("mealId") mealId: Long,
-    ): MealV2Response = mealService.getMealV2()
+    ): MealV2Response = mealService.getMealV2(user.userId, mealId)
 
     @Operation(
-        summary = "하루 식사 목록 조회 v2 (Stub)",
-        description = "지금은 날짜와 상관없이 같은 고정 응답이다. v1 응답의 식사마다 analysisVersion(V1·V2)을 더했다. " +
-            "앱은 이 값으로 상세 화면을 고른다.",
+        summary = "하루 식사 목록 조회 v2",
+        description = "v1 응답의 식사마다 analysisVersion(V1·V2)을 더했다. 앱은 이 값으로 상세 화면을 고른다. " +
+            "영양 계산이 끝나지 않은 식사는 영양이 0이다.",
     )
     @GetMapping("/daily")
     fun getDailyMealsV2(
@@ -103,7 +107,7 @@ class MealV2Controller(
         @Parameter(description = "조회 연도 (예: 2026)") @RequestParam year: Int,
         @Parameter(description = "조회 월 (1~12)") @RequestParam month: Int,
         @Parameter(description = "조회 일 (1~31)") @RequestParam day: Int,
-    ): DailyMealsV2Response = mealService.getDailyMealsV2()
+    ): DailyMealsV2Response = mealService.getDailyMealsV2(user.userId, year, month, day)
 
     @Operation(
         summary = "음식 목록 보내기 v2 (Stub)",

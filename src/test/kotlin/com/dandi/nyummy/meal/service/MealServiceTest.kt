@@ -19,11 +19,13 @@ import com.dandi.nyummy.meal.config.RewardBoxProperties
 import com.dandi.nyummy.meal.config.TutorialRewardBoxProperties
 import com.dandi.nyummy.meal.dto.CreateMealRequest
 import com.dandi.nyummy.meal.dto.MealFoodRecognitionResult
+import com.dandi.nyummy.meal.dto.MealFoodResponse
 import com.dandi.nyummy.meal.dto.MealRecognitionOutcome
 import com.dandi.nyummy.meal.dto.MealRecognitionResult
 import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.dto.NutritionAnalysisResult
 import com.dandi.nyummy.meal.dto.RewardBoxResult
+import com.dandi.nyummy.meal.dto.ServingNutrition
 import com.dandi.nyummy.meal.dto.UpdateMealNutritionRequest
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.entity.MealFood
@@ -48,6 +50,7 @@ import java.math.BigDecimal
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneOffset
 import kotlin.random.Random
 import kotlin.test.Test
@@ -85,6 +88,7 @@ class MealServiceTest {
     private val analysisFeedbackService = mockk<AnalysisFeedbackService>()
     private val mealTransactionService = mockk<MealTransactionService>()
     private val mealRecognitionService = mockk<MealRecognitionService>()
+    private val mealFoodService = mockk<MealFoodService>()
     private val random = mockk<Random>()
     private val mailService = mockk<MailService>()
 
@@ -114,6 +118,7 @@ class MealServiceTest {
         analysisFeedbackService = analysisFeedbackService,
         mealTransactionService = mealTransactionService,
         mealRecognitionService = mealRecognitionService,
+        mealFoodService = mealFoodService,
         random = random,
         mailService = mailService,
     )
@@ -798,5 +803,191 @@ class MealServiceTest {
         assertBusinessException(AuthErrorCode.FORBIDDEN) { mealService.deleteMeal(userId, mealId) }
 
         assertNull(meal.deletedAt)
+    }
+
+    // getMealV2
+
+    private fun createMealV2(status: MealStatus, ownerId: Long = userId) = Meal(
+        status = status,
+        imageKey = imageKey,
+        mealAt = now,
+        userId = ownerId,
+        analysisVersion = MealAnalysisVersion.V2,
+    )
+
+    private fun givenMeal(meal: Meal, canCreateAnalysisFeedback: Boolean = false) {
+        every { mealRepository.findMealByIdAndDeletedAtIsNull(mealId) } returns meal
+        every { imageService.createImageUrl(imageKey) } returns "https://image"
+        every { analysisFeedbackService.canCreateAnalysisFeedback(meal) } returns canCreateAnalysisFeedback
+    }
+
+    @Test
+    fun `v2 단건은 계산이 끝난 식사의 합계와 코멘트, 음식 줄의 영양과 아이콘을 순서대로 준다`() {
+        val meal = createMealV2(MealStatus.COMPLETED).apply {
+            updateName("불고기 백반")
+            updateNutrition(Nutrition(calory = 825, carbs = 88, protein = 44, fat = 31))
+            updateIconId(12L)
+            updateCatComment("든든하게 먹었다냥")
+        }
+        givenMeal(meal, canCreateAnalysisFeedback = true)
+        every { mealFoodService.getMealFoods(meal.id) } returns listOf(
+            MealFood(
+                mealId = meal.id,
+                mealFoodSnapshotId = 11L,
+                displayOrder = 1,
+                name = "불고기",
+                portion = BigDecimal("1.5"),
+            ).apply {
+                updateServingNutrition(
+                    ServingNutrition(BigDecimal("350"), BigDecimal("15.5"), BigDecimal("25.25"), BigDecimal("20")),
+                )
+                updateIconId(12L)
+                isNutritionFixed = true
+            },
+            MealFood(
+                mealId = meal.id,
+                mealFoodSnapshotId = 12L,
+                displayOrder = 2,
+                name = "잡곡밥",
+                portion = BigDecimal("1.0"),
+            ).apply {
+                updateServingNutrition(
+                    ServingNutrition(BigDecimal("300"), BigDecimal("65"), BigDecimal("6"), BigDecimal("1")),
+                )
+                updateIconId(5L)
+            },
+        )
+
+        val response = mealService.getMealV2(userId, mealId)
+
+        assertEquals(MealAnalysisVersion.V2, response.analysisVersion)
+        assertEquals("불고기 백반", response.name)
+        assertEquals(MealStatus.COMPLETED, response.status)
+        assertEquals(Nutrition(calory = 825, carbs = 88, protein = 44, fat = 31), response.nutrition)
+        assertEquals(12L, response.iconId)
+        assertEquals("든든하게 먹었다냥", response.catComment)
+        assertEquals("https://image", response.imageUrl)
+        assertEquals(true, response.canCreateAnalysisFeedback)
+        assertEquals(
+            listOf(
+                // 350 × 1.5 = 525, 15.5 × 1.5 = 23.25 → 23, 25.25 × 1.5 = 37.875 → 38, 20 × 1.5 = 30
+                MealFoodResponse(0L, "불고기", BigDecimal("1.5"), Nutrition(525, 23, 38, 30), true, 12L),
+                MealFoodResponse(0L, "잡곡밥", BigDecimal("1.0"), Nutrition(300, 65, 6, 1), false, 5L),
+            ),
+            response.foods,
+        )
+    }
+
+    @Test
+    fun `v2 단건은 영양 계산을 기다리는 식사의 음식 줄을 영양과 아이콘 없이 준다`() {
+        val meal = createMealV2(MealStatus.WAITING).apply { updateName("불고기 백반") }
+        givenMeal(meal)
+        every { mealFoodService.getMealFoods(meal.id) } returns recognizedMealFoods
+
+        val response = mealService.getMealV2(userId, mealId)
+
+        assertEquals(Nutrition.ZERO, response.nutrition)
+        assertNull(response.iconId)
+        assertNull(response.catComment)
+        assertEquals(listOf("불고기", "잡곡밥"), response.foods?.map { it.name })
+        assertTrue(response.foods.orEmpty().all { it.nutrition == null && it.iconId == null })
+    }
+
+    @Test
+    fun `v2 단건은 음식 줄이 없는 식사면 foods가 null이다`() {
+        // 아직 인식 중인 식사와 음식이 아닌 식사
+        listOf(MealStatus.RECOGNIZING, MealStatus.FAILED).forEach { status ->
+            val meal = createMealV2(status)
+            givenMeal(meal)
+            every { mealFoodService.getMealFoods(meal.id) } returns emptyList()
+
+            assertNull(mealService.getMealV2(userId, mealId).foods)
+        }
+    }
+
+    @Test
+    fun `v2 단건은 V1 식사면 분석 버전이 V1이고 음식 줄을 조회하지 않으며 foods가 null이다`() {
+        val meal = givenAnalyzedMeal()
+        givenMeal(meal)
+
+        val response = mealService.getMealV2(userId, mealId)
+
+        assertEquals(MealAnalysisVersion.V1, response.analysisVersion)
+        assertEquals("김밥", response.name)
+        assertEquals(analyzedNutrition, response.nutrition)
+        assertNull(response.foods)
+        verify(exactly = 0) { mealFoodService.getMealFoods(any()) }
+    }
+
+    @Test
+    fun `v2 단건도 식사가 없거나 삭제됐으면 MEAL_NOT_FOUND 예외를 던진다`() {
+        every { mealRepository.findMealByIdAndDeletedAtIsNull(mealId) } returns null
+
+        assertBusinessException(MealErrorCode.MEAL_NOT_FOUND) { mealService.getMealV2(userId, mealId) }
+    }
+
+    @Test
+    fun `v2 단건도 다른 사용자의 식사면 FORBIDDEN 예외를 던지고 음식 줄을 조회하지 않는다`() {
+        givenMeal(createMealV2(MealStatus.COMPLETED, ownerId = 2L))
+
+        assertBusinessException(AuthErrorCode.FORBIDDEN) { mealService.getMealV2(userId, mealId) }
+        verify(exactly = 0) { mealFoodService.getMealFoods(any()) }
+    }
+
+    // getDailyMeals·getDailyMealsV2
+
+    // 서울 2026-10-10 하루는 [10-09 15:00Z, 10-10 15:00Z)다.
+    private val dayStart = Instant.parse("2026-10-09T15:00:00Z")
+    private val dayEnd = Instant.parse("2026-10-10T15:00:00Z")
+
+    private fun givenDailyMeals(vararg meals: Meal) {
+        every { mealRepository.findMealsByUserIdAndPeriod(userId, dayStart, dayEnd) } returns meals.toList()
+        every { profileRepository.findProfileByUserId(userId) } returns null
+    }
+
+    @Test
+    fun `v2 하루 목록은 식사마다 분석 버전을 주고 버전이 없는 식사는 V1이다`() {
+        val v2Meal = createMealV2(MealStatus.COMPLETED).apply {
+            updateName("불고기 백반")
+            updateNutrition(Nutrition(calory = 825, carbs = 88, protein = 44, fat = 31))
+            updateIconId(12L)
+        }
+        val v1Meal = givenAnalyzedMeal()
+        givenDailyMeals(v2Meal, v1Meal)
+
+        val response = mealService.getDailyMealsV2(userId, 2026, 10, 10)
+
+        assertEquals(LocalDate.of(2026, 10, 10), response.date)
+        assertEquals(listOf(MealAnalysisVersion.V2, MealAnalysisVersion.V1), response.meals.map { it.analysisVersion })
+        assertEquals(listOf("불고기 백반", "김밥"), response.meals.map { it.name })
+        assertEquals(listOf(825, 520), response.meals.map { it.calory })
+        assertEquals(listOf<Long?>(12L, 3L), response.meals.map { it.iconId })
+    }
+
+    @Test
+    fun `v2 하루 목록에서 계산이 끝나지 않은 식사는 영양이 0이고 합계에도 0으로 더해진다`() {
+        val recognizingMeal = createMealV2(MealStatus.RECOGNIZING)
+        givenDailyMeals(recognizingMeal, givenAnalyzedMeal())
+
+        val response = mealService.getDailyMealsV2(userId, 2026, 10, 10)
+
+        assertEquals(listOf(MealStatus.RECOGNIZING, MealStatus.COMPLETED), response.meals.map { it.status })
+        assertEquals(0, response.meals.first().calory)
+        assertNull(response.meals.first().iconId)
+        assertEquals(analyzedNutrition, response.dailyNutrition.current)
+        // 프로필이 비어 있으면 기본 권장량이다.
+        assertEquals(Nutrition(calory = 2000, carbs = 250, protein = 100, fat = 70), response.dailyNutrition.target)
+    }
+
+    @Test
+    fun `v1 하루 목록은 같은 하루를 조회해 같은 합계와 목표를 준다`() {
+        givenDailyMeals(givenAnalyzedMeal())
+
+        val response = mealService.getDailyMeals(userId, 2026, 10, 10)
+
+        assertEquals(LocalDate.of(2026, 10, 10), response.date)
+        assertEquals(listOf("김밥"), response.meals.map { it.name })
+        assertEquals(analyzedNutrition, response.dailyNutrition.current)
+        assertEquals(Nutrition(calory = 2000, carbs = 250, protein = 100, fat = 70), response.dailyNutrition.target)
     }
 }
