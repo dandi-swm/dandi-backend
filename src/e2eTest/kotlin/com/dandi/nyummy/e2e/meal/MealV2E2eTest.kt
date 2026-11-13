@@ -34,8 +34,13 @@ class MealV2E2eTest {
             body("keySet()", hasItems("id", "status", "rewardBoxCategory", "name", "foods"))
             body("status", equalTo("WAITING"))
             body("foods", hasSize<Any>(2))
-            body("foods[0].keySet()", hasItems("mealFoodId", "name", "portion", "nutrition", "isNutritionFixed"))
+            body(
+                "foods[0].keySet()",
+                hasItems("mealFoodId", "name", "portion", "nutrition", "isNutritionFixed", "iconId"),
+            )
+            // 영양과 줄 아이콘은 영양 계산 때 정해지므로 기록 직후에는 비어 있다.
             body("foods[0].nutrition", nullValue())
+            body("foods[0].iconId", nullValue())
         }
     }
 
@@ -76,6 +81,10 @@ class MealV2E2eTest {
                     "imageUrl", "canCreateAnalysisFeedback", "catComment", "iconId", "foods",
                 ),
             )
+            body(
+                "foods[0].keySet()",
+                hasItems("mealFoodId", "name", "portion", "nutrition", "isNutritionFixed", "iconId"),
+            )
             body("foods[0].nutrition.keySet()", hasItems("calory", "carbs", "protein", "fat"))
         }
     }
@@ -110,6 +119,7 @@ class MealV2E2eTest {
                             "name" to "현미밥",
                             "portion" to 1.0,
                             "nutrition" to mapOf("calory" to 300, "carbs" to 65, "protein" to 6, "fat" to 2),
+                            "iconId" to 7,
                         ),
                     ),
                 ),
@@ -129,6 +139,54 @@ class MealV2E2eTest {
             mapOf("foods" to listOf(mapOf("name" to "밥", "portion" to 5.5))),
             mapOf("foods" to listOf(mapOf("name" to "밥", "portion" to 0))),
             mapOf("foods" to emptyList<Any>()),
+        )
+
+        invalidBodies.forEach { invalidBody ->
+            Given {
+                spec(RequestSpecs.createAuthorizedSpec())
+                body(invalidBody)
+            } When {
+                put("/api/v2/meals/1/foods")
+            } Then {
+                statusCode(400)
+                body("code", equalTo("api.common.invalidInputValue"))
+            }
+        }
+    }
+
+    @Test
+    fun `음식 줄이 열 개를 넘거나 이름이 길거나 영양 범위를 벗어나면 받지 않는다`() {
+        val invalidBodies = listOf(
+            mapOf("foods" to List(11) { mapOf("name" to "밥", "portion" to 1.0) }),
+            mapOf("foods" to listOf(mapOf("name" to "가".repeat(31), "portion" to 1.0))),
+            mapOf("foods" to listOf(mapOf("name" to "", "portion" to 1.0))),
+            mapOf(
+                "foods" to listOf(
+                    mapOf(
+                        "name" to "밥",
+                        "portion" to 1.0,
+                        "nutrition" to mapOf("calory" to 10000, "carbs" to 68, "protein" to 7, "fat" to 1),
+                    ),
+                ),
+            ),
+            mapOf(
+                "foods" to listOf(
+                    mapOf(
+                        "name" to "밥",
+                        "portion" to 1.0,
+                        "nutrition" to mapOf("calory" to 310, "carbs" to 1000, "protein" to 7, "fat" to 1),
+                    ),
+                ),
+            ),
+            mapOf(
+                "foods" to listOf(
+                    mapOf(
+                        "name" to "밥",
+                        "portion" to 1.0,
+                        "nutrition" to mapOf("calory" to 310, "carbs" to 68, "protein" to -1, "fat" to 1),
+                    ),
+                ),
+            ),
         )
 
         invalidBodies.forEach { invalidBody ->
