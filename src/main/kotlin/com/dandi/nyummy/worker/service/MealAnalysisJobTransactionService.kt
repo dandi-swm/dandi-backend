@@ -5,6 +5,7 @@ import com.dandi.nyummy.cat.service.CatService
 import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.meal.dto.NutritionAnalysisResult
 import com.dandi.nyummy.meal.entity.Meal
+import com.dandi.nyummy.meal.enum.MealAnalysisJobCategory
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.repository.MealAnalysisJobRepository
 import com.dandi.nyummy.meal.repository.MealRepository
@@ -44,6 +45,8 @@ class MealAnalysisJobTransactionService(
 
     /**
      * 대기 중이거나 lease가 만료된 작업을 [limit]개까지 lease로 가져가고, 그 식사들을 ANALYZING으로 바꾼다.
+     * 인식 작업의 식사만은 RECOGNIZING 그대로 둔다. ANALYZING은 음식 목록이 있고 그 영양을 계산하는 중이라는 뜻이라,
+     * 아직 음식 목록이 없는 식사에는 쓰지 않는다.
      *
      * 작업 행을 잠근 채(SKIP LOCKED) lease와 lease_count를 올리므로, 같은 작업을 두 Worker가 함께 가져가지 않는다.
      * 돌려주는 leaseCount는 읽은 값 + 1로, 커밋된 lease_count와 같다.
@@ -91,7 +94,12 @@ class MealAnalysisJobTransactionService(
             },
             workerProperties.analysis.leaseTimeToLive.toSeconds(),
         )
-        mealRepository.updateMealStatuses(leasableJobs.map { it.mealId }, MealStatus.ANALYZING, Instant.now(clock))
+        val analyzingMealIds = leasableJobs
+            .filter { it.category != MealAnalysisJobCategory.RECOGNITION }
+            .map { it.mealId }
+        if (analyzingMealIds.isNotEmpty()) {
+            mealRepository.updateMealStatuses(analyzingMealIds, MealStatus.ANALYZING, Instant.now(clock))
+        }
 
         return leasableJobs.map {
             val leaseCount = it.leaseCount + 1
@@ -103,6 +111,7 @@ class MealAnalysisJobTransactionService(
                 canRetry = leaseCount < workerProperties.analysis.maxLeaseCount,
                 createdAt = it.createdAt,
                 language = it.language ?: Language.ORIGINAL_LANGUAGE,
+                category = it.category,
             )
         }
     }
@@ -133,7 +142,7 @@ class MealAnalysisJobTransactionService(
     }
 
     /**
-     * 작업을 대기로 되돌리고 식사를 WAITING으로 둔다. 다음 polling에서 다시 가져간다.
+     * 작업을 대기로 되돌리고 식사를 가져가기 전 상태로 되돌린다. 다음 polling에서 다시 가져간다.
      *
      * @return 이 Worker의 작업이라 되돌렸으면 true
      */
@@ -144,13 +153,13 @@ class MealAnalysisJobTransactionService(
             return false
         }
 
-        mealRepository.updateMealStatuses(listOf(job.mealId), MealStatus.WAITING, Instant.now(clock))
+        resetMealStatus(job)
         return true
     }
 
     /**
      * 분석을 시작하지 못한 작업을 가져간 적 없는 것처럼 되돌린다. 번호를 하나 내려 시도 횟수를 쓰지 않으며,
-     * 식사를 WAITING으로 둔다. [delay]가 지난 뒤의 polling에서 같은 번호로 다시 가져간다.
+     * 식사를 가져가기 전 상태로 되돌린다. [delay]가 지난 뒤의 polling에서 같은 번호로 다시 가져간다.
      *
      * 실행기가 가득 차 작업을 받지 못했을 때 쓴다. 설정 오류로 분석하지 못했을 때도 쓰는데, 이때는 시작한 작업이라
      * lease가 만료된 이전 Worker가 아직 돌고 있으면 내린 번호가 그 Worker의 번호와 같아져 결과를 쓸 수 있다(감수한 위험).
@@ -164,7 +173,7 @@ class MealAnalysisJobTransactionService(
             return false
         }
 
-        mealRepository.updateMealStatuses(listOf(job.mealId), MealStatus.WAITING, Instant.now(clock))
+        resetMealStatus(job)
         return true
     }
 
@@ -197,6 +206,18 @@ class MealAnalysisJobTransactionService(
                 logger.error("분석 작업의 식사가 없습니다: jobId={}, mealId={}", job.jobId, job.mealId)
                 null
             }
+    }
+
+    /**
+     * 대기로 되돌린 작업의 식사를 가져가기 전 상태로 되돌린다.
+     * 인식 작업의 식사는 가져갈 때 RECOGNIZING 그대로 두었으므로 바꿀 것이 없고, 그 밖의 식사는 ANALYZING에서 WAITING으로 되돌린다.
+     */
+    private fun resetMealStatus(job: MealAnalysisJobResult) {
+        if (job.category == MealAnalysisJobCategory.RECOGNITION) {
+            return
+        }
+
+        mealRepository.updateMealStatuses(listOf(job.mealId), MealStatus.WAITING, Instant.now(clock))
     }
 
     private fun convertAnalysisPushResult(meal: Meal) = AnalysisPushResult(

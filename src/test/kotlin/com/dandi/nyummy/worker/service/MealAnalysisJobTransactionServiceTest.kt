@@ -7,6 +7,7 @@ import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.dto.NutritionAnalysisResult
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.entity.MealAnalysisJob
+import com.dandi.nyummy.meal.enum.MealAnalysisJobCategory
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.repository.MealAnalysisJobRepository
 import com.dandi.nyummy.meal.repository.MealRepository
@@ -33,6 +34,7 @@ import kotlin.test.assertTrue
 /**
  * leaseMealAnalysisJobs가 잠가 가져온 작업에 lease를 걸고 식사를 ANALYZING으로 바꾸는지, 지워진 식사와 최대 시도를 채운 작업을 건너뛰는지,
  * 확정·재시도·되돌리기·실패가 작업이 아직 그 번호일 때만 결과를 쓰는지 다룬다.
+ * 인식 작업의 식사는 가져갈 때도 되돌릴 때도 RECOGNIZING 그대로 두는지도 다룬다.
  * SKIP LOCKED로 두 Worker가 겹치지 않는지는 실제 DB가 필요해 여기서 다루지 않는다.
  *
  * lease 테스트의 작업·식사는 id와 lease_count가 생성자 밖의 val이라 mockk로 만든다.
@@ -68,14 +70,20 @@ class MealAnalysisJobTransactionServiceTest {
         every { mealRepository.updateMealStatuses(any(), any(), any()) } answers { firstArg<Collection<Long>>().size }
     }
 
-    private fun createJob(id: Long, mealId: Long, leaseCount: Int = 0, language: Language? = null): MealAnalysisJob =
-        mockk {
-            every { this@mockk.id } returns id
-            every { this@mockk.mealId } returns mealId
-            every { this@mockk.leaseCount } returns leaseCount
-            every { this@mockk.createdAt } returns jobCreatedAt
-            every { this@mockk.language } returns language
-        }
+    private fun createJob(
+        id: Long,
+        mealId: Long,
+        leaseCount: Int = 0,
+        language: Language? = null,
+        category: MealAnalysisJobCategory? = null,
+    ): MealAnalysisJob = mockk {
+        every { this@mockk.id } returns id
+        every { this@mockk.mealId } returns mealId
+        every { this@mockk.leaseCount } returns leaseCount
+        every { this@mockk.createdAt } returns jobCreatedAt
+        every { this@mockk.language } returns language
+        every { this@mockk.category } returns category
+    }
 
     private fun createMeal(id: Long, deletedAt: Instant? = null): Meal = mockk {
         every { this@mockk.id } returns id
@@ -130,6 +138,50 @@ class MealAnalysisJobTransactionServiceTest {
         mealAnalysisJobTransactionService.leaseMealAnalysisJobs(limit)
 
         verify(exactly = 1) { mealRepository.updateMealStatuses(listOf(10L, 20L), MealStatus.ANALYZING, now) }
+    }
+
+    @Test
+    fun `인식 작업의 식사는 RECOGNIZING 그대로 두고 그 밖의 식사만 ANALYZING으로 바꾼다`() {
+        givenJobs(
+            createJob(id = 1L, mealId = 10L, category = MealAnalysisJobCategory.RECOGNITION),
+            createJob(id = 2L, mealId = 20L, category = MealAnalysisJobCategory.NUTRITION),
+            createJob(id = 3L, mealId = 30L, category = null),
+        )
+        givenMeals(createMeal(id = 10L), createMeal(id = 20L), createMeal(id = 30L))
+
+        mealAnalysisJobTransactionService.leaseMealAnalysisJobs(limit)
+
+        // lease는 종류와 상관없이 모두 건다.
+        verify(exactly = 1) { mealAnalysisJobRepository.updateLease(listOf(1L, 2L, 3L), 60L) }
+        verify(exactly = 1) { mealRepository.updateMealStatuses(listOf(20L, 30L), MealStatus.ANALYZING, now) }
+    }
+
+    @Test
+    fun `인식 작업만 가져가면 식사 상태를 바꾸지 않는다`() {
+        givenJobs(createJob(id = 1L, mealId = 10L, category = MealAnalysisJobCategory.RECOGNITION))
+        givenMeals(createMeal(id = 10L))
+
+        val results = mealAnalysisJobTransactionService.leaseMealAnalysisJobs(limit)
+
+        assertEquals(listOf(1L), results.map { it.jobId })
+        verify(exactly = 0) { mealRepository.updateMealStatuses(any(), any(), any()) }
+    }
+
+    @Test
+    fun `작업 종류를 결과에 담고 종류가 없는 작업은 v1 분석 작업으로 둔다`() {
+        givenJobs(
+            createJob(id = 1L, mealId = 10L, category = MealAnalysisJobCategory.RECOGNITION),
+            createJob(id = 2L, mealId = 20L, category = MealAnalysisJobCategory.NUTRITION),
+            createJob(id = 3L, mealId = 30L, category = null),
+        )
+        givenMeals(createMeal(id = 10L), createMeal(id = 20L), createMeal(id = 30L))
+
+        val results = mealAnalysisJobTransactionService.leaseMealAnalysisJobs(limit)
+
+        assertEquals(
+            listOf(MealAnalysisJobCategory.RECOGNITION, MealAnalysisJobCategory.NUTRITION, null),
+            results.map { it.category },
+        )
     }
 
     @Test
@@ -216,6 +268,20 @@ class MealAnalysisJobTransactionServiceTest {
         verify(exactly = 1) { mealAnalysisJobRepository.updateLease(listOf(1L), 60L) }
         verify(exactly = 1) { mealRepository.updateMealStatuses(listOf(10L), MealStatus.ANALYZING, now) }
         assertEquals(listOf(1L), results.map { it.jobId })
+    }
+
+    @Test
+    fun `최대 시도 횟수를 채운 만료 작업은 인식 작업이어도 FAILED로 둔다`() {
+        givenJobs(
+            createJob(id = 1L, mealId = 10L, leaseCount = 2, category = MealAnalysisJobCategory.RECOGNITION),
+        )
+        givenMeals(createMeal(id = 10L))
+
+        val results = mealAnalysisJobTransactionService.leaseMealAnalysisJobs(limit)
+
+        assertTrue(results.isEmpty())
+        verify(exactly = 1) { mealAnalysisJobRepository.deleteAllByIdInBatch(listOf(1L)) }
+        verify(exactly = 1) { mealRepository.updateMealStatuses(listOf(10L), MealStatus.FAILED, now) }
     }
 
     // 확정·재시도·실패
@@ -349,6 +415,28 @@ class MealAnalysisJobTransactionServiceTest {
     }
 
     @Test
+    fun `영양 작업을 재시도하면 식사를 WAITING으로 바꾼다`() {
+        val nutritionJob = leasedJob.copy(category = MealAnalysisJobCategory.NUTRITION)
+        every { mealAnalysisJobRepository.resetLease(nutritionJob.jobId, nutritionJob.leaseCount) } returns 1
+
+        mealAnalysisJobTransactionService.retryMealAnalysis(nutritionJob)
+
+        verify(exactly = 1) { mealRepository.updateMealStatuses(listOf(10L), MealStatus.WAITING, now) }
+    }
+
+    @Test
+    fun `인식 작업을 재시도하면 lease만 풀고 식사는 RECOGNIZING 그대로 둔다`() {
+        val recognitionJob = leasedJob.copy(category = MealAnalysisJobCategory.RECOGNITION)
+        every { mealAnalysisJobRepository.resetLease(recognitionJob.jobId, recognitionJob.leaseCount) } returns 1
+
+        val isReset = mealAnalysisJobTransactionService.retryMealAnalysis(recognitionJob)
+
+        assertTrue(isReset)
+        verify(exactly = 1) { mealAnalysisJobRepository.resetLease(1L, 2) }
+        verify(exactly = 0) { mealRepository.updateMealStatuses(any(), any(), any()) }
+    }
+
+    @Test
     fun `시작하지 못한 작업을 되돌릴 때 다른 Worker가 가져간 작업이면 false이고 식사 상태를 바꾸지 않는다`() {
         every { mealAnalysisJobRepository.cancelLease(leasedJob.jobId, leasedJob.leaseCount, 0L) } returns 0
 
@@ -377,6 +465,20 @@ class MealAnalysisJobTransactionServiceTest {
 
         assertTrue(isCanceled)
         verify(exactly = 1) { mealAnalysisJobRepository.cancelLease(1L, 2, 60L) }
+    }
+
+    @Test
+    fun `시작하지 못한 인식 작업은 lease와 번호만 되돌리고 식사는 RECOGNIZING 그대로 둔다`() {
+        val recognitionJob = leasedJob.copy(category = MealAnalysisJobCategory.RECOGNITION)
+        every {
+            mealAnalysisJobRepository.cancelLease(recognitionJob.jobId, recognitionJob.leaseCount, 60L)
+        } returns 1
+
+        val isCanceled = mealAnalysisJobTransactionService.cancelMealAnalysis(recognitionJob, Duration.ofMinutes(1))
+
+        assertTrue(isCanceled)
+        verify(exactly = 1) { mealAnalysisJobRepository.cancelLease(1L, 2, 60L) }
+        verify(exactly = 0) { mealRepository.updateMealStatuses(any(), any(), any()) }
     }
 
     @Test
