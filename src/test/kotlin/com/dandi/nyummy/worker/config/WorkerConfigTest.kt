@@ -13,6 +13,7 @@ class WorkerConfigTest {
     private val aiProperties = AiProperties(
         apiKey = "test-gemini-key",
         model = "gemini-test",
+        recognitionModel = "gemini-recognition-test",
         baseUrl = "https://aiplatform.googleapis.com",
         connectTimeout = Duration.ofSeconds(5),
         readTimeout = Duration.ofSeconds(30),

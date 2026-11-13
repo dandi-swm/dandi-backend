@@ -78,4 +78,16 @@ class MealFood(
     @LastModifiedDate
     @Column(name = "updated_at", nullable = false)
     var updatedAt: Instant = Instant.now()
+
+    companion object {
+        /** 식사 하나에 둘 수 있는 최대 줄 수 */
+        const val MAX_COUNT = 10
+
+        const val NAME_MAX_LENGTH = 30
+
+        /** 인분은 [PORTION_STEP] 단위로 [MIN_PORTION]부터 [MAX_PORTION]까지다. */
+        val MIN_PORTION: BigDecimal = BigDecimal("0.5")
+        val MAX_PORTION: BigDecimal = BigDecimal("5.0")
+        val PORTION_STEP: BigDecimal = BigDecimal("0.5")
+    }
 }

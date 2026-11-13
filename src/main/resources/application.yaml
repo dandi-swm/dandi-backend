@@ -242,6 +242,9 @@ app:
     # 그래서 GEMINI_API_KEY가 없으면 어느 서비스도 뜨지 않는다.
     api-key: ${GEMINI_API_KEY}
     model: "gemini-3.6-flash"
+    # 식사 인식 v2의 음식 인식(사진 → 입력 유형·대표 이름·음식 줄)에 쓰는 모델.
+    # 식사 기록 요청 안에서 응답 기한을 두고 부르므로 응답이 빠른 모델을 쓴다.
+    recognition-model: "gemini-3.5-flash-lite"
     base-url: "https://aiplatform.googleapis.com"
     connect-timeout: 5s
     read-timeout: 30s
