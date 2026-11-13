@@ -60,7 +60,7 @@ class MealAnalysisJobPollerTest {
         leaseCount = 1,
         imageKey = "meals/1/meal-$jobId.jpg",
         canRetry = true,
-        createdAt = Instant.parse("2026-11-02T03:00:00Z"),
+        availableAt = Instant.parse("2026-11-02T03:00:00Z"),
         language = Language.KO,
     )
 

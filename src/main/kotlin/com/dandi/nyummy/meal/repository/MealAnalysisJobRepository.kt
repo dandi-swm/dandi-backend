@@ -94,25 +94,28 @@ interface MealAnalysisJobRepository : JpaRepository<MealAnalysisJob, Long> {
     ): Int
 
     /**
-     * 작업을 지금(DB 시계)부터 [delaySeconds]초가 지나야 가져갈 수 있게 미룬다.
+     * 작업을 지금(DB 시계)부터 [delaySeconds]초가 지나야 가져갈 수 있게 미루고, 그 시각을 available_at에 남긴다.
      * lease_count는 그대로 두므로 시도 횟수를 쓰지 않고, 그 시간이 지나 처음 가져갈 때 첫 번째 시도가 된다.
      *
      * 막 만든 작업을 일정 시간 뒤부터 처리하게 할 때 쓴다. v2 영양 작업은 사용자가 인식된 음식 목록을 보고 고칠 시간을 둔다.
+     * lease_expires_at은 Worker가 가져갈 때 덮이므로, 지표가 기다린 시간을 셀 기준은 available_at에 따로 둔다.
      */
     @Modifying
     @Query(
         value = """
             UPDATE meal_analysis_jobs
-            SET lease_expires_at = NOW() + INTERVAL :delaySeconds SECOND
+            SET lease_expires_at = NOW() + INTERVAL :delaySeconds SECOND,
+                available_at = NOW() + INTERVAL :delaySeconds SECOND
             WHERE id = :id
         """,
         nativeQuery = true,
     )
-    fun updateLeaseExpiresAt(@Param("id") id: Long, @Param("delaySeconds") delaySeconds: Long): Int
+    fun updateAvailableAt(@Param("id") id: Long, @Param("delaySeconds") delaySeconds: Long): Int
 
     /**
      * Worker가 지금 가져갈 수 있는 작업 수. 대기이거나 lease가 만료된 작업이며, [findMealAnalysisJobsWithLock]의 조건과 같다.
-     * 처리 중인 작업과 설정 오류로 잠시 미뤄 둔 작업(lease_expires_at이 미래)은 세지 않는다.
+     * 처리 중인 작업과 미뤄 둔 작업(lease_expires_at이 미래)은 세지 않는다. 설정 오류로 잠시 미룬 작업과,
+     * 사용자가 음식 목록을 고칠 시간을 기다리는 v2 영양 작업이 그렇다.
      */
     @Query(
         value = """
@@ -126,12 +129,13 @@ interface MealAnalysisJobRepository : JpaRepository<MealAnalysisJob, Long> {
     fun countWaitingMealAnalysisJobs(): Long
 
     /**
-     * 가져갈 수 있는 작업 중 가장 오래된 것이 쌓인 뒤 지난 초(DB 시계). 그런 작업이 없으면 null.
-     * 재시도로 대기에 돌아온 작업은 처음 쌓인 때부터 센다.
+     * 가져갈 수 있는 작업 중 가장 오래 기다린 것이 기다린 초(DB 시계). 그런 작업이 없으면 null.
+     * 쌓인 때부터 세되, 만들 때 미룬 작업은 가져갈 수 있게 된 때(available_at)부터 센다. 일부러 기다리게 한 시간은 빼려는 것이다.
+     * 재시도로 대기에 돌아온 작업은 처음 기준 그대로 센다.
      */
     @Query(
         value = """
-            SELECT TIMESTAMPDIFF(SECOND, MIN(created_at), NOW())
+            SELECT TIMESTAMPDIFF(SECOND, MIN(COALESCE(available_at, created_at)), NOW())
             FROM meal_analysis_jobs
             WHERE lease_expires_at IS NULL
                 OR lease_expires_at < NOW()

@@ -76,7 +76,7 @@ class MealTransactionServiceTest {
         every { mailService.createMealRewardMail(any(), any(), any(), any(), any()) } returns mockk<Mail>()
         every { streakService.updateStreak(userId) } just Runs
         every { mealFoodService.createMealFoods(any(), any(), any()) } returns emptyList()
-        every { mealAnalysisJobRepository.updateLeaseExpiresAt(any(), any()) } returns 1
+        every { mealAnalysisJobRepository.updateAvailableAt(any(), any()) } returns 1
     }
 
     private fun assertBusinessException(expected: ErrorCode, block: () -> Unit) {
@@ -224,7 +224,7 @@ class MealTransactionServiceTest {
 
         assertEquals(MealAnalysisJobCategory.NUTRITION, job.captured.category)
         assertEquals(Language.JA, job.captured.language)
-        verify(exactly = 1) { mealAnalysisJobRepository.updateLeaseExpiresAt(job.captured.id, 300) }
+        verify(exactly = 1) { mealAnalysisJobRepository.updateAvailableAt(job.captured.id, 300) }
     }
 
     @Test
@@ -246,7 +246,7 @@ class MealTransactionServiceTest {
 
         assertTrue(mealFoods.isEmpty())
         assertEquals(MealAnalysisJobCategory.RECOGNITION, job.captured.category)
-        verify(exactly = 0) { mealAnalysisJobRepository.updateLeaseExpiresAt(any(), any()) }
+        verify(exactly = 0) { mealAnalysisJobRepository.updateAvailableAt(any(), any()) }
         verify(exactly = 0) { mealFoodService.createMealFoods(any(), any(), any()) }
     }
 

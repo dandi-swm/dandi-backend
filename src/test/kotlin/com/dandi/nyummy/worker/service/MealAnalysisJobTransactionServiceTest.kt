@@ -94,11 +94,13 @@ class MealAnalysisJobTransactionServiceTest {
         leaseCount: Int = 0,
         language: Language? = null,
         category: MealAnalysisJobCategory? = null,
+        availableAt: Instant? = null,
     ): MealAnalysisJob = mockk {
         every { this@mockk.id } returns id
         every { this@mockk.mealId } returns mealId
         every { this@mockk.leaseCount } returns leaseCount
         every { this@mockk.createdAt } returns jobCreatedAt
+        every { this@mockk.availableAt } returns availableAt
         every { this@mockk.language } returns language
         every { this@mockk.category } returns category
     }
@@ -203,6 +205,20 @@ class MealAnalysisJobTransactionServiceTest {
     }
 
     @Test
+    fun `미뤘던 작업은 가져갈 수 있게 된 시각을, 미루지 않은 작업은 쌓인 시각을 결과에 담는다`() {
+        val delayedUntil = jobCreatedAt.plusSeconds(300)
+        givenJobs(
+            createJob(id = 1L, mealId = 10L, availableAt = delayedUntil),
+            createJob(id = 2L, mealId = 20L, availableAt = null),
+        )
+        givenMeals(createMeal(id = 10L), createMeal(id = 20L))
+
+        val results = mealAnalysisJobTransactionService.leaseMealAnalysisJobs(limit)
+
+        assertEquals(listOf(delayedUntil, jobCreatedAt), results.map { it.availableAt })
+    }
+
+    @Test
     fun `작업의 언어를 결과에 담고 언어를 몰랐던 작업은 원본 언어로 본다`() {
         givenJobs(
             createJob(id = 1L, mealId = 10L, language = Language.JA),
@@ -231,7 +247,7 @@ class MealAnalysisJobTransactionServiceTest {
                     leaseCount = 1,
                     imageKey = "meals/1/2026/11/02/meal-10.jpg",
                     canRetry = true,
-                    createdAt = jobCreatedAt,
+                    availableAt = jobCreatedAt,
                     language = Language.KO,
                 ),
                 MealAnalysisJobResult(
@@ -240,7 +256,7 @@ class MealAnalysisJobTransactionServiceTest {
                     leaseCount = 2,
                     imageKey = "meals/1/2026/11/02/meal-20.jpg",
                     canRetry = false,
-                    createdAt = jobCreatedAt,
+                    availableAt = jobCreatedAt,
                     language = Language.KO,
                 ),
             ),
@@ -313,7 +329,7 @@ class MealAnalysisJobTransactionServiceTest {
             leaseCount = 2,
             imageKey = "meals/1/meal-10.jpg",
             canRetry = false,
-            createdAt = jobCreatedAt,
+            availableAt = jobCreatedAt,
             language = Language.KO,
         )
     private val analysisResult = NutritionAnalysisResult(
@@ -438,7 +454,7 @@ class MealAnalysisJobTransactionServiceTest {
         givenOwnedJob(meal)
         every { mealFoodService.createMealFoods(any(), any(), any()) } returns emptyList()
         every { mealAnalysisJobRepository.save(any()) } answers { firstArg() }
-        every { mealAnalysisJobRepository.updateLeaseExpiresAt(any(), any()) } returns 1
+        every { mealAnalysisJobRepository.updateAvailableAt(any(), any()) } returns 1
     }
 
     @Test
@@ -495,7 +511,7 @@ class MealAnalysisJobTransactionServiceTest {
                         it.language == Language.JA
                 },
             )
-            mealAnalysisJobRepository.updateLeaseExpiresAt(any(), 300L)
+            mealAnalysisJobRepository.updateAvailableAt(any(), 300L)
         }
     }
 
@@ -506,7 +522,7 @@ class MealAnalysisJobTransactionServiceTest {
         mealAnalysisJobTransactionService.confirmMealRecognition(recognitionJob, recognition, Duration.ZERO)
 
         verify(exactly = 1) { mealAnalysisJobRepository.save(any()) }
-        verify(exactly = 0) { mealAnalysisJobRepository.updateLeaseExpiresAt(any(), any()) }
+        verify(exactly = 0) { mealAnalysisJobRepository.updateAvailableAt(any(), any()) }
     }
 
     @Test

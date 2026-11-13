@@ -47,6 +47,11 @@ class MealAnalysisJob(
     @Column(name = "lease_expires_at")
     val leaseExpiresAt: Instant? = null
 
+    // 작업을 가져갈 수 있게 되는 시각. 만들 때 미룬 작업에만 있고, 바로 가져갈 수 있는 작업은 NULL이다.
+    // lease_expires_at은 가져갈 때 덮이므로 따로 남긴다. 지표가 이 시각부터(없으면 createdAt부터) 기다린 시간을 센다.
+    @Column(name = "available_at")
+    val availableAt: Instant? = null
+
     // 선점할 때마다 1씩 오른다. 몇 번째 시도인지이자, 늦게 끝난 Worker의 쓰기를 막는 비교값이다.
     @Column(name = "lease_count", nullable = false)
     val leaseCount: Int = 0

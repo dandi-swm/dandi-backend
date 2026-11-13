@@ -29,6 +29,7 @@ import com.dandi.nyummy.worker.dto.MealAnalysisJobResult
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection
+import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionTemplate
@@ -65,6 +66,7 @@ class MealAnalysisJobTransactionServiceIntegrationTest @Autowired constructor(
     private val mealFoodRepository: MealFoodRepository,
     private val mealAnalysisJobRepository: MealAnalysisJobRepository,
     private val iconRepository: IconRepository,
+    private val jdbcTemplate: JdbcTemplate,
     mealFoodService: MealFoodService,
     catRepository: CatRepository,
     catService: CatService,
@@ -146,6 +148,9 @@ class MealAnalysisJobTransactionServiceIntegrationTest @Autowired constructor(
 
         assertEquals(MealAnalysisJobCategory.RECOGNITION, job.category)
         assertEquals(1, job.leaseCount)
+        // 미루지 않은 작업은 쌓인 때부터 기다린 것으로 센다.
+        assertNull(findJob(meal.id)?.availableAt)
+        assertEquals(findJob(meal.id)?.createdAt, job.availableAt)
         assertEquals(MealStatus.RECOGNIZING, mealRepository.findById(meal.id).orElseThrow().status)
     }
 
@@ -176,6 +181,8 @@ class MealAnalysisJobTransactionServiceIntegrationTest @Autowired constructor(
         // DB 시계와 JVM 시계의 차이를 감안해 1분 여유를 둔다.
         val leaseExpiresAt = assertNotNull(nutritionJob.leaseExpiresAt)
         assertTrue(leaseExpiresAt > Instant.now().plus(NUTRITION_DELAY).minus(Duration.ofMinutes(1)))
+        // 가져갈 수 있게 되는 시각을 따로 남긴다. lease_expires_at은 가져갈 때 덮인다.
+        assertEquals(leaseExpiresAt, nutritionJob.availableAt)
     }
 
     @Test
@@ -318,5 +325,59 @@ class MealAnalysisJobTransactionServiceIntegrationTest @Autowired constructor(
                 it.servingNutrition == null
             },
         )
+    }
+
+    // 지표가 세는 기다린 시간
+
+    @Test
+    fun `미뤘던 작업을 가져가면 가져갈 수 있게 된 시각이 결과에 실리고 lease를 잡아도 그 시각은 남는다`() {
+        val meal = createRecognizingMeal("available@nyummy.co.kr")
+        confirmMealRecognition(assertNotNull(leaseJob(meal.id)))
+        val waitingJob = assertNotNull(findJob(meal.id))
+        val availableAt = assertNotNull(waitingJob.availableAt)
+        transactionTemplate.execute { mealAnalysisJobRepository.resetLease(waitingJob.id, waitingJob.leaseCount) }
+
+        val nutritionJob = assertNotNull(leaseJob(meal.id))
+
+        assertEquals(availableAt, nutritionJob.availableAt)
+        val leasedJob = assertNotNull(findJob(meal.id))
+        assertEquals(availableAt, leasedJob.availableAt)
+        assertNotEquals(availableAt, leasedJob.leaseExpiresAt)
+    }
+
+    @Test
+    fun `가장 오래 기다린 시간은 미뤘던 작업이면 가져갈 수 있게 된 때부터, 아니면 쌓인 때부터 센다`() {
+        // 다른 테스트가 남긴 가져갈 수 있는 작업이 섞이지 않게 먼저 비운다.
+        jdbcTemplate.update("DELETE FROM meal_analysis_jobs")
+        val delayedMeal = createRecognizingMeal("oldest-delayed@nyummy.co.kr")
+        val delayedJob = assertNotNull(findJob(delayedMeal.id))
+        // 400초 전에 만들어 300초 미뤘고, 100초 전부터 가져갈 수 있었던 작업
+        jdbcTemplate.update(
+            """
+            UPDATE meal_analysis_jobs
+            SET created_at = NOW() - INTERVAL 400 SECOND,
+                lease_expires_at = NOW() - INTERVAL 100 SECOND,
+                available_at = NOW() - INTERVAL 100 SECOND
+            WHERE id = ?
+            """.trimIndent(),
+            delayedJob.id,
+        )
+
+        val delayedWaitingSeconds = assertNotNull(mealAnalysisJobRepository.findOldestWaitingSeconds())
+
+        // 미룬 300초는 기다린 시간에 넣지 않는다.
+        assertTrue(delayedWaitingSeconds in 100L..110L, "기다린 시간: $delayedWaitingSeconds")
+
+        // 미루지 않고 200초 전에 만든 작업이 더 오래 기다렸다.
+        val waitingMeal = createRecognizingMeal("oldest-waiting@nyummy.co.kr")
+        jdbcTemplate.update(
+            "UPDATE meal_analysis_jobs SET created_at = NOW() - INTERVAL 200 SECOND WHERE meal_id = ?",
+            waitingMeal.id,
+        )
+
+        val waitingSeconds = assertNotNull(mealAnalysisJobRepository.findOldestWaitingSeconds())
+
+        assertTrue(waitingSeconds in 200L..210L, "기다린 시간: $waitingSeconds")
+        assertEquals(2L, mealAnalysisJobRepository.countWaitingMealAnalysisJobs())
     }
 }

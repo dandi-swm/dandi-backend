@@ -58,11 +58,16 @@ class AnalysisService(
         // 설정 오류로 되돌린 작업을 다시 가져가기까지 기다리는 시간. 설정이 고장 난 동안 Gemini를 1초마다 부르지 않게 한다.
         private val MISCONFIGURED_DELAY = Duration.ofMinutes(1)
 
-        // 분석 시도 한 번의 결과와 걸린 시간(S3 다운로드 + Gemini + 결과 저장).
+        // 분석 시도 한 번의 결과와 걸린 시간(S3 다운로드 + Gemini + 결과 저장). job 태그로 작업 종류를 나눈다.
         private const val ANALYSIS_METER = "nyummy.meal.analysis"
 
-        // 작업이 쌓인 때부터 COMPLETED·FAILED로 끝날 때까지 걸린 시간. 사용자가 결과를 기다린 시간이다.
+        // 작업을 가져갈 수 있게 된 때부터 끝날 때까지 걸린 시간. 사용자가 결과를 기다린 시간이다.
+        // 미루지 않은 작업은 쌓인 때부터이고, 사용자가 음식 목록을 고칠 시간을 기다린 영양 작업은 그 시간이 지난 때부터다.
+        // 인식 작업은 식사 기록부터 음식 목록이 준비될 때까지(outcome이 recognized)다.
         private const val ANALYSIS_ELAPSED_METER = "nyummy.meal.analysis.elapsed"
+
+        // 종류가 없는 작업(v1 분석)의 job 태그 값
+        private const val V1_JOB = "v1"
 
         // 분류된 실패가 아닌 예외의 category 태그 값
         private const val UNKNOWN_CATEGORY = "unknown"
@@ -288,7 +293,7 @@ class AnalysisService(
 
     /**
      * 이 Worker가 결과를 실제로 남긴 시도만 기록한다. 다른 Worker가 가져가 아무것도 쓰지 못한 시도는 세지 않는다.
-     * 작업이 끝났으면(COMPLETED·RECOGNIZED·FAILED) 작업이 쌓인 때부터 걸린 시간도 기록한다.
+     * 작업이 끝났으면(COMPLETED·RECOGNIZED·FAILED) 작업을 가져갈 수 있게 된 때부터 걸린 시간도 기록한다.
      */
     private fun recordAnalysis(
         job: MealAnalysisJobResult,
@@ -297,7 +302,9 @@ class AnalysisService(
         analyzedAt: Instant,
     ) {
         val now = Instant.now(clock)
+        val jobTag = job.category?.name?.lowercase() ?: V1_JOB
         Timer.builder(ANALYSIS_METER)
+            .tag("job", jobTag)
             .tag("outcome", outcome.tagValue)
             .tag("category", category)
             .register(meterRegistry)
@@ -305,9 +312,10 @@ class AnalysisService(
 
         if (outcome.isFinal) {
             Timer.builder(ANALYSIS_ELAPSED_METER)
+                .tag("job", jobTag)
                 .tag("outcome", outcome.tagValue)
                 .register(meterRegistry)
-                .record(Duration.between(job.createdAt, now))
+                .record(Duration.between(job.availableAt, now))
         }
     }
 

@@ -130,7 +130,7 @@ class MealTransactionService(
                     ),
                 )
                 if (nutritionDelay.toSeconds() > 0) {
-                    mealAnalysisJobRepository.updateLeaseExpiresAt(job.id, nutritionDelay.toSeconds())
+                    mealAnalysisJobRepository.updateAvailableAt(job.id, nutritionDelay.toSeconds())
                 }
                 mealFoods
             }

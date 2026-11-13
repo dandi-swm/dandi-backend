@@ -120,7 +120,7 @@ class MealAnalysisJobTransactionService(
                 leaseCount = leaseCount,
                 imageKey = mealsById.getValue(it.mealId).imageKey,
                 canRetry = leaseCount < workerProperties.analysis.maxLeaseCount,
-                createdAt = it.createdAt,
+                availableAt = it.availableAt ?: it.createdAt,
                 language = it.language ?: Language.ORIGINAL_LANGUAGE,
                 category = it.category,
             )
@@ -190,7 +190,7 @@ class MealAnalysisJobTransactionService(
             ),
         )
         if (nutritionDelay.toSeconds() > 0) {
-            mealAnalysisJobRepository.updateLeaseExpiresAt(nutritionJob.id, nutritionDelay.toSeconds())
+            mealAnalysisJobRepository.updateAvailableAt(nutritionJob.id, nutritionDelay.toSeconds())
         }
 
         return true

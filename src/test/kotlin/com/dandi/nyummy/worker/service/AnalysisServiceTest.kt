@@ -135,7 +135,7 @@ class AnalysisServiceTest {
         leaseCount = if (canRetry) 1 else 2,
         imageKey = "meals/$userId/meal-$mealId.jpg",
         canRetry = canRetry,
-        createdAt = now.minusSeconds(30),
+        availableAt = now.minusSeconds(30),
         language = Language.KO,
     )
 
@@ -851,5 +851,64 @@ class AnalysisServiceTest {
         verify(exactly = 0) { servingNutritionClient.getServingNutritions(any(), any()) }
         verify(exactly = 0) { mealAnalysisJobTransactionService.confirmMealNutrition(any(), any(), any()) }
         verify(exactly = 0) { mealAnalysisJobTransactionService.failMealAnalysis(any()) }
+    }
+
+    // 지표의 작업 종류 태그
+
+    private fun countAnalysisByJob(job: String, outcome: String): Long =
+        meterRegistry.find("nyummy.meal.analysis").tags("job", job, "outcome", outcome).timer()?.count() ?: 0
+
+    private fun findElapsedByJob(job: String, outcome: String) =
+        meterRegistry.find("nyummy.meal.analysis.elapsed").tags("job", job, "outcome", outcome).timer()
+
+    @Test
+    fun `종류가 없는 작업은 지표에 v1로 남긴다`() {
+        givenAnalysisSuccess(retryableJob)
+
+        analysisService.analyzeMealAnalysisJob(retryableJob)
+
+        assertEquals(1, countAnalysisByJob("v1", "completed"))
+        assertEquals(1, findElapsedByJob("v1", "completed")?.count())
+    }
+
+    @Test
+    fun `인식 작업은 지표에 recognition으로 남긴다`() {
+        givenRecognitionSuccess(recognitionJob)
+
+        analysisService.analyzeMealAnalysisJob(recognitionJob)
+
+        assertEquals(1, countAnalysisByJob("recognition", "recognized"))
+        assertEquals(1, findElapsedByJob("recognition", "recognized")?.count())
+    }
+
+    @Test
+    fun `영양 작업은 지표에 nutrition으로 남긴다`() {
+        givenAnalysisMeal(createAnalysisMeal(bulgogiServingNutrition, 12L, riceServingNutrition, 5L))
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        assertEquals(1, countAnalysisByJob("nutrition", "completed"))
+        assertEquals(1, findElapsedByJob("nutrition", "completed")?.count())
+    }
+
+    @Test
+    fun `실패와 재시도도 작업 종류를 나눠 남긴다`() {
+        givenRecognitionFailure(recognitionJob, AnalysisFailureCategory.UNAVAILABLE)
+
+        analysisService.analyzeMealAnalysisJob(recognitionJob)
+
+        assertEquals(1, countAnalysisByJob("recognition", "retried"))
+        assertEquals(0, countAnalysisByJob("v1", "retried"))
+    }
+
+    @Test
+    fun `끝날 때까지 걸린 시간은 작업을 가져갈 수 있게 된 때부터 잰다`() {
+        // 5분 미뤘다가 10초 전에 가져갈 수 있게 된 영양 작업. 미룬 5분은 걸린 시간에 넣지 않는다.
+        val delayedJob = nutritionJob.copy(availableAt = now.minusSeconds(10))
+        givenAnalysisMeal(createAnalysisMeal(bulgogiServingNutrition, 12L, riceServingNutrition, 5L))
+
+        analysisService.analyzeMealAnalysisJob(delayedJob)
+
+        assertEquals(10.0, findElapsedByJob("nutrition", "completed")?.totalTime(TimeUnit.SECONDS))
     }
 }
