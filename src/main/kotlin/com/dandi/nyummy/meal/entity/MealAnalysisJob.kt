@@ -1,6 +1,7 @@
 package com.dandi.nyummy.meal.entity
 
 import com.dandi.nyummy.language.enum.Language
+import com.dandi.nyummy.meal.enum.MealAnalysisJobCategory
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.EntityListeners
@@ -31,6 +32,11 @@ class MealAnalysisJob(
     @Enumerated(EnumType.STRING)
     @Column(name = "language", length = 10)
     val language: Language?,
+
+    // v2 식사의 작업 종류. null이면 v1 분석 작업이다(v1 API가 만든 작업과 V0.55 전에 만든 작업).
+    @Enumerated(EnumType.STRING)
+    @Column(name = "category", length = 20)
+    val category: MealAnalysisJobCategory? = null,
 ) {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
