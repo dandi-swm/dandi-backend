@@ -2,12 +2,15 @@ package com.dandi.nyummy.report.calculator
 
 import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.language.getMessage
+import com.dandi.nyummy.meal.calculator.CALORY_SHARE_TOLERANCE
+import com.dandi.nyummy.meal.calculator.calculateCaloryShareDeviations
+import com.dandi.nyummy.meal.calculator.calculateCaloryShares
 import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.entity.Meal
+import com.dandi.nyummy.meal.enum.MacroNutrient
 import com.dandi.nyummy.report.dto.MacroNutrientBalanceResponse
 import com.dandi.nyummy.report.dto.NutritionBalanceResult
 import com.dandi.nyummy.report.dto.ReportDayResponse
-import com.dandi.nyummy.report.enum.MacroNutrient
 import org.springframework.context.MessageSource
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -23,12 +26,6 @@ const val NUTRITION_BALANCE_VIEW_TYPE = "NutritionBalance"
 // 이 시각(포함)부터 끝 시각(제외) 사이에 먹은 식사를 아침으로 센다.
 private const val BREAKFAST_START_HOUR = 5
 private const val BREAKFAST_END_HOUR = 10
-
-// 탄단지 칼로리 구성비가 목표 구성비에서 이 비율 안(±20%)이면 균형이 좋은 주로 보고 강조할 영양소를 두지 않는다.
-private const val CALORY_SHARE_TOLERANCE = 0.2
-
-// 1g당 칼로리
-private val CALORY_PER_GRAM = mapOf(MacroNutrient.CARBS to 4, MacroNutrient.PROTEIN to 4, MacroNutrient.FAT to 9)
 
 /**
  * 한 주의 식사를 영양 균형 뷰의 숫자와 서버 문장으로 집계한다.
@@ -131,13 +128,10 @@ private fun createMacroNutrientBalances(current: Nutrition, target: Nutrition): 
         MacroNutrient.PROTEIN to target.protein,
         MacroNutrient.FAT to target.fat,
     )
-    val currentShares = calculateCaloryShares(currentGrams)
-    val targetShares = calculateCaloryShares(targetGrams)
-    // 목표 구성비 대비 상대 편차. 목표가 20%인 단백질이 10%면 -0.5다.
-    val deviations = MacroNutrient.entries.associateWith { nutrient ->
-        val targetShare = targetShares.getValue(nutrient)
-        if (targetShare <= 0.0) 0.0 else currentShares.getValue(nutrient) / targetShare - 1
-    }
+    val currentShares = calculateCaloryShares(current)
+    val targetShares = calculateCaloryShares(target)
+    val deviations = calculateCaloryShareDeviations(current, target)
+    // 구성비가 목표 구성비에서 CALORY_SHARE_TOLERANCE(±20%) 안이면 균형이 좋은 주로 보고 강조할 영양소를 두지 않는다.
     // maxBy는 같은 값이면 앞의 것을 고른다(탄수화물·단백질·지방 순). 기록이 없으면 구성비가 모두 0이라 고르지 않는다.
     val focused = MacroNutrient.entries.maxBy { abs(deviations.getValue(it)) }
         .takeIf { currentGrams.values.sum() > 0 && abs(deviations.getValue(it)) > CALORY_SHARE_TOLERANCE }
@@ -153,13 +147,6 @@ private fun createMacroNutrientBalances(current: Nutrition, target: Nutrition): 
             isFocused = nutrient == focused,
         )
     }
-}
-
-// 탄단지 각각이 탄단지 칼로리 합에서 차지하는 비율(0~1). 합이 0이면 모두 0이다.
-private fun calculateCaloryShares(grams: Map<MacroNutrient, Int>): Map<MacroNutrient, Double> {
-    val calories = grams.mapValues { (nutrient, gram) -> gram * CALORY_PER_GRAM.getValue(nutrient) }
-    val total = calories.values.sum()
-    return calories.mapValues { (_, calory) -> if (total <= 0) 0.0 else calory.toDouble() / total }
 }
 
 private fun calculatePercentOfTarget(current: Int, target: Int): Int =

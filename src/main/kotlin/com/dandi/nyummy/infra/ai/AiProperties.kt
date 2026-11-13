@@ -12,6 +12,7 @@ class AiProperties(
     val model: String,
     val recognitionModel: String,
     val servingNutritionModel: String,
+    val catCommentModel: String,
     val baseUrl: String,
     val connectTimeout: Duration,
     val readTimeout: Duration,

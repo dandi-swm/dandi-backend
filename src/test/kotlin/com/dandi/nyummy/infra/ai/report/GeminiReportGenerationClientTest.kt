@@ -4,9 +4,9 @@ import com.dandi.nyummy.infra.ai.AiProperties
 import com.dandi.nyummy.language.createTestMessageSource
 import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.meal.dto.Nutrition
+import com.dandi.nyummy.meal.enum.MacroNutrient
 import com.dandi.nyummy.report.calculator.calculateNutritionBalance
 import com.dandi.nyummy.report.dto.MacroNutrientBalanceResponse
-import com.dandi.nyummy.report.enum.MacroNutrient
 import org.hamcrest.Matchers.containsString
 import org.hamcrest.Matchers.not
 import org.springframework.http.HttpMethod
@@ -37,6 +37,7 @@ class GeminiReportGenerationClientTest {
         model = "gemini-test",
         recognitionModel = "gemini-recognition-test",
         servingNutritionModel = "gemini-serving-nutrition-test",
+        catCommentModel = "gemini-cat-comment-test",
         baseUrl = "https://gemini.test",
         connectTimeout = Duration.ofSeconds(1),
         readTimeout = Duration.ofSeconds(1),

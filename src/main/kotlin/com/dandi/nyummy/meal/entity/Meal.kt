@@ -129,5 +129,8 @@ class Meal(
     companion object {
         /** v2 식사의 대표 이름 최대 길이. AI가 추천하는 이름과 v2 이름 수정에 쓴다. 컬럼은 100자이고 v1은 길이를 검사하지 않는다. */
         const val NAME_MAX_LENGTH = 20
+
+        /** 고양이 코멘트 컬럼의 길이 */
+        const val CAT_COMMENT_MAX_LENGTH = 255
     }
 }
