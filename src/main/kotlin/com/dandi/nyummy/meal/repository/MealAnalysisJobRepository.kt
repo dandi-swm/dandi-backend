@@ -94,6 +94,23 @@ interface MealAnalysisJobRepository : JpaRepository<MealAnalysisJob, Long> {
     ): Int
 
     /**
+     * 작업을 지금(DB 시계)부터 [delaySeconds]초가 지나야 가져갈 수 있게 미룬다.
+     * lease_count는 그대로 두므로 시도 횟수를 쓰지 않고, 그 시간이 지나 처음 가져갈 때 첫 번째 시도가 된다.
+     *
+     * 막 만든 작업을 일정 시간 뒤부터 처리하게 할 때 쓴다. v2 영양 작업은 사용자가 인식된 음식 목록을 보고 고칠 시간을 둔다.
+     */
+    @Modifying
+    @Query(
+        value = """
+            UPDATE meal_analysis_jobs
+            SET lease_expires_at = NOW() + INTERVAL :delaySeconds SECOND
+            WHERE id = :id
+        """,
+        nativeQuery = true,
+    )
+    fun updateLeaseExpiresAt(@Param("id") id: Long, @Param("delaySeconds") delaySeconds: Long): Int
+
+    /**
      * Worker가 지금 가져갈 수 있는 작업 수. 대기이거나 lease가 만료된 작업이며, [findMealAnalysisJobsWithLock]의 조건과 같다.
      * 처리 중인 작업과 설정 오류로 잠시 미뤄 둔 작업(lease_expires_at이 미래)은 세지 않는다.
      */
