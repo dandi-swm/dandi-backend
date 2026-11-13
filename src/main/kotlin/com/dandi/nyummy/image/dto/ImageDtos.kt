@@ -31,3 +31,13 @@ data class UploadUrlResponse(
  * @property capturedAt EXIF 촬영 시각. 읽을 수 없으면 null이며, 대체값은 도메인이 정한다
  */
 data class UploadedImageResult(val imageKey: String, val capturedAt: Instant?)
+
+/**
+ * 확정한 업로드 이미지와 그 내용. 확정하면서 내려받은 바이트를 다시 내려받지 않고 쓰려는 호출부에 돌려준다.
+ *
+ * 바이트 배열을 값으로 비교하지 않도록 data class로 두지 않는다.
+ *
+ * @property bytes 이미지 전체 바이트
+ * @property contentType 실제 콘텐츠에서 감지한 MIME 타입
+ */
+class UploadedImageContentResult(val uploadedImage: UploadedImageResult, val bytes: ByteArray, val contentType: String)

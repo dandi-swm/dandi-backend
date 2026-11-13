@@ -24,6 +24,7 @@ import java.time.Clock
 import java.time.Instant
 import java.time.ZoneId
 import kotlin.test.Test
+import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
@@ -206,6 +207,18 @@ class ImageServiceTest {
             }
         }
         coVerify(exactly = 0) { s3StorageClient.confirmObject(any()) }
+    }
+
+    @Test
+    fun `내용까지 받는 확정은 확정한 이미지와 내려받은 바이트와 감지한 MIME 타입을 돌려준다`() {
+        givenUploadedObject()
+
+        val result = imageService.confirmUploadContent(userId, ImagePurpose.MEAL, mealKey)
+
+        assertEquals(UploadedImageResult(mealKey, now), result.uploadedImage)
+        assertContentEquals(jpegBytes, result.bytes)
+        assertEquals("image/jpeg", result.contentType)
+        coVerify { s3StorageClient.confirmObject(mealKey) }
     }
 
     @Test
