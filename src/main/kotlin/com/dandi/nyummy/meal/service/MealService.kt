@@ -153,7 +153,7 @@ class MealService(
      * dev에만 배포하고 실제 구현이 들어오면 바꾼다.
      */
     fun createMealV2(): CreateMealV2Response = CreateMealV2Response(
-        id = 1L,
+        id = 2L,
         status = MealStatus.WAITING,
         rewardBoxCategory = RewardBoxCategory.BRONZE,
         name = "제육볶음 정식",
@@ -164,6 +164,7 @@ class MealService(
                 portion = BigDecimal("1.0"),
                 nutrition = null,
                 isNutritionFixed = false,
+                iconId = null,
             ),
             MealFoodResponse(
                 mealFoodId = 12L,
@@ -171,6 +172,7 @@ class MealService(
                 portion = BigDecimal("1.0"),
                 nutrition = null,
                 isNutritionFixed = false,
+                iconId = null,
             ),
         ),
     )
@@ -178,7 +180,7 @@ class MealService(
     /**
      * v2 분석 상태 조회. 지금은 고정 응답(Stub)으로 계산이 끝난 상태를 준다.
      */
-    fun getMealStatusV2(): MealStatusResponse = MealStatusResponse(id = 1L, status = MealStatus.COMPLETED)
+    fun getMealStatusV2(): MealStatusResponse = MealStatusResponse(id = 2L, status = MealStatus.COMPLETED)
 
     /**
      * v2 식사 단건 조회. 지금은 고정 응답(Stub)으로 계산이 끝난 V2 식사를 준다.
@@ -186,7 +188,7 @@ class MealService(
      * @param name 대표 이름. 이름 수정 Stub이 받은 이름을 넣어 돌려줄 때 쓴다
      */
     fun getMealV2(name: String = "제육볶음 정식"): MealV2Response = MealV2Response(
-        mealId = 1L,
+        mealId = 2L,
         analysisVersion = MealAnalysisVersion.V2,
         name = name,
         mealAt = Instant.parse("2026-11-13T03:10:00Z"),
@@ -200,9 +202,10 @@ class MealService(
             MealFoodResponse(
                 mealFoodId = 11L,
                 name = "제육볶음",
-                portion = BigDecimal("1.0"),
+                portion = BigDecimal("1.5"),
                 nutrition = Nutrition(calory = 416, carbs = 14, protein = 27, fat = 28),
                 isNutritionFixed = false,
+                iconId = 3L,
             ),
             MealFoodResponse(
                 mealFoodId = 12L,
@@ -210,6 +213,7 @@ class MealService(
                 portion = BigDecimal("1.0"),
                 nutrition = Nutrition(calory = 310, carbs = 68, protein = 7, fat = 1),
                 isNutritionFixed = false,
+                iconId = 5L,
             ),
         ),
     )
@@ -221,7 +225,7 @@ class MealService(
         date = LocalDate.of(2026, 11, 13),
         meals = listOf(
             DailyMealV2Response(
-                mealId = 1L,
+                mealId = 2L,
                 analysisVersion = MealAnalysisVersion.V2,
                 name = "제육볶음 정식",
                 mealAt = Instant.parse("2026-11-13T03:10:00Z"),
@@ -233,7 +237,7 @@ class MealService(
                 iconId = 3L,
             ),
             DailyMealV2Response(
-                mealId = 2L,
+                mealId = 1L,
                 analysisVersion = MealAnalysisVersion.V1,
                 name = "토스트",
                 mealAt = Instant.parse("2026-11-12T23:20:00Z"),
@@ -253,6 +257,7 @@ class MealService(
 
     /**
      * v2 음식 목록 보내기. 지금은 고정 응답(Stub)이다. 인분이 0.5 단위인지만 검사하고, 다시 계산을 기다리는 상태를 준다.
+     * 줄 수·이름 길이·인분 범위·영양 범위는 요청 DTO가 검사한다. DB를 보지 않으므로 없는 식사·음식 줄·아이콘 id는 가려내지 않는다.
      *
      * @throws BusinessException [CommonErrorCode.INVALID_INPUT_VALUE] 인분이 0.5 단위가 아닌 경우
      */
@@ -260,7 +265,7 @@ class MealService(
         if (request.foods.any { it.portion.remainder(BigDecimal("0.5")).signum() != 0 }) {
             throw BusinessException(CommonErrorCode.INVALID_INPUT_VALUE)
         }
-        return MealStatusResponse(id = 1L, status = MealStatus.WAITING)
+        return MealStatusResponse(id = 2L, status = MealStatus.WAITING)
     }
 
     /**

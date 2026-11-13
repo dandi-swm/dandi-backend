@@ -46,8 +46,8 @@ class MealV2Controller(
     @Operation(
         summary = "식사 생성 v2 (Stub)",
         description = "AI 고도화 영양 분석의 식사 생성이다. 지금은 고정 응답이고 실제 인식·저장을 하지 않는다. " +
-            "5초 안에 인식된 경우의 모양으로 대표 이름(20자 이내)과 음식 줄을 준다. " +
-            "음식 줄의 nutrition은 영양 계산 전이라 null이다.",
+            "5초 안에 인식된 경우의 모양으로 대표 이름(20자 이내)과 음식 줄을 준다. 맨 위 줄이 대표 음식이다. " +
+            "음식 줄의 nutrition과 iconId는 영양 계산 전이라 null이다.",
     )
     @PostMapping
     fun createMealV2(
@@ -68,7 +68,8 @@ class MealV2Controller(
     @Operation(
         summary = "식사 단건 조회 v2 (Stub)",
         description = "지금은 고정 응답이다. v1 응답에 analysisVersion(V1·V2)과 음식 줄(foods)을 더했다. " +
-            "V1 식사는 foods가 null이다. 고양이 한마디(catComment)는 처음 계산이 끝날 때 한 번만 만들고 바뀌지 않는다.",
+            "V1 식사는 foods가 null이다. 음식 줄마다 iconId가 있고, 맨 위 줄(대표 음식)의 아이콘이 식사 iconId다. " +
+            "고양이 한마디(catComment)는 처음 계산이 끝날 때 한 번만 만들고 바뀌지 않는다.",
     )
     @GetMapping("/{mealId}")
     fun getMealV2(
@@ -91,9 +92,11 @@ class MealV2Controller(
 
     @Operation(
         summary = "음식 목록 보내기 v2 (Stub)",
-        description = "목록 화면의 버튼 하나로 음식 목록 전체를 보낸다. 고치지 않았어도 같은 목록을 보낸다. " +
-            "새로 추가한 줄은 mealFoodId를 null로, 요청에 없는 기존 줄은 삭제된다. 인분은 0.5~5.0, 0.5 단위다. " +
-            "nutrition은 이번에 영양을 직접 고친 줄만 채운다. 지금은 고정 응답으로 WAITING을 준다.",
+        description = "목록 화면의 버튼 하나로 음식 목록 전체(1~10줄)를 보낸다. 고치지 않았어도 같은 목록을 보낸다. " +
+            "맨 위 줄이 대표 음식이다. 새로 추가한 줄은 mealFoodId를 null로, 요청에 없는 기존 줄은 삭제된다. " +
+            "이름은 1~30자, 인분은 0.5~5.0, 0.5 단위다. " +
+            "nutrition(칼로리 0~9999, 탄수화물·단백질·지방 0~999)과 iconId는 이번에 직접 고친 줄만 채운다. " +
+            "지금은 고정 응답으로 WAITING을 주고, 없는 아이콘 id는 가려내지 않는다.",
     )
     @PutMapping("/{mealId}/foods")
     fun updateMealFoodsV2(
@@ -113,7 +116,10 @@ class MealV2Controller(
         @Valid @RequestBody request: UpdateMealNameRequest,
     ): MealV2Response = mealService.updateMealNameV2(request)
 
-    @Operation(summary = "식사 기록 취소 v2 (Stub)", description = "목록 화면의 X 버튼이다. 지금은 아무것도 하지 않고 204를 준다.")
+    @Operation(
+        summary = "식사 기록 취소 v2 (Stub)",
+        description = "기록 직후 음식 목록 화면의 X 버튼이다. 그 밖의 X는 삭제를 부른다. 지금은 아무것도 하지 않고 204를 준다.",
+    )
     @ApiResponse(responseCode = "204", description = "취소 성공")
     @PostMapping("/{mealId}/cancel")
     fun cancelMealV2(
