@@ -38,6 +38,7 @@ import com.dandi.nyummy.meal.entity.MealAnalysisJob
 import com.dandi.nyummy.meal.enum.MealAnalysisVersion
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.mapper.toCreateMealResponse
+import com.dandi.nyummy.meal.mapper.toCreateMealV2Response
 import com.dandi.nyummy.meal.mapper.toDailyMealResponse
 import com.dandi.nyummy.meal.mapper.toEntity
 import com.dandi.nyummy.meal.mapper.toMealResponse
@@ -47,6 +48,7 @@ import com.dandi.nyummy.meal.repository.MealAnalysisJobRepository
 import com.dandi.nyummy.meal.repository.MealRepository
 import com.dandi.nyummy.user.repository.ProfileRepository
 import org.slf4j.LoggerFactory
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
@@ -68,12 +70,16 @@ class MealService(
     private val mealProperties: MealProperties,
     private val analysisFeedbackService: AnalysisFeedbackService,
     private val mealTransactionService: MealTransactionService,
+    private val mealRecognitionService: MealRecognitionService,
     private val random: Random,
     private val mailService: MailService,
 ) {
 
     companion object {
         private val logger = LoggerFactory.getLogger(MealService::class.java)
+
+        // meals.image_key의 유니크 제약. 위반 메시지에 이 이름이 들어 있으면 같은 imageKey가 겹친 것이다.
+        private const val MEAL_IMAGE_KEY_UNIQUE_CONSTRAINT = "uk_meals_image_key"
     }
 
     /**
@@ -147,35 +153,79 @@ class MealService(
     }
 
     /**
-     * v2 식사 기록. 지금은 고정 응답(Stub)이다. 실제 인식·저장 없이 5초 안에 인식된 경우의 값을 돌려준다.
+     * v2 식사 기록. 업로드된 이미지를 확정하고, 응답 기한 안에서 음식을 인식해 식사를 저장한다.
      *
-     * DB를 건드리지 않으므로 id는 실제 식사가 아니고, 보상 우편·연속 기록·하루 기록 횟수도 바뀌지 않는다.
-     * dev에만 배포하고 실제 구현이 들어오면 바꾼다.
+     * 중복 검사·하루 횟수 검사·이미지 확정·촬영 시각 처리·보상 상자는 [createMeal]과 같다. 다른 점은 응답 전에 음식을
+     * 인식한다는 것이다. 이미지 확정 때 내려받은 바이트를 그대로 인식에 쓰고, 응답 기한은 이 메서드에 들어온 때부터 센다.
+     *
+     * 인식을 시도한 결과에 따라 셋 중 하나로 응답한다.
+     * - 음식으로 인식하면 WAITING이고, 대표 이름과 음식 줄을 함께 준다. 영양은 Worker가 조금 뒤에 계산한다.
+     * - 음식이 아니면 FAILED이고 이름은 빈 문자열이다.
+     * - 응답 기한 안에 인식을 끝내지 못했으면 RECOGNIZING이고, Worker가 이어서 인식한다. 이름과 음식 줄은 없다.
+     *
+     * 하루 기록 횟수, 보상 상자, 연속 기록은 인식 결과와 상관없이 기록한 것으로 센다.
+     *
+     * @param userId 식사를 등록하는 사용자 ID
+     * @param request 식사 생성 정보를 담은 [CreateMealRequest] (이미지 키)
+     * @param language 식사를 기록한 요청의 앱 언어. 대표 이름과 음식 이름을 이 언어로 받는다
+     * @return 식사 ID, 상태, 보상 상자 등급, 인식한 대표 이름과 음식 줄을 담은 [CreateMealV2Response]
+     * @throws BusinessException [MealErrorCode.DUPLICATE_IMAGE_KEY] 이미 식사 기록에 사용된 imageKey인 경우.
+     *   같은 imageKey의 요청이 동시에 와서 저장할 때 겹친 경우도 같다
+     * @throws BusinessException [MealErrorCode.DAILY_COUNT_EXCEEDED] 오늘 시도 횟수가 상한인 경우
+     * @throws BusinessException [MealErrorCode.STALE_IMAGE] 오늘 촬영한 사진이 아닌 경우
+     * @throws BusinessException 이미지 확정이 거부된 경우. [S3ErrorCode]는 [createMeal]과 같다
      */
-    fun createMealV2(): CreateMealV2Response = CreateMealV2Response(
-        id = 2L,
-        status = MealStatus.WAITING,
-        rewardBoxCategory = RewardBoxCategory.BRONZE,
-        name = "제육볶음 정식",
-        foods = listOf(
-            MealFoodResponse(
-                mealFoodId = 11L,
-                name = "제육볶음",
-                portion = BigDecimal("1.0"),
-                nutrition = null,
-                isNutritionFixed = false,
-                iconId = null,
-            ),
-            MealFoodResponse(
-                mealFoodId = 12L,
-                name = "밥",
-                portion = BigDecimal("1.0"),
-                nutrition = null,
-                isNutritionFixed = false,
-                iconId = null,
-            ),
-        ),
-    )
+    fun createMealV2(userId: Long, request: CreateMealRequest, language: Language): CreateMealV2Response {
+        val receivedAt = Instant.now(clock)
+
+        if (mealRepository.existsByImageKey(request.imageKey)) {
+            throw BusinessException(MealErrorCode.DUPLICATE_IMAGE_KEY)
+        }
+        // 이미지 확정 앞에서 거르는 이유는 [createMeal]과 같다.
+        mealAttemptService.validateDailyCount(userId)
+
+        val uploadedImageContent = imageService.confirmUploadContent(
+            userId = userId,
+            purpose = ImagePurpose.MEAL,
+            imageKey = request.imageKey,
+            validateAfterUpload = { mealAttemptService.validateCapturedAt(userId, it) },
+        )
+        val uploadedImage = uploadedImageContent.uploadedImage
+        val mealAt = uploadedImage.capturedAt ?: Instant.now(clock).also {
+            logger.info("EXIF 촬영 시각 없음, 서버 시각으로 대체: userId={}, imageKey={}", userId, uploadedImage.imageKey)
+        }
+
+        val outcome = mealRecognitionService.recognizeMeal(
+            imageBytes = uploadedImageContent.bytes,
+            contentType = uploadedImageContent.contentType,
+            language = language,
+            receivedAt = receivedAt,
+        )
+
+        val meal = request.toEntity(userId, mealAt, uploadedImage.imageKey, outcome)
+        val rewardBox = pickRewardBox(mealProperties.rewardBoxes, random)
+        val rewardMailExpiresAt = Instant.now(clock).plus(mealProperties.rewardMailTimeToLive)
+
+        val mealFoods = try {
+            mealTransactionService.createMealV2(
+                meal = meal,
+                outcome = outcome,
+                rewardBox = rewardBox,
+                rewardMailExpiresAt = rewardMailExpiresAt,
+                nutritionDelay = mealProperties.recognition.nutritionDelay,
+                language = language,
+            )
+        } catch (e: DataIntegrityViolationException) {
+            // 같은 imageKey의 요청이 동시에 오면 위의 중복 검사를 함께 통과하고, 늦은 쪽이 유니크 제약에 걸린다.
+            if (e.mostSpecificCause.message?.contains(MEAL_IMAGE_KEY_UNIQUE_CONSTRAINT) != true) {
+                throw e
+            }
+            logger.warn("같은 imageKey의 식사 기록이 동시에 들어와 유니크 제약과 충돌했습니다: userId={}", userId, e)
+            throw BusinessException(MealErrorCode.DUPLICATE_IMAGE_KEY)
+        }
+
+        return meal.toCreateMealV2Response(rewardBox.category, mealFoods)
+    }
 
     /**
      * v2 분석 상태 조회. 지금은 고정 응답(Stub)으로 계산이 끝난 상태를 준다.

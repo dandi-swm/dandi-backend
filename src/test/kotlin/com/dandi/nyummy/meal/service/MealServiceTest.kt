@@ -5,6 +5,7 @@ import com.dandi.nyummy.exception.errorcode.AuthErrorCode
 import com.dandi.nyummy.exception.errorcode.ErrorCode
 import com.dandi.nyummy.exception.errorcode.MealErrorCode
 import com.dandi.nyummy.exception.errorcode.UserErrorCode
+import com.dandi.nyummy.image.dto.UploadedImageContentResult
 import com.dandi.nyummy.image.dto.UploadedImageResult
 import com.dandi.nyummy.image.enum.ImagePurpose
 import com.dandi.nyummy.image.service.ImageService
@@ -17,11 +18,18 @@ import com.dandi.nyummy.meal.config.MealRecognitionProperties
 import com.dandi.nyummy.meal.config.RewardBoxProperties
 import com.dandi.nyummy.meal.config.TutorialRewardBoxProperties
 import com.dandi.nyummy.meal.dto.CreateMealRequest
+import com.dandi.nyummy.meal.dto.MealFoodRecognitionResult
+import com.dandi.nyummy.meal.dto.MealRecognitionOutcome
+import com.dandi.nyummy.meal.dto.MealRecognitionResult
 import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.dto.NutritionAnalysisResult
 import com.dandi.nyummy.meal.dto.RewardBoxResult
 import com.dandi.nyummy.meal.dto.UpdateMealNutritionRequest
 import com.dandi.nyummy.meal.entity.Meal
+import com.dandi.nyummy.meal.entity.MealFood
+import com.dandi.nyummy.meal.enum.MealAnalysisVersion
+import com.dandi.nyummy.meal.enum.MealInputCategory
+import com.dandi.nyummy.meal.enum.MealRecognitionDeferralCategory
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.mapper.toNutrition
 import com.dandi.nyummy.meal.repository.MealAnalysisJobRepository
@@ -35,6 +43,8 @@ import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
 import io.mockk.verifyOrder
+import org.springframework.dao.DataIntegrityViolationException
+import java.math.BigDecimal
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
@@ -45,6 +55,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
  * createMeal의 검사·확정 순서와 mealAt 결정, createTutorialMeal의 완료 기록과 보상 상자 우편,
@@ -73,6 +84,7 @@ class MealServiceTest {
     private val profileRepository = mockk<ProfileRepository>()
     private val analysisFeedbackService = mockk<AnalysisFeedbackService>()
     private val mealTransactionService = mockk<MealTransactionService>()
+    private val mealRecognitionService = mockk<MealRecognitionService>()
     private val random = mockk<Random>()
     private val mailService = mockk<MailService>()
 
@@ -101,6 +113,7 @@ class MealServiceTest {
         ),
         analysisFeedbackService = analysisFeedbackService,
         mealTransactionService = mealTransactionService,
+        mealRecognitionService = mealRecognitionService,
         random = random,
         mailService = mailService,
     )
@@ -229,6 +242,181 @@ class MealServiceTest {
 
         assertBusinessException(MealErrorCode.STALE_IMAGE) { mealService.createMeal(userId, request, Language.KO) }
         verify(exactly = 0) { mealTransactionService.createMeal(any(), any(), any(), any()) }
+    }
+
+    // createMealV2
+
+    private val imageBytes = byteArrayOf(1, 2, 3)
+    private val recognition = MealRecognitionResult(
+        inputCategory = MealInputCategory.FOOD_PHOTO,
+        name = "불고기 백반",
+        foods = listOf(
+            MealFoodRecognitionResult(name = "불고기", portion = BigDecimal("1.5")),
+            MealFoodRecognitionResult(name = "잡곡밥", portion = BigDecimal("1.0")),
+        ),
+        model = "gemini-recognition-test",
+        promptVersion = "v1",
+    )
+    private val recognizedMealFoods = listOf(
+        MealFood(mealId = 0L, mealFoodSnapshotId = 11L, displayOrder = 1, name = "불고기", portion = BigDecimal("1.5")),
+        MealFood(mealId = 0L, mealFoodSnapshotId = 12L, displayOrder = 2, name = "잡곡밥", portion = BigDecimal("1.0")),
+    )
+
+    /** 이미지 확정, 인식 결과, 저장을 흉내 낸다. 저장은 음식으로 인식했을 때만 음식 줄을 돌려준다. */
+    private fun givenMealV2(outcome: MealRecognitionOutcome, capturedAt: Instant? = now) {
+        val validateAfterUpload = slot<(UploadedImageResult) -> Unit>()
+        every {
+            imageService.confirmUploadContent(userId, ImagePurpose.MEAL, imageKey, capture(validateAfterUpload))
+        } answers {
+            val uploadedImage = UploadedImageResult(imageKey, capturedAt)
+            validateAfterUpload.captured(uploadedImage)
+            UploadedImageContentResult(uploadedImage, imageBytes, "image/jpeg")
+        }
+        every { mealRecognitionService.recognizeMeal(any(), any(), any(), any()) } returns outcome
+        every {
+            mealTransactionService.createMealV2(capture(savedMeal), any(), any(), any(), any(), any())
+        } returns if (outcome is MealRecognitionOutcome.Recognized) recognizedMealFoods else emptyList()
+    }
+
+    @Test
+    fun `음식으로 인식하면 WAITING과 대표 이름과 계산 전 음식 줄을 응답한다`() {
+        givenMealV2(MealRecognitionOutcome.Recognized(recognition))
+
+        val response = mealService.createMealV2(userId, request, Language.KO)
+
+        assertEquals(MealStatus.WAITING, response.status)
+        assertEquals("불고기 백반", response.name)
+        assertEquals(RewardBoxCategory.GOLD, response.rewardBoxCategory)
+        val foods = assertNotNull(response.foods)
+        assertEquals(listOf("불고기", "잡곡밥"), foods.map { it.name })
+        assertEquals(listOf(BigDecimal("1.5"), BigDecimal("1.0")), foods.map { it.portion })
+        // 영양과 아이콘은 Worker가 계산한 뒤에 생긴다.
+        assertTrue(foods.all { it.nutrition == null && it.iconId == null && !it.isNutritionFixed })
+    }
+
+    @Test
+    fun `음식으로 인식한 식사는 V2로, AI가 추천한 이름과 입력 유형으로 저장한다`() {
+        givenMealV2(MealRecognitionOutcome.Recognized(recognition))
+
+        mealService.createMealV2(userId, request, Language.KO)
+
+        assertEquals(MealAnalysisVersion.V2, savedMeal.captured.analysisVersion)
+        assertEquals(MealStatus.WAITING, savedMeal.captured.status)
+        assertEquals("불고기 백반", savedMeal.captured.name)
+        assertEquals(MealInputCategory.FOOD_PHOTO, savedMeal.captured.inputCategory)
+        assertEquals(now, savedMeal.captured.mealAt)
+    }
+
+    @Test
+    fun `음식이 아니면 FAILED이고 이름은 빈 문자열이며 음식 줄은 없다`() {
+        givenMealV2(MealRecognitionOutcome.NotFood)
+
+        val response = mealService.createMealV2(userId, request, Language.KO)
+
+        assertEquals(MealStatus.FAILED, response.status)
+        assertEquals("", response.name)
+        assertNull(response.foods)
+        assertEquals(MealInputCategory.NOT_FOOD, savedMeal.captured.inputCategory)
+        // 음식이 아니어도 보상 상자는 준다.
+        assertEquals(RewardBoxCategory.GOLD, response.rewardBoxCategory)
+    }
+
+    @Test
+    fun `요청 안에서 인식을 끝내지 못하면 RECOGNIZING이고 이름과 음식 줄이 없다`() {
+        givenMealV2(MealRecognitionOutcome.Deferred(MealRecognitionDeferralCategory.TIMEOUT))
+
+        val response = mealService.createMealV2(userId, request, Language.KO)
+
+        assertEquals(MealStatus.RECOGNIZING, response.status)
+        assertNull(response.name)
+        assertNull(response.foods)
+        assertNull(savedMeal.captured.inputCategory)
+    }
+
+    @Test
+    fun `확정하며 받은 사진 내용과 요청을 받은 시각을 인식에 넘긴다`() {
+        givenMealV2(MealRecognitionOutcome.Recognized(recognition))
+
+        mealService.createMealV2(userId, request, Language.JA)
+
+        verify(exactly = 1) { mealRecognitionService.recognizeMeal(imageBytes, "image/jpeg", Language.JA, now) }
+    }
+
+    @Test
+    fun `인식 결과와 영양 작업 지연 설정과 요청 언어를 저장에 넘긴다`() {
+        val outcome = MealRecognitionOutcome.Recognized(recognition)
+        givenMealV2(outcome)
+
+        mealService.createMealV2(userId, request, Language.EN)
+
+        verify(exactly = 1) {
+            mealTransactionService.createMealV2(
+                meal = any(),
+                outcome = outcome,
+                rewardBox = RewardBoxResult(RewardBoxCategory.GOLD, 412),
+                rewardMailExpiresAt = now.plus(Duration.ofDays(7)),
+                nutritionDelay = Duration.ofMinutes(5),
+                language = Language.EN,
+            )
+        }
+    }
+
+    @Test
+    fun `v2도 EXIF 촬영 시각이 없으면 서버 시각으로 저장한다`() {
+        givenMealV2(MealRecognitionOutcome.Recognized(recognition), capturedAt = null)
+
+        mealService.createMealV2(userId, request, Language.KO)
+
+        assertEquals(now, savedMeal.captured.mealAt)
+    }
+
+    @Test
+    fun `v2도 이미 사용된 imageKey면 확정과 인식 없이 거부한다`() {
+        every { mealRepository.existsByImageKey(imageKey) } returns true
+
+        assertBusinessException(MealErrorCode.DUPLICATE_IMAGE_KEY) {
+            mealService.createMealV2(userId, request, Language.KO)
+        }
+        verify(exactly = 0) { imageService.confirmUploadContent(any(), any(), any(), any()) }
+        verify(exactly = 0) { mealRecognitionService.recognizeMeal(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `v2도 하루 시도 횟수를 넘기면 이미지를 확정하지 않고 인식도 하지 않는다`() {
+        every { mealAttemptService.validateDailyCount(userId) } throws
+            BusinessException(MealErrorCode.DAILY_COUNT_EXCEEDED)
+
+        assertBusinessException(MealErrorCode.DAILY_COUNT_EXCEEDED) {
+            mealService.createMealV2(userId, request, Language.KO)
+        }
+        verify(exactly = 0) { imageService.confirmUploadContent(any(), any(), any(), any()) }
+        verify(exactly = 0) { mealRecognitionService.recognizeMeal(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `저장할 때 imageKey 유니크 제약에 걸리면 DUPLICATE_IMAGE_KEY로 거부한다`() {
+        givenMealV2(MealRecognitionOutcome.Recognized(recognition))
+        every { mealTransactionService.createMealV2(any(), any(), any(), any(), any(), any()) } throws
+            DataIntegrityViolationException(
+                "could not execute statement",
+                RuntimeException("Duplicate entry 'meals/1/uuid.jpg' for key 'meals.uk_meals_image_key'"),
+            )
+
+        assertBusinessException(MealErrorCode.DUPLICATE_IMAGE_KEY) {
+            mealService.createMealV2(userId, request, Language.KO)
+        }
+    }
+
+    @Test
+    fun `저장할 때 다른 제약에 걸리면 그 예외를 그대로 던진다`() {
+        givenMealV2(MealRecognitionOutcome.Recognized(recognition))
+        every { mealTransactionService.createMealV2(any(), any(), any(), any(), any(), any()) } throws
+            DataIntegrityViolationException(
+                "could not execute statement",
+                RuntimeException("Duplicate entry '1' for key 'streaks.uk_streaks_user_id'"),
+            )
+
+        assertFailsWith<DataIntegrityViolationException> { mealService.createMealV2(userId, request, Language.KO) }
     }
 
     // createTutorialMeal
