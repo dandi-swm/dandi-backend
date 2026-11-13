@@ -150,6 +150,11 @@ class AnalysisService(
      * 1인분 조회와 코멘트는 트랜잭션 밖에서 하고, 결과는 한 트랜잭션으로 저장한다. 그래서 COMPLETED인 식사에는 늘 코멘트가 있다.
      * 코멘트는 식사에 아직 없을 때만 만든다. 만들지 못하면 [CatService.createCatComment]가 고정 문구를 돌려주므로
      * 코멘트 때문에 영양 작업이 실패하지는 않는다.
+     *
+     * 완료 알림은 처음 계산이 끝났을 때만 보낸다. 이미 한 번 완료됐던 식사를 사용자가 고쳐 다시 계산한 것은 알리지 않는다.
+     * 방금 앱에서 직접 고친 것이라 화면에서 결과를 보고 있고, 고칠 때마다 알림이 가면 성가시다.
+     * 코멘트는 식사당 한 번만 만들므로, 이번 계산에서 코멘트를 만들었는지로 처음 계산인지를 가린다.
+     * 실패 알림은 다시 계산한 것에도 보낸다. 완료였던 식사가 FAILED가 된 것은 알려야 한다.
      */
     private fun analyzeMealFoods(job: MealAnalysisJobResult, analyzedAt: Instant) {
         val meal = mealAnalysisJobTransactionService.getAnalysisMeal(job)
@@ -171,7 +176,9 @@ class AnalysisService(
         if (pushResult != null) {
             recordAnalysis(job, AnalysisOutcome.COMPLETED, null, analyzedAt)
         }
-        sendAnalysisPush(pushResult, null, analyzedAt, job.language)
+        if (!meal.hasCatComment) {
+            sendAnalysisPush(pushResult, null, analyzedAt, job.language)
+        }
     }
 
     /**
