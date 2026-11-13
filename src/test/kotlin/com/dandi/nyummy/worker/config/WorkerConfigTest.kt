@@ -14,6 +14,7 @@ class WorkerConfigTest {
         apiKey = "test-gemini-key",
         model = "gemini-test",
         recognitionModel = "gemini-recognition-test",
+        servingNutritionModel = "gemini-serving-nutrition-test",
         baseUrl = "https://aiplatform.googleapis.com",
         connectTimeout = Duration.ofSeconds(5),
         readTimeout = Duration.ofSeconds(30),

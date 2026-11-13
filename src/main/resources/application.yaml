@@ -245,6 +245,8 @@ app:
     # 식사 인식 v2의 음식 인식(사진 → 입력 유형·대표 이름·음식 줄)에 쓰는 모델.
     # 식사 기록 요청 안에서 응답 기한을 두고 부르므로 응답이 빠른 모델을 쓴다.
     recognition-model: "gemini-3.5-flash-lite"
+    # 식사 인식 v2에서 음식 이름마다 1인분 영양과 아이콘을 구하는 데 쓰는 모델. 글만 넣는 호출이고 Worker가 부른다.
+    serving-nutrition-model: "gemini-3.5-flash-lite"
     base-url: "https://aiplatform.googleapis.com"
     connect-timeout: 5s
     read-timeout: 30s
