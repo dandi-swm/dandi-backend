@@ -9,6 +9,7 @@ import com.dandi.nyummy.meal.entity.MealFoodSnapshot
 import com.dandi.nyummy.meal.entity.MealSnapshot
 import com.dandi.nyummy.meal.enum.MealInputCategory
 import com.dandi.nyummy.meal.enum.MealRecognitionCategory
+import com.dandi.nyummy.meal.repository.IconRepository
 import com.dandi.nyummy.meal.repository.MealFoodRepository
 import com.dandi.nyummy.meal.repository.MealFoodSnapshotRepository
 import com.dandi.nyummy.meal.repository.MealSnapshotRepository
@@ -40,11 +41,13 @@ class MealFoodServiceTest {
     private val mealSnapshotRepository = mockk<MealSnapshotRepository>()
     private val mealFoodSnapshotRepository = mockk<MealFoodSnapshotRepository>()
     private val mealFoodRepository = mockk<MealFoodRepository>()
+    private val iconRepository = mockk<IconRepository>()
 
     private val mealFoodService = MealFoodService(
         mealSnapshotRepository = mealSnapshotRepository,
         mealFoodSnapshotRepository = mealFoodSnapshotRepository,
         mealFoodRepository = mealFoodRepository,
+        iconRepository = iconRepository,
     )
 
     private val mealSnapshot = slot<MealSnapshot>()

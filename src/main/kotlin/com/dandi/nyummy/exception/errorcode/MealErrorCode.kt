@@ -13,4 +13,10 @@ enum class MealErrorCode(override val status: HttpStatus, override val code: Str
     ANALYSIS_FEEDBACK_ALREADY_EXISTS(HttpStatus.CONFLICT, "api.meal.analysisFeedbackAlreadyExists", "이미 평가한 식사입니다."),
     ANALYSIS_NOT_COMPLETED(HttpStatus.CONFLICT, "api.meal.analysisNotCompleted", "분석이 완료된 식사만 평가·수정할 수 있습니다."),
     TUTORIAL_ALREADY_COMPLETED(HttpStatus.CONFLICT, "api.meal.tutorialAlreadyCompleted", "이미 튜토리얼을 완료했습니다."),
+    MEAL_FOODS_NOT_UPDATABLE(
+        HttpStatus.CONFLICT,
+        "api.meal.mealFoodsNotUpdatable",
+        "음식 목록을 고칠 수 없는 식사입니다. 아직 인식 중이거나 실패한 식사, 음식 목록이 없는 식사입니다.",
+    ),
+    MEAL_FOOD_NOT_FOUND(HttpStatus.BAD_REQUEST, "api.meal.mealFoodNotFound", "이 식사의 음식 줄이 아닌 mealFoodId입니다."),
 }

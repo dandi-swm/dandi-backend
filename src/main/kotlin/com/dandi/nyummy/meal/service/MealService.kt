@@ -11,6 +11,7 @@ import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.mail.enum.RewardBoxCategory
 import com.dandi.nyummy.mail.service.MailService
 import com.dandi.nyummy.meal.calculator.calculateDailyNutritionEvaluation
+import com.dandi.nyummy.meal.calculator.calculateMealNutrition
 import com.dandi.nyummy.meal.calculator.calculateMonthlyCalendarRange
 import com.dandi.nyummy.meal.calculator.calculateRecommendedDailyIntake
 import com.dandi.nyummy.meal.calculator.pickRewardBox
@@ -35,6 +36,8 @@ import com.dandi.nyummy.meal.dto.UpdateMealNameRequest
 import com.dandi.nyummy.meal.dto.UpdateMealNutritionRequest
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.entity.MealAnalysisJob
+import com.dandi.nyummy.meal.entity.MealFood
+import com.dandi.nyummy.meal.enum.MealAnalysisJobCategory
 import com.dandi.nyummy.meal.enum.MealAnalysisVersion
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.mapper.toCreateMealResponse
@@ -290,16 +293,102 @@ class MealService(
     }
 
     /**
-     * v2 음식 목록 보내기. 지금은 고정 응답(Stub)이다. 인분이 0.5 단위인지만 검사하고, 다시 계산을 기다리는 상태를 준다.
-     * 줄 수·이름 길이·인분 범위·영양 범위는 요청 DTO가 검사한다. DB를 보지 않으므로 없는 식사·음식 줄·아이콘 id는 가려내지 않는다.
+     * v2 식사의 음식 목록을 사용자가 보낸 목록으로 바꾸고 영양을 다시 계산하게 한다.
+     * 음식 목록 화면의 버튼 하나가 이 API다. 고치지 않았어도 같은 목록을 보내고, 계산이 끝난 뒤에도 몇 번이든 보낼 수 있다.
      *
-     * @throws BusinessException [CommonErrorCode.INVALID_INPUT_VALUE] 인분이 0.5 단위가 아닌 경우
+     * 기다리던 작업은 지운다. 옛 목록으로 계산하던 Worker는 결과를 쓸 때 자기 작업 행이 없어 결과를 버린다.
+     * 그 뒤는 값을 새로 구해야 하는지에 따라 갈린다.
+     * - 새로 구할 값이 있으면(이름을 바꾼 줄, 영양을 적지 않은 새 줄) 바로 가져갈 영양 작업을 만들고 WAITING으로 둔다.
+     *   식사의 합계와 아이콘은 비운다. 계산이 끝나지 않은 식사는 영양이 없어야 하루 목록과 합계에 옛 값이 섞이지 않는다.
+     *   아직 한 번도 계산이 끝나지 않은 식사도 여기로 간다. 고양이 코멘트를 만들어야 해서다.
+     * - 새로 구할 값이 없으면(인분·순서만 바꿈, 줄을 지움, 영양·아이콘을 직접 적음) 이 요청 안에서 합계와 아이콘을 다시 계산해
+     *   COMPLETED로 끝낸다. 작업을 만들지 않으므로 완료 푸시도 가지 않는다.
+     *
+     * 요청 안에서 끝내는 것은 식사 DB만으로 끝낼 수 있을 때뿐이다. 값을 새로 구하는 일(모델 호출, 음식 DB 조회)은 Worker가 한다.
+     *
+     * 대표 이름과 고양이 코멘트는 바꾸지 않는다.
+     *
+     * 음식 목록이 있는 V2 식사만 받는다. 아직 인식 중인 식사, 실패한 식사, V1 식사는 거절한다.
+     * 실패한 식사는 재분석으로 처음부터 다시 한다.
+     *
+     * 줄 수·이름 길이·인분 범위·영양 범위는 요청 DTO가 검사하고, 음식 줄을 바꾸는 규칙은 [MealFoodService.updateMealFoods]에 있다.
+     *
+     * @param userId 보내는 사용자 ID
+     * @param mealId 음식 목록을 바꿀 식사 ID
+     * @param request 음식 줄 전체를 담은 [UpdateMealFoodsRequest]
+     * @param language 요청의 앱 언어. 새 작업에 실어 완료 푸시를 이 언어로 보낸다
+     * @return 다시 계산을 기다리면 WAITING, 요청 안에서 계산을 끝냈으면 COMPLETED를 담은 [MealStatusResponse]
+     * @throws BusinessException [CommonErrorCode.INVALID_INPUT_VALUE] 인분이 0.5 단위가 아니거나, 없는 아이콘 id이거나, 같은 mealFoodId가 두 번 온 경우
+     * @throws BusinessException [MealErrorCode.MEAL_NOT_FOUND] mealId에 해당하는 식사가 없거나, 삭제된 경우
+     * @throws BusinessException [AuthErrorCode.FORBIDDEN] mealId에 해당하는 userId가 아닌 경우
+     * @throws BusinessException [MealErrorCode.MEAL_FOODS_NOT_UPDATABLE] 음식 목록을 고칠 수 없는 식사인 경우
+     * @throws BusinessException [MealErrorCode.MEAL_FOOD_NOT_FOUND] 이 식사의 줄이 아닌 mealFoodId가 있는 경우
      */
-    fun updateMealFoodsV2(request: UpdateMealFoodsRequest): MealStatusResponse {
-        if (request.foods.any { it.portion.remainder(BigDecimal("0.5")).signum() != 0 }) {
+    @Transactional
+    fun updateMealFoodsV2(
+        userId: Long,
+        mealId: Long,
+        request: UpdateMealFoodsRequest,
+        language: Language,
+    ): MealStatusResponse {
+        if (request.foods.any { it.portion.remainder(MealFood.PORTION_STEP).signum() != 0 }) {
             throw BusinessException(CommonErrorCode.INVALID_INPUT_VALUE)
         }
-        return MealStatusResponse(id = 2L, status = MealStatus.WAITING)
+
+        val meal = deleteMealAnalysisJobAndGetMealWithLock(userId, mealId)
+        if (meal.analysisVersion != MealAnalysisVersion.V2 ||
+            meal.status !in MealStatus.MEAL_FOOD_UPDATABLE_STATUSES
+        ) {
+            throw BusinessException(MealErrorCode.MEAL_FOODS_NOT_UPDATABLE)
+        }
+
+        val mealFoods = mealFoodService.updateMealFoods(meal.id, request.foods)
+        val topMealFoodIconId = mealFoods.firstOrNull()?.iconId
+        val hasAllServingNutritions = mealFoods.all { it.servingNutrition != null && it.iconId != null }
+        if (meal.catComment != null && topMealFoodIconId != null && hasAllServingNutritions) {
+            meal.updateNutrition(calculateMealNutrition(mealFoods))
+            meal.updateIconId(topMealFoodIconId)
+            meal.updateStatus(MealStatus.COMPLETED)
+        } else {
+            mealAnalysisJobRepository.save(
+                MealAnalysisJob(mealId = meal.id, language = language, category = MealAnalysisJobCategory.NUTRITION),
+            )
+            meal.resetNutrition()
+            meal.updateStatus(MealStatus.WAITING)
+        }
+
+        return meal.toMealStatusResponse()
+    }
+
+    /**
+     * 식사의 기다리던 작업을 지우고 식사를 잠가 돌려준다. 작업 행을 만들거나 지우는 v2 요청이 이 순서로 시작한다.
+     *
+     * 1. 프로필 행을 잠가 같은 사용자의 요청을 줄 세운다([MealTransactionService.createMeal]과 같은 방식).
+     *    줄 세우지 않으면 같은 식사의 요청 둘이 모두 "작업 없음"을 보고 새 작업을 둘 만들려다 유니크 제약에 걸린다.
+     *    트랜잭션의 첫 조회여야 한다. 잠금보다 먼저 일반 조회를 하면 앞선 요청이 커밋한 작업을 보지 못한다.
+     * 2. 작업 행이 있으면 id로 지운다. Worker와 같은 순서(작업 → 식사)로 잠가야 서로를 기다리는 데드락이 없다.
+     *    `meal_id`로 바로 지우지 않는 이유는 [MealAnalysisJobRepository.findIdByMealId]에 있다.
+     * 3. 식사를 잠가 읽는다.
+     *
+     * 식사의 소유자는 식사를 읽은 뒤에야 알 수 있어 작업을 먼저 지운다. 소유자가 아니면 예외로 트랜잭션이 롤백돼 작업도 되돌아온다.
+     *
+     * @throws BusinessException [UserErrorCode.PROFILE_NOT_FOUND] 가입 시 만들어져야 할 프로필이 없는 경우
+     * @throws BusinessException [MealErrorCode.MEAL_NOT_FOUND] mealId에 해당하는 식사가 없거나, 삭제된 경우
+     * @throws BusinessException [AuthErrorCode.FORBIDDEN] mealId에 해당하는 userId가 아닌 경우
+     */
+    private fun deleteMealAnalysisJobAndGetMealWithLock(userId: Long, mealId: Long): Meal {
+        profileRepository.findProfileWithLockByUserId(userId)
+            ?: throw BusinessException(UserErrorCode.PROFILE_NOT_FOUND)
+        mealAnalysisJobRepository.findIdByMealId(mealId)
+            ?.let { mealAnalysisJobRepository.deleteMealAnalysisJobById(it) }
+
+        val meal = mealRepository.findMealWithLockById(mealId)
+            ?.takeIf { it.deletedAt == null }
+            ?: throw BusinessException(MealErrorCode.MEAL_NOT_FOUND)
+
+        meal.validateOwnership(userId)
+
+        return meal
     }
 
     /**

@@ -1,11 +1,18 @@
 package com.dandi.nyummy.meal.service
 
+import com.dandi.nyummy.exception.BusinessException
+import com.dandi.nyummy.exception.errorcode.CommonErrorCode
+import com.dandi.nyummy.exception.errorcode.MealErrorCode
+import com.dandi.nyummy.meal.calculator.calculateServingNutrition
+import com.dandi.nyummy.meal.dto.MealFoodRequest
 import com.dandi.nyummy.meal.dto.MealRecognitionResult
 import com.dandi.nyummy.meal.dto.ServingNutritionResult
 import com.dandi.nyummy.meal.entity.MealFood
 import com.dandi.nyummy.meal.entity.MealFoodSnapshot
 import com.dandi.nyummy.meal.entity.MealSnapshot
 import com.dandi.nyummy.meal.enum.MealRecognitionCategory
+import com.dandi.nyummy.meal.mapper.toNutrition
+import com.dandi.nyummy.meal.repository.IconRepository
 import com.dandi.nyummy.meal.repository.MealFoodRepository
 import com.dandi.nyummy.meal.repository.MealFoodSnapshotRepository
 import com.dandi.nyummy.meal.repository.MealSnapshotRepository
@@ -20,6 +27,7 @@ class MealFoodService(
     private val mealSnapshotRepository: MealSnapshotRepository,
     private val mealFoodSnapshotRepository: MealFoodSnapshotRepository,
     private val mealFoodRepository: MealFoodRepository,
+    private val iconRepository: IconRepository,
 ) {
 
     /**
@@ -56,6 +64,69 @@ class MealFoodService(
         }
 
         return mealFoods
+    }
+
+    /**
+     * 식사의 음식 줄을 사용자가 보낸 목록으로 바꾼다. 목록 전체를 받고, 받은 순서가 목록 순서다(맨 앞이 대표 음식).
+     *
+     * - [MealFoodRequest.mealFoodId]가 있으면 그 줄을 고치고, 없으면 새 줄을 만든다. 요청에 없는 기존 줄은 지운다.
+     * - 이름이 바뀐 줄은 고정하지 않은 1인분 영양과 아이콘을 비운다([MealFood.updateName]). Worker가 새 이름으로 다시 구한다.
+     * - 인분만 바뀐 줄은 1인분 영양을 그대로 둔다. 줄 영양은 1인분 × 새 인분이 된다.
+     * - [MealFoodRequest.nutrition]을 채운 줄은 그 값을 인분으로 나눠 1인분으로 저장하고 고정한다.
+     * - [MealFoodRequest.iconId]를 채운 줄은 그 아이콘으로 고정한다.
+     *
+     * 영양을 다시 계산할 작업을 만들고 식사 상태를 바꾸는 일과 함께 커밋돼야 하므로 호출하는 쪽 트랜잭션에 합류한다.
+     *
+     * @param mealId 음식 줄을 바꿀 식사 ID
+     * @param mealFoodRequests 보낸 음식 줄 전체(순서대로)
+     * @return 바꾼 뒤의 음식 줄(순서대로)
+     * @throws BusinessException [CommonErrorCode.INVALID_INPUT_VALUE] 없는 아이콘 id가 있거나 같은 mealFoodId가 두 번 온 경우
+     * @throws BusinessException [MealErrorCode.MEAL_FOOD_NOT_FOUND] 이 식사의 줄이 아닌 mealFoodId가 있는 경우
+     */
+    @Transactional
+    fun updateMealFoods(mealId: Long, mealFoodRequests: List<MealFoodRequest>): List<MealFood> {
+        validateIconIds(mealFoodRequests)
+
+        val mealFoodsById = mealFoodRepository.findAllByMealIdOrderByDisplayOrderAsc(mealId).associateBy { it.id }
+        val requestedMealFoodIds = mealFoodRequests.mapNotNull { it.mealFoodId }
+        if (requestedMealFoodIds.distinct().size != requestedMealFoodIds.size) {
+            throw BusinessException(CommonErrorCode.INVALID_INPUT_VALUE)
+        }
+        if (!mealFoodsById.keys.containsAll(requestedMealFoodIds)) {
+            throw BusinessException(MealErrorCode.MEAL_FOOD_NOT_FOUND)
+        }
+
+        mealFoodRepository.deleteAllInBatch(mealFoodsById.values.filter { it.id !in requestedMealFoodIds })
+
+        val mealFoods = mealFoodRequests.mapIndexed { index, request ->
+            val mealFood = request.mealFoodId?.let { mealFoodsById.getValue(it) }
+                ?: MealFood(
+                    mealId = mealId,
+                    mealFoodSnapshotId = null,
+                    displayOrder = index + 1,
+                    name = request.name,
+                    portion = request.portion,
+                )
+            mealFood.updateDisplayOrder(index + 1)
+            mealFood.updateName(request.name)
+            mealFood.updatePortion(request.portion)
+            request.nutrition?.let {
+                mealFood.updateFixedServingNutrition(calculateServingNutrition(it.toNutrition(), request.portion))
+            }
+            request.iconId?.let { mealFood.updateFixedIconId(it) }
+
+            mealFood
+        }
+
+        return mealFoodRepository.saveAll(mealFoods)
+    }
+
+    /** 사용자가 고른 아이콘이 모두 있는 아이콘인지 본다. 없는 id는 음식 줄에 저장할 수 없다. */
+    private fun validateIconIds(mealFoodRequests: List<MealFoodRequest>) {
+        val iconIds = mealFoodRequests.mapNotNull { it.iconId }.toSet()
+        if (iconIds.isNotEmpty() && iconRepository.findAllById(iconIds).size != iconIds.size) {
+            throw BusinessException(CommonErrorCode.INVALID_INPUT_VALUE)
+        }
     }
 
     /**

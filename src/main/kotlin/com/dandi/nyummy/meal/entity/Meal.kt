@@ -120,6 +120,19 @@ class Meal(
         this.fat = nutrition.fat
     }
 
+    /**
+     * 식사 합계와 아이콘을 비운다. 음식 목록이 바뀌어 다시 계산해야 할 때 쓴다.
+     * 계산이 끝나지 않은 식사는 영양이 없어야 하루 목록과 합계에 옛 값이 섞이지 않는다.
+     * 대표 이름과 고양이 코멘트는 그대로 둔다.
+     */
+    fun resetNutrition() {
+        this.calory = null
+        this.carbs = null
+        this.protein = null
+        this.fat = null
+        this.iconId = null
+    }
+
     fun updateIconId(iconId: Long) {
         this.iconId = iconId
     }

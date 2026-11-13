@@ -171,3 +171,112 @@ Authorization: Bearer {{accessToken}}
 {
   "name": "스무 글자를 넘기려고 일부러 길게 쓴 대표 이름"
 }
+
+### 음식 목록 보내기 API v2 (그대로 보내기)
+# 목록 화면의 버튼이다. 고치지 않았어도 단건 조회에서 받은 foods의 mealFoodId·name·portion을 그대로 보낸다.
+# 기다리던 계산(5분 뒤)을 버리고 바로 계산한다. 응답의 status가 WAITING이면 분석 상태가 COMPLETED가 될 때까지 폴링한 뒤
+# 단건을 다시 조회하고, COMPLETED면 이미 계산이 끝난 것이므로 바로 단건을 다시 조회한다.
+# COMPLETED는 한 번 계산이 끝난 식사에서 새로 구할 값이 없을 때다(인분·순서만 바꿈, 줄을 지움, 영양·아이콘을 직접 적음).
+# 아래 @mealFoodId1·@mealFoodId2에 단건 조회의 foods[].mealFoodId를 넣는다.
+@mealFoodId1 = 1
+@mealFoodId2 = 2
+PUT {{url}}/api/v2/meals/{{mealIdV2}}/foods
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "foods": [
+    { "mealFoodId": {{mealFoodId1}}, "name": "불고기", "portion": 1.5 },
+    { "mealFoodId": {{mealFoodId2}}, "name": "잡곡밥", "portion": 1.0 }
+  ]
+}
+
+### 음식 목록 보내기 API v2 (이름·인분 고치기, 줄 추가, 순서 바꾸기)
+# 맨 위 줄이 대표 음식이고 그 줄의 아이콘이 식사 아이콘이 된다. 이름을 바꾼 줄은 영양과 아이콘을 다시 구한다.
+# mealFoodId가 null인 줄은 새 줄이다. 요청에 없는 기존 줄은 지워진다.
+PUT {{url}}/api/v2/meals/{{mealIdV2}}/foods
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "foods": [
+    { "mealFoodId": {{mealFoodId2}}, "name": "잡곡밥", "portion": 2.0 },
+    { "mealFoodId": {{mealFoodId1}}, "name": "제육볶음", "portion": 1.5 },
+    { "mealFoodId": null, "name": "김치", "portion": 0.5 }
+  ]
+}
+
+### 음식 목록 보내기 API v2 (영양·아이콘 직접 고치기)
+# nutrition을 채운 줄은 그 값으로 고정된다(1인분 = 값 ÷ 인분). iconId를 채운 줄은 그 아이콘으로 고정된다.
+# 고정된 줄은 이름을 바꿔도 다시 구하지 않는다. 단건 조회에서 isNutritionFixed가 true로 온다.
+PUT {{url}}/api/v2/meals/{{mealIdV2}}/foods
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "foods": [
+    {
+      "mealFoodId": {{mealFoodId1}},
+      "name": "불고기",
+      "portion": 1.5,
+      "nutrition": { "calory": 415, "carbs": 30, "protein": 27, "fat": 21 },
+      "iconId": 5
+    },
+    { "mealFoodId": {{mealFoodId2}}, "name": "잡곡밥", "portion": 1.0 }
+  ]
+}
+
+### [실패] 0.5 단위가 아닌 인분 → api.common.invalidInputValue
+PUT {{url}}/api/v2/meals/{{mealIdV2}}/foods
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "foods": [
+    { "mealFoodId": {{mealFoodId1}}, "name": "불고기", "portion": 1.3 }
+  ]
+}
+
+### [실패] 빈 목록 → api.common.invalidInputValue
+PUT {{url}}/api/v2/meals/{{mealIdV2}}/foods
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "foods": []
+}
+
+### [실패] 없는 아이콘 id → api.common.invalidInputValue
+PUT {{url}}/api/v2/meals/{{mealIdV2}}/foods
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "foods": [
+    { "mealFoodId": {{mealFoodId1}}, "name": "불고기", "portion": 1.5, "iconId": 999999 }
+  ]
+}
+
+### [실패] 이 식사의 줄이 아닌 mealFoodId → api.meal.mealFoodNotFound
+PUT {{url}}/api/v2/meals/{{mealIdV2}}/foods
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "foods": [
+    { "mealFoodId": 999999, "name": "불고기", "portion": 1.5 }
+  ]
+}
+
+### [실패] 아직 인식 중이거나 실패한 식사, V1 식사에 보내기 → api.meal.mealFoodsNotUpdatable
+# @notUpdatableMealId에 status가 RECOGNIZING·FAILED인 V2 식사나 V1 식사의 id를 넣는다.
+@notUpdatableMealId = 4
+PUT {{url}}/api/v2/meals/{{notUpdatableMealId}}/foods
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "foods": [
+    { "mealFoodId": null, "name": "불고기", "portion": 1.0 }
+  ]
+}

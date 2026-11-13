@@ -7,6 +7,7 @@ import com.dandi.nyummy.meal.dto.CreateMealResponse
 import com.dandi.nyummy.meal.dto.CreateMealV2Response
 import com.dandi.nyummy.meal.dto.DailyMealResponse
 import com.dandi.nyummy.meal.dto.DailyMealV2Response
+import com.dandi.nyummy.meal.dto.MealFoodNutritionRequest
 import com.dandi.nyummy.meal.dto.MealFoodResponse
 import com.dandi.nyummy.meal.dto.MealRecognitionOutcome
 import com.dandi.nyummy.meal.dto.MealResponse
@@ -63,6 +64,14 @@ fun Meal.toNutrition() = Nutrition(
     carbs = this.carbs ?: 0,
     protein = this.protein ?: 0,
     fat = this.fat ?: 0,
+)
+
+/** 사용자가 음식 한 줄에 직접 적어 보낸 줄 영양. */
+fun MealFoodNutritionRequest.toNutrition() = Nutrition(
+    calory = this.calory,
+    carbs = this.carbs,
+    protein = this.protein,
+    fat = this.fat,
 )
 
 /** 요청에 담긴 항목만 바꾸고, 생략한 항목은 [meal]의 지금 값을 그대로 둔 [Nutrition]을 만든다. */

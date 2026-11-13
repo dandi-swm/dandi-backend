@@ -110,19 +110,33 @@ class MealV2Controller(
     ): DailyMealsV2Response = mealService.getDailyMealsV2(user.userId, year, month, day)
 
     @Operation(
-        summary = "음식 목록 보내기 v2 (Stub)",
+        summary = "음식 목록 보내기 v2",
         description = "목록 화면의 버튼 하나로 음식 목록 전체(1~10줄)를 보낸다. 고치지 않았어도 같은 목록을 보낸다. " +
             "맨 위 줄이 대표 음식이다. 새로 추가한 줄은 mealFoodId를 null로, 요청에 없는 기존 줄은 삭제된다. " +
             "이름은 1~30자, 인분은 0.5~5.0, 0.5 단위다. " +
             "nutrition(칼로리 0~9999, 탄수화물·단백질·지방 0~999)과 iconId는 이번에 직접 고친 줄만 채운다. " +
-            "지금은 고정 응답으로 WAITING을 주고, 없는 아이콘 id는 가려내지 않는다.",
+            "채운 줄은 그 값으로 고정돼 이름을 바꿔도 다시 구하지 않는다. " +
+            "기다리던 계산은 버리고 받은 목록으로 다시 계산한다. 응답의 status가 WAITING이면 분석 상태를 폴링하고, " +
+            "COMPLETED면 이미 계산이 끝난 것이므로 바로 단건을 다시 조회한다. " +
+            "COMPLETED는 값을 새로 구할 것이 없을 때다(인분·순서만 바꿈, 줄을 지움, 영양·아이콘을 직접 적음. " +
+            "한 번 계산이 끝난 식사만). " +
+            "아직 인식 중(RECOGNIZING)이거나 실패(FAILED)한 식사, V1 식사는 받지 않는다.",
+    )
+    @ApiErrorCodes(
+        meal = [
+            MealErrorCode.MEAL_NOT_FOUND,
+            MealErrorCode.MEAL_FOODS_NOT_UPDATABLE,
+            MealErrorCode.MEAL_FOOD_NOT_FOUND,
+        ],
+        auth = [AuthErrorCode.FORBIDDEN],
     )
     @PutMapping("/{mealId}/foods")
     fun updateMealFoodsV2(
         @CurrentUser user: AuthUser,
         @Parameter(description = "식사 ID") @PathVariable("mealId") mealId: Long,
         @Valid @RequestBody request: UpdateMealFoodsRequest,
-    ): MealStatusResponse = mealService.updateMealFoodsV2(request)
+        @CurrentLanguage language: Language,
+    ): MealStatusResponse = mealService.updateMealFoodsV2(user.userId, mealId, request, language)
 
     @Operation(
         summary = "식사 이름 수정 v2",
