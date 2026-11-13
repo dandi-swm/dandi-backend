@@ -1,6 +1,7 @@
 package com.dandi.nyummy.meal.service
 
 import com.dandi.nyummy.meal.dto.MealRecognitionResult
+import com.dandi.nyummy.meal.dto.ServingNutritionResult
 import com.dandi.nyummy.meal.entity.MealFood
 import com.dandi.nyummy.meal.entity.MealFoodSnapshot
 import com.dandi.nyummy.meal.entity.MealSnapshot
@@ -20,6 +21,42 @@ class MealFoodService(
     private val mealFoodSnapshotRepository: MealFoodSnapshotRepository,
     private val mealFoodRepository: MealFoodRepository,
 ) {
+
+    /**
+     * 식사의 음식 줄을 목록 순서대로 조회한다. 맨 앞이 대표 음식이다.
+     *
+     * @param mealId 조회할 식사 ID
+     */
+    @Transactional(readOnly = true)
+    fun getMealFoods(mealId: Long): List<MealFood> = mealFoodRepository.findAllByMealIdOrderByDisplayOrderAsc(mealId)
+
+    /**
+     * 1인분 조회 결과를 식사의 음식 줄에 채운다. 비어 있는 값만 채운다.
+     *
+     * 1인분 영양이 이미 있는 줄(사용자가 영양을 고쳐 고정한 줄, 앞서 구한 줄)의 영양과, 아이콘이 이미 있는 줄(사용자가 고른 줄,
+     * 앞서 구한 줄)의 아이콘은 조회 결과가 있어도 덮지 않는다. 다시 구해야 하는 값은 음식 목록을 고칠 때 비워 둔다.
+     *
+     * 변경 감지로 저장하므로 호출하는 쪽 트랜잭션에 합류한다.
+     *
+     * @param mealId 영양을 계산하는 식사 ID
+     * @param servingNutritions 음식 줄 ID별 1인분 조회 결과. 조회하지 않은 줄은 없다
+     * @return 식사의 음식 줄 전체(순서대로). 조회 결과가 없는 줄도 담는다
+     */
+    @Transactional
+    fun updateServingNutritions(mealId: Long, servingNutritions: Map<Long, ServingNutritionResult>): List<MealFood> {
+        val mealFoods = mealFoodRepository.findAllByMealIdOrderByDisplayOrderAsc(mealId)
+        mealFoods.forEach { mealFood ->
+            val servingNutritionResult = servingNutritions[mealFood.id] ?: return@forEach
+            if (mealFood.servingNutrition == null) {
+                mealFood.updateServingNutrition(servingNutritionResult.servingNutrition)
+            }
+            if (mealFood.iconId == null) {
+                mealFood.updateIconId(servingNutritionResult.iconId)
+            }
+        }
+
+        return mealFoods
+    }
 
     /**
      * 인식 결과를 스냅샷(AI가 처음 낸 목록)과 음식 줄(사용자가 고치는 지금 값)로 저장한다.

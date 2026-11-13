@@ -7,8 +7,11 @@ import com.dandi.nyummy.meal.dto.MealFoodRecognitionResult
 import com.dandi.nyummy.meal.dto.MealRecognitionResult
 import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.dto.NutritionAnalysisResult
+import com.dandi.nyummy.meal.dto.ServingNutrition
+import com.dandi.nyummy.meal.dto.ServingNutritionResult
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.entity.MealAnalysisJob
+import com.dandi.nyummy.meal.entity.MealFood
 import com.dandi.nyummy.meal.enum.MealAnalysisJobCategory
 import com.dandi.nyummy.meal.enum.MealAnalysisVersion
 import com.dandi.nyummy.meal.enum.MealInputCategory
@@ -19,12 +22,15 @@ import com.dandi.nyummy.meal.repository.MealRepository
 import com.dandi.nyummy.meal.service.MealFoodService
 import com.dandi.nyummy.worker.config.WorkerJobProperties
 import com.dandi.nyummy.worker.config.WorkerProperties
+import com.dandi.nyummy.worker.dto.AnalysisMealFoodResult
+import com.dandi.nyummy.worker.dto.AnalysisMealResult
 import com.dandi.nyummy.worker.dto.AnalysisPushResult
 import com.dandi.nyummy.worker.dto.MealAnalysisJobResult
 import io.mockk.Runs
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
+import io.mockk.spyk
 import io.mockk.verify
 import io.mockk.verifyOrder
 import java.math.BigDecimal
@@ -32,8 +38,10 @@ import java.time.Clock
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneOffset
+import java.util.Optional
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -518,6 +526,214 @@ class MealAnalysisJobTransactionServiceTest {
         }
         verify(exactly = 0) { mealFoodService.createMealFoods(any(), any(), any()) }
         verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
+    }
+
+    // getAnalysisMeal·confirmMealNutrition
+
+    private val nutritionJob = leasedJob.copy(category = MealAnalysisJobCategory.NUTRITION)
+    private val bulgogiServingNutrition = createServingNutrition("350", "15.5", "25.25", "20")
+    private val riceServingNutrition = createServingNutrition("300", "65", "6", "1")
+
+    private fun createServingNutrition(calory: String, carbs: String, protein: String, fat: String) = ServingNutrition(
+        calory = BigDecimal(calory),
+        carbs = BigDecimal(carbs),
+        protein = BigDecimal(protein),
+        fat = BigDecimal(fat),
+    )
+
+    /** id가 생성자 밖의 val이라 mockk로 id만 흉내 내고, 나머지는 실제 엔티티 그대로 둔다. */
+    private fun createMealFood(
+        id: Long,
+        name: String,
+        portion: String,
+        servingNutrition: ServingNutrition? = null,
+        iconId: Long? = null,
+    ): MealFood = spyk(
+        MealFood(mealId = 0L, mealFoodSnapshotId = null, displayOrder = 1, name = name, portion = BigDecimal(portion)),
+    ).apply {
+        every { this@apply.id } returns id
+        if (servingNutrition != null) updateServingNutrition(servingNutrition)
+        if (iconId != null) updateIconId(iconId)
+    }
+
+    private fun createAnalyzingMeal(catComment: String? = null) = Meal(
+        status = MealStatus.ANALYZING,
+        imageKey = nutritionJob.imageKey,
+        mealAt = mealAt,
+        userId = userId,
+        analysisVersion = MealAnalysisVersion.V2,
+    ).apply {
+        updateName("불고기 백반")
+        updateInputCategory(MealInputCategory.PACKAGE)
+        if (catComment != null) updateCatComment(catComment)
+    }
+
+    /** 영양 작업이 아직 이 Worker의 것이고, 1인분을 채운 뒤의 음식 줄이 [mealFoods]다. */
+    private fun givenOwnedNutritionJob(meal: Meal, vararg mealFoods: MealFood) {
+        givenOwnedJob(meal)
+        every { mealFoodService.updateServingNutritions(any(), any()) } returns mealFoods.toList()
+    }
+
+    @Test
+    fun `영양을 계산할 식사를 음식 줄과 함께 값으로 읽는다`() {
+        every { mealRepository.findById(nutritionJob.mealId) } returns Optional.of(createAnalyzingMeal())
+        every { mealFoodService.getMealFoods(any()) } returns listOf(
+            createMealFood(101L, "불고기", "1.5"),
+            createMealFood(102L, "잡곡밥", "1.0", riceServingNutrition, iconId = 5L),
+        )
+
+        val analysisMeal = mealAnalysisJobTransactionService.getAnalysisMeal(nutritionJob)
+
+        assertEquals(
+            AnalysisMealResult(
+                userId = userId,
+                mealAt = mealAt,
+                inputCategory = MealInputCategory.PACKAGE,
+                hasCatComment = false,
+                mealFoods = listOf(
+                    AnalysisMealFoodResult(101L, "불고기", BigDecimal("1.5"), null, null),
+                    AnalysisMealFoodResult(102L, "잡곡밥", BigDecimal("1.0"), riceServingNutrition, 5L),
+                ),
+            ),
+            analysisMeal,
+        )
+    }
+
+    @Test
+    fun `이미 코멘트가 있는 식사는 코멘트가 있다고 알린다`() {
+        every { mealRepository.findById(nutritionJob.mealId) } returns
+            Optional.of(createAnalyzingMeal(catComment = "든든하게 먹었다냥"))
+        every { mealFoodService.getMealFoods(any()) } returns emptyList()
+
+        assertEquals(true, mealAnalysisJobTransactionService.getAnalysisMeal(nutritionJob)?.hasCatComment)
+    }
+
+    @Test
+    fun `영양을 계산할 식사 행이 없으면 null을 돌려준다`() {
+        every { mealRepository.findById(nutritionJob.mealId) } returns Optional.empty()
+
+        assertNull(mealAnalysisJobTransactionService.getAnalysisMeal(nutritionJob))
+    }
+
+    @Test
+    fun `영양을 확정할 때 다른 Worker가 가져갔거나 작업이 바뀌었으면 아무것도 쓰지 않고 null을 돌려준다`() {
+        givenLostJob()
+
+        val result = mealAnalysisJobTransactionService.confirmMealNutrition(nutritionJob, emptyMap(), "든든하게 먹었다냥")
+
+        assertNull(result)
+        verify(exactly = 0) { mealRepository.findMealWithLockById(any()) }
+        verify(exactly = 0) { mealFoodService.updateServingNutritions(any(), any()) }
+    }
+
+    @Test
+    fun `영양을 확정하면 조회 결과를 음식 줄에 채우게 하고 줄을 더한 합계를 식사에 저장한다`() {
+        val meal = createAnalyzingMeal()
+        val servingNutritions = mapOf(101L to ServingNutritionResult(bulgogiServingNutrition, 12L))
+        givenOwnedNutritionJob(
+            meal,
+            createMealFood(101L, "불고기", "1.5", bulgogiServingNutrition, iconId = 12L),
+            createMealFood(102L, "잡곡밥", "1.0", riceServingNutrition, iconId = 5L),
+        )
+
+        mealAnalysisJobTransactionService.confirmMealNutrition(nutritionJob, servingNutritions, null)
+
+        verify(exactly = 1) { mealFoodService.updateServingNutritions(meal.id, servingNutritions) }
+        // 350 × 1.5 + 300 = 825, 15.5 × 1.5 + 65 = 88.25 → 88, 25.25 × 1.5 + 6 = 43.875 → 44, 20 × 1.5 + 1 = 31
+        assertEquals(825, meal.calory)
+        assertEquals(88, meal.carbs)
+        assertEquals(44, meal.protein)
+        assertEquals(31, meal.fat)
+    }
+
+    @Test
+    fun `영양을 확정하면 식사 아이콘은 맨 위 줄의 아이콘이고 대표 이름은 그대로 둔다`() {
+        val meal = createAnalyzingMeal()
+        givenOwnedNutritionJob(
+            meal,
+            createMealFood(101L, "불고기", "1.5", bulgogiServingNutrition, iconId = 12L),
+            createMealFood(102L, "잡곡밥", "1.0", riceServingNutrition, iconId = 5L),
+        )
+
+        mealAnalysisJobTransactionService.confirmMealNutrition(nutritionJob, emptyMap(), null)
+
+        assertEquals(12L, meal.iconId)
+        assertEquals("불고기 백반", meal.name)
+    }
+
+    @Test
+    fun `맨 위 줄에 아이콘이 없으면 식사 아이콘은 기본 아이콘이다`() {
+        val meal = createAnalyzingMeal()
+        givenOwnedNutritionJob(meal, createMealFood(101L, "불고기", "1.5", bulgogiServingNutrition, iconId = null))
+
+        mealAnalysisJobTransactionService.confirmMealNutrition(nutritionJob, emptyMap(), null)
+
+        assertEquals(5L, meal.iconId)
+    }
+
+    @Test
+    fun `영양을 확정하면 COMPLETED로 바꾸고 고양이의 마지막 식사 시각을 갱신하며 알림 값을 돌려준다`() {
+        val meal = createAnalyzingMeal()
+        givenOwnedNutritionJob(meal, createMealFood(101L, "불고기", "1.5", bulgogiServingNutrition, iconId = 12L))
+
+        val result = mealAnalysisJobTransactionService.confirmMealNutrition(nutritionJob, emptyMap(), null)
+
+        assertEquals(MealStatus.COMPLETED, meal.status)
+        verify(exactly = 1) { catService.updateLastMealAt(userId, mealAt) }
+        assertEquals(
+            AnalysisPushResult(
+                mealId = meal.id,
+                userId = userId,
+                mealName = "불고기 백반",
+                status = MealStatus.COMPLETED,
+                isDeleted = false,
+            ),
+            result,
+        )
+    }
+
+    @Test
+    fun `코멘트가 없는 식사에는 새로 만든 코멘트를 저장한다`() {
+        val meal = createAnalyzingMeal()
+        givenOwnedNutritionJob(meal, createMealFood(101L, "불고기", "1.5", bulgogiServingNutrition, iconId = 12L))
+
+        mealAnalysisJobTransactionService.confirmMealNutrition(nutritionJob, emptyMap(), "든든하게 먹었다냥")
+
+        assertEquals("든든하게 먹었다냥", meal.catComment)
+    }
+
+    @Test
+    fun `이미 코멘트가 있는 식사는 새 코멘트가 와도 처음의 코멘트를 그대로 둔다`() {
+        // 코멘트를 만드는 사이 다른 계산이 먼저 끝나 코멘트를 저장한 경우
+        val meal = createAnalyzingMeal(catComment = "처음 코멘트다냥")
+        givenOwnedNutritionJob(meal, createMealFood(101L, "불고기", "1.5", bulgogiServingNutrition, iconId = 12L))
+
+        mealAnalysisJobTransactionService.confirmMealNutrition(nutritionJob, emptyMap(), "나중 코멘트다냥")
+
+        assertEquals("처음 코멘트다냥", meal.catComment)
+    }
+
+    @Test
+    fun `1인분 값이 없는 줄이 남아 있으면 예외를 던져 확정하지 않는다`() {
+        // 예외가 밖으로 나가야 @Transactional이 작업 삭제까지 롤백한다.
+        val meal = createAnalyzingMeal()
+        givenOwnedNutritionJob(meal, createMealFood(101L, "불고기", "1.5", servingNutrition = null))
+
+        assertFailsWith<IllegalStateException> {
+            mealAnalysisJobTransactionService.confirmMealNutrition(nutritionJob, emptyMap(), null)
+        }
+        assertEquals(MealStatus.ANALYZING, meal.status)
+    }
+
+    @Test
+    fun `음식 줄이 없으면 예외를 던져 확정하지 않는다`() {
+        val meal = createAnalyzingMeal()
+        givenOwnedNutritionJob(meal)
+
+        assertFailsWith<IllegalStateException> {
+            mealAnalysisJobTransactionService.confirmMealNutrition(nutritionJob, emptyMap(), null)
+        }
+        assertEquals(MealStatus.ANALYZING, meal.status)
     }
 
     // retryMealAnalysis·cancelMealAnalysis·failMealAnalysis

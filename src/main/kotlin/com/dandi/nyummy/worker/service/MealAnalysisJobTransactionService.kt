@@ -3,11 +3,15 @@ package com.dandi.nyummy.worker.service
 import com.dandi.nyummy.cat.repository.CatRepository
 import com.dandi.nyummy.cat.service.CatService
 import com.dandi.nyummy.language.enum.Language
+import com.dandi.nyummy.meal.calculator.calculateMealNutrition
 import com.dandi.nyummy.meal.dto.MealRecognitionResult
 import com.dandi.nyummy.meal.dto.NutritionAnalysisResult
+import com.dandi.nyummy.meal.dto.ServingNutritionResult
+import com.dandi.nyummy.meal.entity.Icon
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.entity.MealAnalysisJob
 import com.dandi.nyummy.meal.enum.MealAnalysisJobCategory
+import com.dandi.nyummy.meal.enum.MealInputCategory
 import com.dandi.nyummy.meal.enum.MealRecognitionCategory
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.repository.MealAnalysisJobRepository
@@ -16,6 +20,8 @@ import com.dandi.nyummy.meal.service.MealFoodService
 import com.dandi.nyummy.worker.config.ConditionalOnAnalysisWorkerEnabled
 import com.dandi.nyummy.worker.config.WorkerJobProperties
 import com.dandi.nyummy.worker.config.WorkerProperties
+import com.dandi.nyummy.worker.dto.AnalysisMealFoodResult
+import com.dandi.nyummy.worker.dto.AnalysisMealResult
 import com.dandi.nyummy.worker.dto.AnalysisPushResult
 import com.dandi.nyummy.worker.dto.MealAnalysisJobResult
 import org.slf4j.LoggerFactory
@@ -188,6 +194,75 @@ class MealAnalysisJobTransactionService(
         }
 
         return true
+    }
+
+    /**
+     * 영양 작업이 영양을 계산할 식사와 그 음식 줄을 읽는다. 1인분 조회와 코멘트는 이 값을 들고 트랜잭션 밖에서 한다.
+     *
+     * 여기서 읽은 뒤 사용자가 음식 목록을 다시 보내면 작업 행이 새로 만들어지므로, 이 값으로 계산한 결과는
+     * [confirmMealNutrition]이 쓰지 않고 버린다.
+     *
+     * @return 식사 행이 없으면 null
+     */
+    @Transactional(readOnly = true)
+    fun getAnalysisMeal(job: MealAnalysisJobResult): AnalysisMealResult? {
+        val meal = mealRepository.findById(job.mealId).orElse(null) ?: return null
+
+        return AnalysisMealResult(
+            userId = meal.userId,
+            mealAt = meal.mealAt,
+            // 음식 줄이 있는 식사는 인식을 거쳤으므로 유형이 있다. 없으면 가장 흔한 음식 사진으로 본다.
+            inputCategory = meal.inputCategory ?: MealInputCategory.FOOD_PHOTO,
+            hasCatComment = meal.catComment != null,
+            mealFoods = mealFoodService.getMealFoods(meal.id).map {
+                AnalysisMealFoodResult(
+                    mealFoodId = it.id,
+                    name = it.name,
+                    portion = it.portion,
+                    servingNutrition = it.servingNutrition,
+                    iconId = it.iconId,
+                )
+            },
+        )
+    }
+
+    /**
+     * 1인분 조회 결과를 음식 줄에 채우고, 식사의 합계와 아이콘을 저장해 COMPLETED로 확정한다. 작업은 지운다.
+     *
+     * 식사 합계는 모든 줄의 1인분 × 인분을 더한 값이고, 식사 아이콘은 맨 위 줄(대표 음식)의 아이콘이다.
+     * 코멘트는 식사에 아직 없을 때만 저장한다. 음식 목록을 고쳐 다시 계산해도 처음의 코멘트를 그대로 둔다.
+     * 고양이의 마지막 식사 시각을 갱신하는 방식은 [confirmMealAnalysis]와 같다.
+     *
+     * @param servingNutritions 음식 줄 ID별 1인분 조회 결과. 조회하지 않은 줄은 없다
+     * @param catComment 새로 만든 코멘트. 이미 코멘트가 있어 만들지 않았으면 null
+     * @return 알림에 쓸 값. 이 Worker의 작업이 아니면(lease가 만료됐거나 음식 목록을 다시 보내 작업이 바뀌었으면) null
+     * @throws IllegalStateException 음식 줄이 없거나 1인분 값이 없는 줄이 남은 경우. 트랜잭션이 롤백돼 작업이 남는다
+     */
+    @Transactional
+    fun confirmMealNutrition(
+        job: MealAnalysisJobResult,
+        servingNutritions: Map<Long, ServingNutritionResult>,
+        catComment: String?,
+    ): AnalysisPushResult? {
+        val meal = deleteJobAndGetMeal(job) ?: return null
+
+        val mealFoods = mealFoodService.updateServingNutritions(meal.id, servingNutritions)
+        check(mealFoods.isNotEmpty()) { "영양을 계산할 음식 줄이 없습니다: mealId=${meal.id}" }
+
+        meal.updateNutrition(calculateMealNutrition(mealFoods))
+        meal.updateIconId(mealFoods.first().iconId ?: Icon.DEFAULT_ID)
+        if (meal.catComment == null && catComment != null) {
+            meal.updateCatComment(catComment)
+        }
+        meal.updateStatus(MealStatus.COMPLETED)
+
+        if (catRepository.existsByUserId(meal.userId)) {
+            catService.updateLastMealAt(meal.userId, meal.mealAt)
+        } else {
+            logger.error("가입 시 생성되어야 할 고양이가 없어 마지막 식사 시각을 갱신하지 않습니다: userId={}", meal.userId)
+        }
+
+        return convertAnalysisPushResult(meal)
     }
 
     /**

@@ -120,6 +120,14 @@ class Meal(
         this.fat = nutrition.fat
     }
 
+    fun updateIconId(iconId: Long) {
+        this.iconId = iconId
+    }
+
+    fun updateCatComment(catComment: String) {
+        this.catComment = catComment
+    }
+
     fun updateDeletedAt(deletedAt: Instant) {
         this.deletedAt = deletedAt
     }

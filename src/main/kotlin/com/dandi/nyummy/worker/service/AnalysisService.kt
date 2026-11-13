@@ -1,22 +1,29 @@
 package com.dandi.nyummy.worker.service
 
 import com.dandi.nyummy.cat.repository.CatRepository
+import com.dandi.nyummy.cat.service.CatService
 import com.dandi.nyummy.config.AppLinkProperties
 import com.dandi.nyummy.infra.ai.AnalysisImageClient
 import com.dandi.nyummy.infra.ai.nutrition.AnalysisFailureCategory
 import com.dandi.nyummy.infra.ai.nutrition.AnalysisFailureException
 import com.dandi.nyummy.infra.ai.nutrition.NutritionAnalysisClient
+import com.dandi.nyummy.infra.ai.nutrition.ServingNutritionClient
 import com.dandi.nyummy.infra.ai.recognition.MealRecognitionClient
 import com.dandi.nyummy.infra.push.dto.PushMessage
 import com.dandi.nyummy.infra.push.dto.PushType
 import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.language.getMessage
+import com.dandi.nyummy.meal.calculator.calculateMealFoodNutrition
+import com.dandi.nyummy.meal.calculator.calculateTotalNutrition
 import com.dandi.nyummy.meal.config.MealProperties
+import com.dandi.nyummy.meal.dto.CatCommentMealFoodInput
+import com.dandi.nyummy.meal.dto.ServingNutritionResult
 import com.dandi.nyummy.meal.enum.MealAnalysisJobCategory
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.notification.NotificationId
 import com.dandi.nyummy.notification.service.NotificationService
 import com.dandi.nyummy.worker.config.ConditionalOnAnalysisWorkerEnabled
+import com.dandi.nyummy.worker.dto.AnalysisMealResult
 import com.dandi.nyummy.worker.dto.AnalysisPushResult
 import com.dandi.nyummy.worker.dto.MealAnalysisJobResult
 import io.micrometer.core.instrument.MeterRegistry
@@ -34,6 +41,8 @@ class AnalysisService(
     private val nutritionAnalysisClient: NutritionAnalysisClient,
     private val analysisImageClient: AnalysisImageClient,
     private val mealRecognitionClient: MealRecognitionClient,
+    private val servingNutritionClient: ServingNutritionClient,
+    private val catService: CatService,
     private val mealAnalysisJobTransactionService: MealAnalysisJobTransactionService,
     private val mealProperties: MealProperties,
     private val catRepository: CatRepository,
@@ -61,10 +70,11 @@ class AnalysisService(
 
     /**
      * Worker가 lease로 가져간 작업 한 건을 작업 종류에 맞게 처리하고 결과를 알린다. 실행기 스레드에서 돈다.
-     * 인식 작업은 음식을 인식해 음식 줄을 저장하고, 그 밖의 작업은 영양을 분석한다. 실패를 다루는 규칙은 종류와 상관없이 같다.
+     * 인식 작업은 음식을 인식해 음식 줄을 저장하고, 영양 작업은 음식 줄의 영양을 구해 식사를 완료하고,
+     * 종류가 없는 작업은 v1 분석을 한다. 실패를 다루는 규칙은 종류와 상관없이 같다.
      *
      * Gemini 호출은 트랜잭션 밖에서 하고, 결과는 [MealAnalysisJobTransactionService]의 짧은 트랜잭션으로 남긴다.
-     * - 성공하면 COMPLETED로 확정한다. 인식 작업은 음식 줄을 저장하고 영양 작업으로 넘긴다.
+     * - 성공하면 COMPLETED로 확정하고 알린다. 인식 작업은 음식 줄을 저장하고 영양 작업으로 넘기며 알리지 않는다.
      * - 요청 한도 초과·서버 오류·타임아웃처럼 일시적인 실패는 재시도할 수 있으면 대기로 되돌리고 알리지 않는다.
      * - 키·권한 같은 설정 오류는 시도 횟수를 쓰지 않고 잠시 뒤로 되돌리고 알리지 않는다. 설정을 고치면 그대로 처리된다.
      * - 그 밖의 실패(재시도를 다 쓴 일시적 실패, 음식 아님, 응답 해석 실패, 거부, 분류에 없는 예외)는 FAILED로 끝낸다.
@@ -77,10 +87,10 @@ class AnalysisService(
         val analyzedAt = Instant.now(clock)
 
         try {
-            if (job.category == MealAnalysisJobCategory.RECOGNITION) {
-                recognizeMeal(job, analyzedAt)
-            } else {
-                analyzeNutrition(job, analyzedAt)
+            when (job.category) {
+                MealAnalysisJobCategory.RECOGNITION -> recognizeMeal(job, analyzedAt)
+                MealAnalysisJobCategory.NUTRITION -> analyzeMealFoods(job, analyzedAt)
+                null -> analyzeNutrition(job, analyzedAt)
             }
         } catch (e: AnalysisFailureException) {
             handleAnalysisFailure(job, e, analyzedAt)
@@ -127,6 +137,83 @@ class AnalysisService(
         if (isConfirmed) {
             recordAnalysis(job, AnalysisOutcome.RECOGNIZED, null, analyzedAt)
         }
+    }
+
+    /**
+     * 음식 줄의 영양을 구해 식사를 COMPLETED로 확정하고 알린다. 인식한 뒤 기다린 시간이 지났거나 사용자가 음식 목록을 보냈을 때 돈다.
+     *
+     * 1인분 조회와 코멘트는 트랜잭션 밖에서 하고, 결과는 한 트랜잭션으로 저장한다. 그래서 COMPLETED인 식사에는 늘 코멘트가 있다.
+     * 코멘트는 식사에 아직 없을 때만 만든다. 만들지 못하면 [CatService.createCatComment]가 고정 문구를 돌려주므로
+     * 코멘트 때문에 영양 작업이 실패하지는 않는다.
+     */
+    private fun analyzeMealFoods(job: MealAnalysisJobResult, analyzedAt: Instant) {
+        val meal = mealAnalysisJobTransactionService.getAnalysisMeal(job)
+            ?: run {
+                logger.error("영양 작업의 식사가 없습니다: jobId={}, mealId={}", job.jobId, job.mealId)
+                return
+            }
+        if (meal.mealFoods.isEmpty()) {
+            throw AnalysisFailureException(
+                AnalysisFailureCategory.INVALID_REQUEST,
+                "영양을 계산할 음식 줄이 없습니다: mealId=${job.mealId}",
+            )
+        }
+
+        val servingNutritions = getServingNutritions(meal)
+        val catComment = if (meal.hasCatComment) null else createCatComment(meal, servingNutritions, job.language)
+
+        val pushResult = mealAnalysisJobTransactionService.confirmMealNutrition(job, servingNutritions, catComment)
+        if (pushResult != null) {
+            recordAnalysis(job, AnalysisOutcome.COMPLETED, null, analyzedAt)
+        }
+        sendAnalysisPush(pushResult, null, analyzedAt, job.language)
+    }
+
+    /**
+     * 1인분 영양이나 아이콘이 비어 있는 줄만 모아 한 번에 조회한다. 비어 있는 줄이 없으면 모델을 부르지 않는다.
+     * 인분만 바꾼 식사나 사용자가 영양과 아이콘을 모두 정한 식사가 그렇다.
+     *
+     * @return 음식 줄 ID별 조회 결과. 조회하지 않은 줄은 없다
+     */
+    private fun getServingNutritions(meal: AnalysisMealResult): Map<Long, ServingNutritionResult> {
+        val mealFoods = meal.mealFoods.filter { it.servingNutrition == null || it.iconId == null }
+        if (mealFoods.isEmpty()) {
+            return emptyMap()
+        }
+        val servingNutritionResults =
+            servingNutritionClient.getServingNutritions(mealFoods.map { it.name }, meal.inputCategory)
+
+        return mealFoods.map { it.mealFoodId }.zip(servingNutritionResults).toMap()
+    }
+
+    /**
+     * 저장하기 전의 값으로 줄 영양과 식사 합계를 먼저 구해 코멘트를 만든다.
+     * 줄에 이미 1인분 영양이 있으면 그 값을, 없으면 방금 조회한 값을 쓴다. 저장할 때 채우는 규칙과 같다.
+     */
+    private fun createCatComment(
+        meal: AnalysisMealResult,
+        servingNutritions: Map<Long, ServingNutritionResult>,
+        language: Language,
+    ): String {
+        val servings = meal.mealFoods.map { mealFood ->
+            val servingNutrition = mealFood.servingNutrition
+                ?: servingNutritions.getValue(mealFood.mealFoodId).servingNutrition
+            servingNutrition to mealFood.portion
+        }
+
+        return catService.createCatComment(
+            userId = meal.userId,
+            mealAt = meal.mealAt,
+            mealFoods = meal.mealFoods.zip(servings) { mealFood, (servingNutrition, portion) ->
+                CatCommentMealFoodInput(
+                    name = mealFood.name,
+                    portion = portion,
+                    nutrition = calculateMealFoodNutrition(servingNutrition, portion),
+                )
+            },
+            nutrition = calculateTotalNutrition(servings),
+            language = language,
+        )
     }
 
     /**

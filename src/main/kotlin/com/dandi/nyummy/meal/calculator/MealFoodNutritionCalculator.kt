@@ -21,6 +21,12 @@ fun calculateMealFoodNutrition(mealFood: MealFood): Nutrition? {
 }
 
 /**
+ * 1인분과 인분으로 구한 음식 한 줄의 영양. 아직 줄에 저장하지 않은 1인분 값으로 줄 영양을 미리 볼 때 쓴다.
+ */
+fun calculateMealFoodNutrition(servingNutrition: ServingNutrition, portion: BigDecimal): Nutrition =
+    calculateTotalNutrition(listOf(servingNutrition to portion))
+
+/**
  * 식사 합계. 줄마다 반올림하지 않고 1인분 × 인분을 소수로 더한 뒤 한 번만 반올림한다.
  * 그래서 [calculateMealFoodNutrition]으로 구한 줄 영양을 더한 값과 1 정도 다를 수 있다.
  *
@@ -49,8 +55,11 @@ fun calculateServingNutrition(nutrition: Nutrition, portion: BigDecimal): Servin
     fat = BigDecimal(nutrition.fat).divide(portion, SERVING_SCALE, RoundingMode.HALF_UP),
 )
 
-/** (1인분, 인분) 쌍들의 1인분 × 인분을 영양소별로 소수로 더한 뒤 정수로 반올림한다. */
-private fun calculateTotalNutrition(servings: List<Pair<ServingNutrition, BigDecimal>>): Nutrition {
+/**
+ * (1인분, 인분) 쌍들의 1인분 × 인분을 영양소별로 소수로 더한 뒤 정수로 반올림한다.
+ * 음식 줄에 저장하기 전의 값으로 식사 합계를 미리 볼 때는 이 함수를 바로 쓰고, 저장된 줄로는 [calculateMealNutrition]을 쓴다.
+ */
+fun calculateTotalNutrition(servings: List<Pair<ServingNutrition, BigDecimal>>): Nutrition {
     fun calculateTotal(nutrient: (ServingNutrition) -> BigDecimal): Int = servings
         .sumOf { (servingNutrition, portion) -> nutrient(servingNutrition) * portion }
         .setScale(0, RoundingMode.HALF_UP)
