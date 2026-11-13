@@ -1265,6 +1265,89 @@ class MealServiceTest {
         verify(exactly = 0) { mealRepository.findMealWithLockById(any()) }
     }
 
+    // deleteMealV2·cancelMealV2
+
+    @Test
+    fun `v2 식사를 지우면 프로필, 작업, 식사 순서로 잠그고 기다리던 작업을 지운 뒤 삭제 시각을 남긴다`() {
+        val meal = createMealV2(MealStatus.WAITING)
+        givenMealToUpdate(meal, jobId = 77L)
+
+        mealService.deleteMealV2(userId, mealId)
+
+        assertEquals(now, meal.deletedAt)
+        verifyOrder {
+            profileRepository.findProfileWithLockByUserId(userId)
+            mealAnalysisJobRepository.findIdByMealId(mealId)
+            mealAnalysisJobRepository.deleteMealAnalysisJobById(77L)
+            mealRepository.findMealWithLockById(mealId)
+        }
+    }
+
+    @Test
+    fun `기다리던 작업이 없는 v2 식사를 지우면 삭제 시각만 남긴다`() {
+        val meal = createCompletedMealV2()
+        givenMealToUpdate(meal, jobId = null)
+
+        mealService.deleteMealV2(userId, mealId)
+
+        assertEquals(now, meal.deletedAt)
+        verify(exactly = 0) { mealAnalysisJobRepository.deleteMealAnalysisJobById(any()) }
+    }
+
+    @Test
+    fun `v2 식사를 지워도 상태와 영양, 음식 줄은 그대로 둔다`() {
+        val meal = createCompletedMealV2()
+        givenMealToUpdate(meal)
+
+        mealService.deleteMealV2(userId, mealId)
+
+        assertEquals(MealStatus.COMPLETED, meal.status)
+        assertEquals(825, meal.calory)
+        verify(exactly = 0) { mealFoodService.updateMealFoods(any(), any()) }
+    }
+
+    @Test
+    fun `v2 경로로 지울 식사가 없거나 이미 지웠으면 MEAL_NOT_FOUND 예외를 던지고 삭제 시각을 바꾸지 않는다`() {
+        givenMealToUpdate(null)
+        assertBusinessException(MealErrorCode.MEAL_NOT_FOUND) { mealService.deleteMealV2(userId, mealId) }
+
+        val deletedAt = now.minusSeconds(5)
+        val deletedMeal = createCompletedMealV2().apply { updateDeletedAt(deletedAt) }
+        givenMealToUpdate(deletedMeal)
+        assertBusinessException(MealErrorCode.MEAL_NOT_FOUND) { mealService.deleteMealV2(userId, mealId) }
+
+        assertEquals(deletedAt, deletedMeal.deletedAt)
+    }
+
+    @Test
+    fun `다른 사용자의 식사를 v2 경로로 지우면 FORBIDDEN 예외를 던지고 지우지 않는다`() {
+        // 예외가 밖으로 나가야 @Transactional이 먼저 지운 작업까지 롤백한다.
+        val meal = createCompletedMealV2(ownerId = 2L)
+        givenMealToUpdate(meal, jobId = 77L)
+
+        assertBusinessException(AuthErrorCode.FORBIDDEN) { mealService.deleteMealV2(userId, mealId) }
+
+        assertNull(meal.deletedAt)
+    }
+
+    @Test
+    fun `기록을 취소하면 삭제와 같이 기다리던 작업을 지우고 삭제 시각을 남긴다`() {
+        val meal = createMealV2(MealStatus.WAITING)
+        givenMealToUpdate(meal, jobId = 77L)
+
+        mealService.cancelMealV2(userId, mealId)
+
+        assertEquals(now, meal.deletedAt)
+        verify(exactly = 1) { mealAnalysisJobRepository.deleteMealAnalysisJobById(77L) }
+    }
+
+    @Test
+    fun `취소할 식사가 없으면 MEAL_NOT_FOUND 예외를 던진다`() {
+        givenMealToUpdate(null)
+
+        assertBusinessException(MealErrorCode.MEAL_NOT_FOUND) { mealService.cancelMealV2(userId, mealId) }
+    }
+
     // getDailyMeals·getDailyMealsV2
 
     // 서울 2026-10-10 하루는 [10-09 15:00Z, 10-10 15:00Z)다.

@@ -420,9 +420,38 @@ class MealService(
     }
 
     /**
-     * v2 기록 취소. 지금은 Stub이라 아무것도 하지 않는다.
+     * v2 식사 기록을 소프트 삭제하고(deletedAt 기록) 기다리던 작업을 지운다.
+     *
+     * v1 삭제([deleteMeal])는 작업을 그대로 두고 Worker가 가져갈 때 지워진 식사의 작업을 지운다.
+     * v2는 영양 작업이 5분을 기다리므로 여기서 바로 지운다. 그 작업을 처리하던 Worker는 결과를 쓸 때 자기 행이 없어 결과를 버린다.
+     *
+     * 음식 줄과 스냅샷은 지우지 않는다. 하루 기록 횟수, 보상 상자, 연속 기록도 되돌리지 않는다.
+     *
+     * @param userId 삭제하는 사용자 ID
+     * @param mealId 삭제할 식사 ID
+     * @throws BusinessException [MealErrorCode.MEAL_NOT_FOUND] mealId에 해당하는 식사가 없거나, 삭제된 경우
+     * @throws BusinessException [AuthErrorCode.FORBIDDEN] mealId에 해당하는 userId가 아닌 경우
      */
-    fun cancelMealV2() = Unit
+    @Transactional
+    fun deleteMealV2(userId: Long, mealId: Long) {
+        val meal = deleteMealAnalysisJobAndGetMealWithLock(userId, mealId)
+
+        meal.updateDeletedAt(Instant.now(clock))
+    }
+
+    /**
+     * v2 식사 기록을 취소한다. 기록 직후 음식 목록 화면의 X 버튼이다.
+     *
+     * 지금은 삭제([deleteMealV2])와 하는 일이 같다. 나중에 취소에만 다른 동작을 넣을 수 있게 API와 메서드를 따로 둔다.
+     *
+     * @param userId 취소하는 사용자 ID
+     * @param mealId 취소할 식사 ID
+     * @throws BusinessException [deleteMealV2]와 같다
+     */
+    @Transactional
+    fun cancelMealV2(userId: Long, mealId: Long) {
+        deleteMealV2(userId, mealId)
+    }
 
     /**
      * 튜토리얼 식사를 기록하고 보상 상자 우편을 하나 만든다. 사용자당 한 번만 성공한다.

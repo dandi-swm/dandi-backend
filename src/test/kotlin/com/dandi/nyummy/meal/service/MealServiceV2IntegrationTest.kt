@@ -319,6 +319,35 @@ class MealServiceV2IntegrationTest @Autowired constructor(
         }
     }
 
+    @Test
+    fun `5분을 기다리던 식사를 지우면 작업 행이 사라지고 식사는 삭제 시각만 남으며 음식 줄은 그대로다`() {
+        val (meal, _) = createWaitingMeal("delete@nyummy.co.kr")
+        transactionTemplate.execute {
+            val job = mealAnalysisJobRepository.save(
+                MealAnalysisJob(mealId = meal.id, language = Language.KO, category = MealAnalysisJobCategory.NUTRITION),
+            )
+            mealAnalysisJobRepository.updateAvailableAt(job.id, NUTRITION_DELAY_SECONDS)
+        }
+
+        mealService.deleteMealV2(meal.userId, meal.id)
+
+        assertNull(findJob(meal.id))
+        val savedMeal = mealRepository.findById(meal.id).orElseThrow()
+        assertNotNull(savedMeal.deletedAt)
+        assertEquals(MealStatus.WAITING, savedMeal.status)
+        assertEquals(2, mealFoodRepository.findAllByMealIdOrderByDisplayOrderAsc(meal.id).size)
+    }
+
+    @Test
+    fun `작업 행이 없는 식사의 기록을 취소해도 삭제 시각이 남는다`() {
+        val (meal, _) = createCompletedMeal("cancel@nyummy.co.kr")
+
+        mealService.cancelMealV2(meal.userId, meal.id)
+
+        assertNotNull(mealRepository.findById(meal.id).orElseThrow().deletedAt)
+        assertNull(findJob(meal.id))
+    }
+
     /** [count]개의 스레드가 같은 순간에 [action]을 실행하게 하고, 실패한 것의 예외를 돌려준다. */
     private fun runConcurrently(count: Int, action: (index: Int) -> Unit): List<Throwable> {
         val startGate = CountDownLatch(1)

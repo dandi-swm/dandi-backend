@@ -152,16 +152,19 @@ class MealV2Controller(
     ): MealV2Response = mealService.updateMealNameV2(user.userId, mealId, request)
 
     @Operation(
-        summary = "식사 기록 취소 v2 (Stub)",
-        description = "기록 직후 음식 목록 화면의 X 버튼이다. 그 밖의 X는 삭제를 부른다. 지금은 아무것도 하지 않고 204를 준다.",
+        summary = "식사 기록 취소 v2",
+        description = "기록 직후 음식 목록 화면의 X 버튼이다. 그 밖의 X는 삭제를 부른다. " +
+            "식사를 삭제하고 기다리던 영양 계산을 없앤다. 하루 기록 횟수, 보상 상자, 연속 기록은 되돌리지 않는다. " +
+            "지금은 삭제와 하는 일이 같다.",
     )
     @ApiResponse(responseCode = "204", description = "취소 성공")
+    @ApiErrorCodes(meal = [MealErrorCode.MEAL_NOT_FOUND], auth = [AuthErrorCode.FORBIDDEN])
     @PostMapping("/{mealId}/cancel")
     fun cancelMealV2(
         @CurrentUser user: AuthUser,
         @Parameter(description = "식사 ID") @PathVariable("mealId") mealId: Long,
     ): ResponseEntity<Void> {
-        mealService.cancelMealV2()
+        mealService.cancelMealV2(user.userId, mealId)
         return ResponseEntity.noContent().build()
     }
 
@@ -173,7 +176,10 @@ class MealV2Controller(
         @Parameter(description = "조회 월 (1~12)") @RequestParam month: Int,
     ): MonthlyMealsResponse = mealService.getMonthlyMeals(user.userId, year, month)
 
-    @Operation(summary = "식사 삭제 v2", description = "v1과 같다.")
+    @Operation(
+        summary = "식사 삭제 v2",
+        description = "식사를 삭제하고 기다리던 영양 계산을 없앤다. 하루 기록 횟수, 보상 상자, 연속 기록은 되돌리지 않는다.",
+    )
     @ApiResponse(responseCode = "204", description = "삭제 성공")
     @ApiErrorCodes(meal = [MealErrorCode.MEAL_NOT_FOUND], auth = [AuthErrorCode.FORBIDDEN])
     @DeleteMapping("/{mealId}")
@@ -181,7 +187,7 @@ class MealV2Controller(
         @CurrentUser user: AuthUser,
         @Parameter(description = "식사 ID") @PathVariable("mealId") mealId: Long,
     ): ResponseEntity<Void> {
-        mealService.deleteMeal(user.userId, mealId)
+        mealService.deleteMealV2(user.userId, mealId)
         return ResponseEntity.noContent().build()
     }
 

@@ -280,3 +280,18 @@ Authorization: Bearer {{accessToken}}
     { "mealFoodId": null, "name": "불고기", "portion": 1.0 }
   ]
 }
+
+### 식사 기록 취소 API v2
+# 기록 직후 음식 목록 화면의 X 버튼이다. 식사를 삭제하고 기다리던 영양 계산을 없앤다.
+# 하루 기록 횟수, 보상 상자, 연속 기록은 되돌아가지 않는다. 응답은 204이고 본문이 없다.
+POST {{url}}/api/v2/meals/{{mealIdV2}}/cancel
+Authorization: Bearer {{accessToken}}
+
+### 식사 삭제 API v2
+# 기록 취소와 하는 일이 같다. 지운 뒤 단건 조회는 api.meal.notFound다.
+DELETE {{url}}/api/v2/meals/{{mealIdV2}}
+Authorization: Bearer {{accessToken}}
+
+### [실패] 이미 지운 식사를 다시 삭제 → api.meal.notFound
+DELETE {{url}}/api/v2/meals/{{mealIdV2}}
+Authorization: Bearer {{accessToken}}
