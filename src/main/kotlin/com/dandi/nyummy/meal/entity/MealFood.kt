@@ -1,5 +1,6 @@
 package com.dandi.nyummy.meal.entity
 
+import com.dandi.nyummy.meal.dto.ServingNutrition
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.EntityListeners
@@ -78,6 +79,17 @@ class MealFood(
     @LastModifiedDate
     @Column(name = "updated_at", nullable = false)
     var updatedAt: Instant = Instant.now()
+
+    /** 1인분 영양. 넷 중 하나라도 없으면 아직 구하지 않은 줄이라 null이다. */
+    val servingNutrition: ServingNutrition?
+        get() {
+            return ServingNutrition(
+                calory = servingCalory ?: return null,
+                carbs = servingCarbs ?: return null,
+                protein = servingProtein ?: return null,
+                fat = servingFat ?: return null,
+            )
+        }
 
     companion object {
         /** 식사 하나에 둘 수 있는 최대 줄 수 */
