@@ -326,14 +326,11 @@ class MealV2E2eTest {
                 "거부된 줄 수정이 음식 줄을 바꿨습니다",
             )
 
-            // 17. 줄의 이름을 고치면 그 줄의 영양과 아이콘을 새 이름으로 다시 구한다. Worker가 계산하는 동안 식사는 COMPLETED가 아니다.
+            // 17. 줄의 이름을 고치면 그 줄의 영양과 아이콘을 새 이름으로 다시 구한다. Worker가 계산을 끝낼 때까지 기다린다.
+            // 고친 직후의 상태(WAITING·ANALYZING)는 확인하지 않는다. Worker가 그사이 계산을 끝내면 이미 COMPLETED다.
             val renamedFoodName =
                 if (portionPatchedFoods.first()["name"] == RENAMED_FOOD_NAME) ADDED_FOOD_NAME else RENAMED_FOOD_NAME
             updateMealFood(mealId, patchedFoodId, mapOf("name" to renamedFoodName))
-            assertTrue(
-                getAnalysisStatus(mealId) in setOf("WAITING", "ANALYZING"),
-                "이름을 고쳤는데 다시 계산을 시작하지 않았습니다(mealId=$mealId)",
-            )
             assertEquals(
                 "COMPLETED",
                 waitForStatus(mealId, setOf("COMPLETED", "FAILED")),
