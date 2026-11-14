@@ -2,6 +2,7 @@ package com.dandi.nyummy.meal.service
 
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.AuthErrorCode
+import com.dandi.nyummy.exception.errorcode.CommonErrorCode
 import com.dandi.nyummy.exception.errorcode.MealErrorCode
 import com.dandi.nyummy.exception.errorcode.UserErrorCode
 import com.dandi.nyummy.image.enum.ImagePurpose
@@ -16,17 +17,25 @@ import com.dandi.nyummy.meal.calculator.pickRewardBox
 import com.dandi.nyummy.meal.config.MealProperties
 import com.dandi.nyummy.meal.dto.CreateMealRequest
 import com.dandi.nyummy.meal.dto.CreateMealResponse
+import com.dandi.nyummy.meal.dto.CreateMealV2Response
+import com.dandi.nyummy.meal.dto.DailyMealV2Response
 import com.dandi.nyummy.meal.dto.DailyMealsResponse
+import com.dandi.nyummy.meal.dto.DailyMealsV2Response
 import com.dandi.nyummy.meal.dto.DailyNutritionResponse
+import com.dandi.nyummy.meal.dto.MealFoodResponse
 import com.dandi.nyummy.meal.dto.MealResponse
 import com.dandi.nyummy.meal.dto.MealStatusResponse
+import com.dandi.nyummy.meal.dto.MealV2Response
 import com.dandi.nyummy.meal.dto.MonthlyMealDayResponse
 import com.dandi.nyummy.meal.dto.MonthlyMealsResponse
 import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.dto.TodayMealSummaryResponse
+import com.dandi.nyummy.meal.dto.UpdateMealFoodsRequest
+import com.dandi.nyummy.meal.dto.UpdateMealNameRequest
 import com.dandi.nyummy.meal.dto.UpdateMealNutritionRequest
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.entity.MealAnalysisJob
+import com.dandi.nyummy.meal.enum.MealAnalysisVersion
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.mapper.toCreateMealResponse
 import com.dandi.nyummy.meal.mapper.toDailyMealResponse
@@ -40,6 +49,7 @@ import com.dandi.nyummy.user.repository.ProfileRepository
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.math.BigDecimal
 import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
@@ -135,6 +145,138 @@ class MealService(
 
         return meal.toCreateMealResponse(rewardBox.category)
     }
+
+    /**
+     * v2 식사 기록. 지금은 고정 응답(Stub)이다. 실제 인식·저장 없이 5초 안에 인식된 경우의 값을 돌려준다.
+     *
+     * DB를 건드리지 않으므로 id는 실제 식사가 아니고, 보상 우편·연속 기록·하루 기록 횟수도 바뀌지 않는다.
+     * dev에만 배포하고 실제 구현이 들어오면 바꾼다.
+     */
+    fun createMealV2(): CreateMealV2Response = CreateMealV2Response(
+        id = 2L,
+        status = MealStatus.WAITING,
+        rewardBoxCategory = RewardBoxCategory.BRONZE,
+        name = "제육볶음 정식",
+        foods = listOf(
+            MealFoodResponse(
+                mealFoodId = 11L,
+                name = "제육볶음",
+                portion = BigDecimal("1.0"),
+                nutrition = null,
+                isNutritionFixed = false,
+                iconId = null,
+            ),
+            MealFoodResponse(
+                mealFoodId = 12L,
+                name = "밥",
+                portion = BigDecimal("1.0"),
+                nutrition = null,
+                isNutritionFixed = false,
+                iconId = null,
+            ),
+        ),
+    )
+
+    /**
+     * v2 분석 상태 조회. 지금은 고정 응답(Stub)으로 계산이 끝난 상태를 준다.
+     */
+    fun getMealStatusV2(): MealStatusResponse = MealStatusResponse(id = 2L, status = MealStatus.COMPLETED)
+
+    /**
+     * v2 식사 단건 조회. 지금은 고정 응답(Stub)으로 계산이 끝난 V2 식사를 준다.
+     *
+     * @param name 대표 이름. 이름 수정 Stub이 받은 이름을 넣어 돌려줄 때 쓴다
+     */
+    fun getMealV2(name: String = "제육볶음 정식"): MealV2Response = MealV2Response(
+        mealId = 2L,
+        analysisVersion = MealAnalysisVersion.V2,
+        name = name,
+        mealAt = Instant.parse("2026-11-13T03:10:00Z"),
+        status = MealStatus.COMPLETED,
+        nutrition = Nutrition(calory = 726, carbs = 82, protein = 34, fat = 29),
+        imageUrl = "https://cdn.nyummy.co.kr/stub/meal.jpg",
+        canCreateAnalysisFeedback = true,
+        catComment = "탄수화물은 넉넉한데 단백질이 조금 아쉽다냥. 저녁엔 두부조림 어때?",
+        iconId = 3L,
+        foods = listOf(
+            MealFoodResponse(
+                mealFoodId = 11L,
+                name = "제육볶음",
+                portion = BigDecimal("1.5"),
+                nutrition = Nutrition(calory = 416, carbs = 14, protein = 27, fat = 28),
+                isNutritionFixed = false,
+                iconId = 3L,
+            ),
+            MealFoodResponse(
+                mealFoodId = 12L,
+                name = "밥",
+                portion = BigDecimal("1.0"),
+                nutrition = Nutrition(calory = 310, carbs = 68, protein = 7, fat = 1),
+                isNutritionFixed = false,
+                iconId = 5L,
+            ),
+        ),
+    )
+
+    /**
+     * v2 하루 식사 목록. 지금은 고정 응답(Stub)으로 날짜와 상관없이 V2 식사와 V1 식사를 하나씩 준다.
+     */
+    fun getDailyMealsV2(): DailyMealsV2Response = DailyMealsV2Response(
+        date = LocalDate.of(2026, 11, 13),
+        meals = listOf(
+            DailyMealV2Response(
+                mealId = 2L,
+                analysisVersion = MealAnalysisVersion.V2,
+                name = "제육볶음 정식",
+                mealAt = Instant.parse("2026-11-13T03:10:00Z"),
+                calory = 726,
+                carbs = 82,
+                protein = 34,
+                fat = 29,
+                status = MealStatus.COMPLETED,
+                iconId = 3L,
+            ),
+            DailyMealV2Response(
+                mealId = 1L,
+                analysisVersion = MealAnalysisVersion.V1,
+                name = "토스트",
+                mealAt = Instant.parse("2026-11-12T23:20:00Z"),
+                calory = 320,
+                carbs = 40,
+                protein = 10,
+                fat = 12,
+                status = MealStatus.COMPLETED,
+                iconId = 5L,
+            ),
+        ),
+        dailyNutrition = DailyNutritionResponse(
+            current = Nutrition(calory = 1046, carbs = 122, protein = 44, fat = 41),
+            target = Nutrition(calory = 2000, carbs = 300, protein = 60, fat = 55),
+        ),
+    )
+
+    /**
+     * v2 음식 목록 보내기. 지금은 고정 응답(Stub)이다. 인분이 0.5 단위인지만 검사하고, 다시 계산을 기다리는 상태를 준다.
+     * 줄 수·이름 길이·인분 범위·영양 범위는 요청 DTO가 검사한다. DB를 보지 않으므로 없는 식사·음식 줄·아이콘 id는 가려내지 않는다.
+     *
+     * @throws BusinessException [CommonErrorCode.INVALID_INPUT_VALUE] 인분이 0.5 단위가 아닌 경우
+     */
+    fun updateMealFoodsV2(request: UpdateMealFoodsRequest): MealStatusResponse {
+        if (request.foods.any { it.portion.remainder(BigDecimal("0.5")).signum() != 0 }) {
+            throw BusinessException(CommonErrorCode.INVALID_INPUT_VALUE)
+        }
+        return MealStatusResponse(id = 2L, status = MealStatus.WAITING)
+    }
+
+    /**
+     * v2 대표 이름 수정. 지금은 고정 응답(Stub)으로 받은 이름을 넣은 단건 모양을 준다.
+     */
+    fun updateMealNameV2(request: UpdateMealNameRequest): MealV2Response = getMealV2(request.name)
+
+    /**
+     * v2 기록 취소. 지금은 Stub이라 아무것도 하지 않는다.
+     */
+    fun cancelMealV2() = Unit
 
     /**
      * 튜토리얼 식사를 기록하고 보상 상자 우편을 하나 만든다. 사용자당 한 번만 성공한다.
