@@ -2,6 +2,7 @@ package com.dandi.nyummy.meal.service
 
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.AuthErrorCode
+import com.dandi.nyummy.exception.errorcode.CommonErrorCode
 import com.dandi.nyummy.exception.errorcode.ErrorCode
 import com.dandi.nyummy.exception.errorcode.MealErrorCode
 import com.dandi.nyummy.exception.errorcode.UserErrorCode
@@ -19,14 +20,21 @@ import com.dandi.nyummy.meal.config.RewardBoxProperties
 import com.dandi.nyummy.meal.config.TutorialRewardBoxProperties
 import com.dandi.nyummy.meal.dto.CreateMealRequest
 import com.dandi.nyummy.meal.dto.MealFoodRecognitionResult
+import com.dandi.nyummy.meal.dto.MealFoodRequest
+import com.dandi.nyummy.meal.dto.MealFoodResponse
 import com.dandi.nyummy.meal.dto.MealRecognitionOutcome
 import com.dandi.nyummy.meal.dto.MealRecognitionResult
 import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.dto.NutritionAnalysisResult
 import com.dandi.nyummy.meal.dto.RewardBoxResult
+import com.dandi.nyummy.meal.dto.ServingNutrition
+import com.dandi.nyummy.meal.dto.UpdateMealFoodsRequest
+import com.dandi.nyummy.meal.dto.UpdateMealNameRequest
 import com.dandi.nyummy.meal.dto.UpdateMealNutritionRequest
 import com.dandi.nyummy.meal.entity.Meal
+import com.dandi.nyummy.meal.entity.MealAnalysisJob
 import com.dandi.nyummy.meal.entity.MealFood
+import com.dandi.nyummy.meal.enum.MealAnalysisJobCategory
 import com.dandi.nyummy.meal.enum.MealAnalysisVersion
 import com.dandi.nyummy.meal.enum.MealInputCategory
 import com.dandi.nyummy.meal.enum.MealRecognitionDeferralCategory
@@ -48,6 +56,7 @@ import java.math.BigDecimal
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneOffset
 import kotlin.random.Random
 import kotlin.test.Test
@@ -85,6 +94,7 @@ class MealServiceTest {
     private val analysisFeedbackService = mockk<AnalysisFeedbackService>()
     private val mealTransactionService = mockk<MealTransactionService>()
     private val mealRecognitionService = mockk<MealRecognitionService>()
+    private val mealFoodService = mockk<MealFoodService>()
     private val random = mockk<Random>()
     private val mailService = mockk<MailService>()
 
@@ -114,6 +124,7 @@ class MealServiceTest {
         analysisFeedbackService = analysisFeedbackService,
         mealTransactionService = mealTransactionService,
         mealRecognitionService = mealRecognitionService,
+        mealFoodService = mealFoodService,
         random = random,
         mailService = mailService,
     )
@@ -798,5 +809,716 @@ class MealServiceTest {
         assertBusinessException(AuthErrorCode.FORBIDDEN) { mealService.deleteMeal(userId, mealId) }
 
         assertNull(meal.deletedAt)
+    }
+
+    // getMealV2
+
+    private fun createMealV2(status: MealStatus, ownerId: Long = userId) = Meal(
+        status = status,
+        imageKey = imageKey,
+        mealAt = now,
+        userId = ownerId,
+        analysisVersion = MealAnalysisVersion.V2,
+    )
+
+    private fun givenMeal(meal: Meal, canCreateAnalysisFeedback: Boolean = false) {
+        every { mealRepository.findMealByIdAndDeletedAtIsNull(mealId) } returns meal
+        every { imageService.createImageUrl(imageKey) } returns "https://image"
+        every { analysisFeedbackService.canCreateAnalysisFeedback(meal) } returns canCreateAnalysisFeedback
+    }
+
+    @Test
+    fun `v2 단건은 계산이 끝난 식사의 합계와 코멘트, 음식 줄의 영양과 아이콘을 순서대로 준다`() {
+        val meal = createMealV2(MealStatus.COMPLETED).apply {
+            updateName("불고기 백반")
+            updateNutrition(Nutrition(calory = 825, carbs = 88, protein = 44, fat = 31))
+            updateIconId(12L)
+            updateCatComment("든든하게 먹었다냥")
+        }
+        givenMeal(meal, canCreateAnalysisFeedback = true)
+        every { mealFoodService.getMealFoods(meal.id) } returns listOf(
+            MealFood(
+                mealId = meal.id,
+                mealFoodSnapshotId = 11L,
+                displayOrder = 1,
+                name = "불고기",
+                portion = BigDecimal("1.5"),
+            ).apply {
+                updateServingNutrition(
+                    ServingNutrition(BigDecimal("350"), BigDecimal("15.5"), BigDecimal("25.25"), BigDecimal("20")),
+                )
+                updateIconId(12L)
+                isNutritionFixed = true
+            },
+            MealFood(
+                mealId = meal.id,
+                mealFoodSnapshotId = 12L,
+                displayOrder = 2,
+                name = "잡곡밥",
+                portion = BigDecimal("1.0"),
+            ).apply {
+                updateServingNutrition(
+                    ServingNutrition(BigDecimal("300"), BigDecimal("65"), BigDecimal("6"), BigDecimal("1")),
+                )
+                updateIconId(5L)
+            },
+        )
+
+        val response = mealService.getMealV2(userId, mealId)
+
+        assertEquals(MealAnalysisVersion.V2, response.analysisVersion)
+        assertEquals("불고기 백반", response.name)
+        assertEquals(MealStatus.COMPLETED, response.status)
+        assertEquals(Nutrition(calory = 825, carbs = 88, protein = 44, fat = 31), response.nutrition)
+        assertEquals(12L, response.iconId)
+        assertEquals("든든하게 먹었다냥", response.catComment)
+        assertEquals("https://image", response.imageUrl)
+        assertEquals(true, response.canCreateAnalysisFeedback)
+        assertEquals(
+            listOf(
+                // 350 × 1.5 = 525, 15.5 × 1.5 = 23.25 → 23, 25.25 × 1.5 = 37.875 → 38, 20 × 1.5 = 30
+                MealFoodResponse(0L, "불고기", BigDecimal("1.5"), Nutrition(525, 23, 38, 30), true, 12L),
+                MealFoodResponse(0L, "잡곡밥", BigDecimal("1.0"), Nutrition(300, 65, 6, 1), false, 5L),
+            ),
+            response.foods,
+        )
+    }
+
+    @Test
+    fun `v2 단건은 영양 계산을 기다리는 식사의 음식 줄을 영양과 아이콘 없이 준다`() {
+        val meal = createMealV2(MealStatus.WAITING).apply { updateName("불고기 백반") }
+        givenMeal(meal)
+        every { mealFoodService.getMealFoods(meal.id) } returns recognizedMealFoods
+
+        val response = mealService.getMealV2(userId, mealId)
+
+        assertEquals(Nutrition.ZERO, response.nutrition)
+        assertNull(response.iconId)
+        assertNull(response.catComment)
+        assertEquals(listOf("불고기", "잡곡밥"), response.foods?.map { it.name })
+        assertTrue(response.foods.orEmpty().all { it.nutrition == null && it.iconId == null })
+    }
+
+    @Test
+    fun `v2 단건은 음식 줄이 없는 식사면 foods가 null이다`() {
+        // 아직 인식 중인 식사와 음식이 아닌 식사
+        listOf(MealStatus.RECOGNIZING, MealStatus.FAILED).forEach { status ->
+            val meal = createMealV2(status)
+            givenMeal(meal)
+            every { mealFoodService.getMealFoods(meal.id) } returns emptyList()
+
+            assertNull(mealService.getMealV2(userId, mealId).foods)
+        }
+    }
+
+    @Test
+    fun `v2 단건은 V1 식사면 분석 버전이 V1이고 음식 줄을 조회하지 않으며 foods가 null이다`() {
+        val meal = givenAnalyzedMeal()
+        givenMeal(meal)
+
+        val response = mealService.getMealV2(userId, mealId)
+
+        assertEquals(MealAnalysisVersion.V1, response.analysisVersion)
+        assertEquals("김밥", response.name)
+        assertEquals(analyzedNutrition, response.nutrition)
+        assertNull(response.foods)
+        verify(exactly = 0) { mealFoodService.getMealFoods(any()) }
+    }
+
+    @Test
+    fun `v2 단건도 식사가 없거나 삭제됐으면 MEAL_NOT_FOUND 예외를 던진다`() {
+        every { mealRepository.findMealByIdAndDeletedAtIsNull(mealId) } returns null
+
+        assertBusinessException(MealErrorCode.MEAL_NOT_FOUND) { mealService.getMealV2(userId, mealId) }
+    }
+
+    @Test
+    fun `v2 단건도 다른 사용자의 식사면 FORBIDDEN 예외를 던지고 음식 줄을 조회하지 않는다`() {
+        givenMeal(createMealV2(MealStatus.COMPLETED, ownerId = 2L))
+
+        assertBusinessException(AuthErrorCode.FORBIDDEN) { mealService.getMealV2(userId, mealId) }
+        verify(exactly = 0) { mealFoodService.getMealFoods(any()) }
+    }
+
+    // updateMealNameV2
+
+    private fun givenLockedMeal(meal: Meal) {
+        every { mealRepository.findMealWithLockById(mealId) } returns meal
+        every { imageService.createImageUrl(imageKey) } returns "https://image"
+        every { analysisFeedbackService.canCreateAnalysisFeedback(meal) } returns false
+    }
+
+    @Test
+    fun `대표 이름을 바꾸면 잠가 읽은 식사의 이름만 바뀌고 음식 줄과 영양은 그대로인 단건을 돌려준다`() {
+        val meal = createMealV2(MealStatus.COMPLETED).apply {
+            updateName("불고기 백반")
+            updateNutrition(Nutrition(calory = 825, carbs = 88, protein = 44, fat = 31))
+        }
+        givenLockedMeal(meal)
+        every { mealFoodService.getMealFoods(meal.id) } returns recognizedMealFoods
+
+        val response = mealService.updateMealNameV2(userId, mealId, UpdateMealNameRequest(name = "점심 불고기"))
+
+        assertEquals("점심 불고기", meal.name)
+        assertEquals("점심 불고기", response.name)
+        assertEquals(MealStatus.COMPLETED, response.status)
+        assertEquals(Nutrition(calory = 825, carbs = 88, protein = 44, fat = 31), response.nutrition)
+        assertEquals(listOf("불고기", "잡곡밥"), response.foods?.map { it.name })
+    }
+
+    @Test
+    fun `V1 식사의 대표 이름도 v2 경로로 바꿀 수 있고 응답의 분석 버전은 V1이다`() {
+        val meal = givenAnalyzedMeal()
+
+        val response = mealService.updateMealNameV2(userId, mealId, UpdateMealNameRequest(name = "참치김밥"))
+
+        assertEquals("참치김밥", meal.name)
+        assertEquals(MealAnalysisVersion.V1, response.analysisVersion)
+        assertNull(response.foods)
+    }
+
+    @Test
+    fun `대표 이름을 바꿀 식사가 없거나 삭제됐으면 MEAL_NOT_FOUND 예외를 던진다`() {
+        every { mealRepository.findMealWithLockById(mealId) } returns null
+        assertBusinessException(MealErrorCode.MEAL_NOT_FOUND) {
+            mealService.updateMealNameV2(userId, mealId, UpdateMealNameRequest(name = "점심"))
+        }
+
+        val deletedMeal = createMealV2(MealStatus.COMPLETED).apply { updateDeletedAt(now) }
+        every { mealRepository.findMealWithLockById(mealId) } returns deletedMeal
+        assertBusinessException(MealErrorCode.MEAL_NOT_FOUND) {
+            mealService.updateMealNameV2(userId, mealId, UpdateMealNameRequest(name = "점심"))
+        }
+    }
+
+    @Test
+    fun `다른 사용자의 식사면 대표 이름을 바꾸지 않고 FORBIDDEN 예외를 던진다`() {
+        val meal = createMealV2(MealStatus.COMPLETED, ownerId = 2L).apply { updateName("불고기 백반") }
+        givenLockedMeal(meal)
+
+        assertBusinessException(AuthErrorCode.FORBIDDEN) {
+            mealService.updateMealNameV2(userId, mealId, UpdateMealNameRequest(name = "점심"))
+        }
+
+        assertEquals("불고기 백반", meal.name)
+    }
+
+    // updateMealFoodsV2
+
+    private val foodsRequest = UpdateMealFoodsRequest(
+        foods = listOf(MealFoodRequest(mealFoodId = 1L, name = "불고기", portion = BigDecimal("1.5"))),
+    )
+
+    /** 1인분과 아이콘이 채워진 줄. 다시 구할 값이 없다. */
+    private fun createFilledMealFood(name: String, portion: String, calory: String, iconId: Long) = MealFood(
+        mealId = 0L,
+        mealFoodSnapshotId = null,
+        displayOrder = 1,
+        name = name,
+        portion = BigDecimal(portion),
+    ).apply {
+        updateServingNutrition(
+            ServingNutrition(BigDecimal(calory), BigDecimal("10"), BigDecimal("20"), BigDecimal("4")),
+        )
+        updateIconId(iconId)
+    }
+
+    /**
+     * 프로필이 있고, 식사의 기다리던 작업이 [jobId](없으면 null)이며, 잠가 읽은 식사가 [meal]이다.
+     *
+     * @param mealFoods 목록을 바꾼 뒤의 음식 줄. 기본은 값을 다시 구해야 하는 줄(이름을 바꾼 줄)이다
+     */
+    private fun givenMealToUpdate(meal: Meal?, jobId: Long? = null, mealFoods: List<MealFood> = recognizedMealFoods) {
+        every { profileRepository.findProfileWithLockByUserId(userId) } returns Profile(userId = userId)
+        every { mealAnalysisJobRepository.findIdByMealId(mealId) } returns jobId
+        every { mealAnalysisJobRepository.deleteMealAnalysisJobById(any()) } returns 1
+        every { mealRepository.findMealWithLockById(mealId) } returns meal
+        every { mealFoodService.updateMealFoods(any(), any()) } returns mealFoods
+    }
+
+    private fun createCompletedMealV2(ownerId: Long = userId) = createMealV2(MealStatus.COMPLETED, ownerId).apply {
+        updateName("불고기 백반")
+        updateNutrition(Nutrition(calory = 825, carbs = 88, protein = 44, fat = 31))
+        updateIconId(12L)
+        updateCatComment("든든하게 먹었다냥")
+    }
+
+    @Test
+    fun `음식 목록을 보내면 프로필, 작업, 식사 순서로 잠그고 기다리던 작업을 id로 지운다`() {
+        givenMealToUpdate(createMealV2(MealStatus.WAITING), jobId = 77L)
+
+        mealService.updateMealFoodsV2(userId, mealId, foodsRequest, Language.KO)
+
+        // Worker도 작업 → 식사 순서로 잠근다. 순서가 다르면 서로를 기다리는 데드락이 난다.
+        verifyOrder {
+            profileRepository.findProfileWithLockByUserId(userId)
+            mealAnalysisJobRepository.findIdByMealId(mealId)
+            mealAnalysisJobRepository.deleteMealAnalysisJobById(77L)
+            mealRepository.findMealWithLockById(mealId)
+        }
+    }
+
+    @Test
+    fun `기다리던 작업이 없으면 작업을 지우지 않는다`() {
+        givenMealToUpdate(createCompletedMealV2(), jobId = null)
+
+        mealService.updateMealFoodsV2(userId, mealId, foodsRequest, Language.KO)
+
+        verify(exactly = 0) { mealAnalysisJobRepository.deleteMealAnalysisJobById(any()) }
+    }
+
+    @Test
+    fun `음식 목록을 보내면 받은 줄로 바꾸게 하고 요청 언어의 영양 작업을 미루지 않고 만든다`() {
+        val meal = createCompletedMealV2()
+        givenMealToUpdate(meal)
+        val job = slot<MealAnalysisJob>()
+        every { mealAnalysisJobRepository.save(capture(job)) } answers { firstArg() }
+
+        mealService.updateMealFoodsV2(userId, mealId, foodsRequest, Language.JA)
+
+        verify(exactly = 1) { mealFoodService.updateMealFoods(meal.id, foodsRequest.foods) }
+        assertEquals(meal.id, job.captured.mealId)
+        assertEquals(MealAnalysisJobCategory.NUTRITION, job.captured.category)
+        assertEquals(Language.JA, job.captured.language)
+        verify(exactly = 0) { mealAnalysisJobRepository.updateAvailableAt(any(), any()) }
+    }
+
+    @Test
+    fun `새로 구할 값이 없고 이미 계산이 끝났던 식사면 요청 안에서 합계와 아이콘을 다시 계산해 COMPLETED로 끝낸다`() {
+        // 불고기 2인분으로 인분만 바꿨다. 잡곡밥을 맨 위로 올려 대표 음식이 바뀌었다.
+        val meal = createCompletedMealV2()
+        givenMealToUpdate(
+            meal,
+            jobId = 77L,
+            mealFoods = listOf(
+                createFilledMealFood("잡곡밥", portion = "1.0", calory = "300", iconId = 5L),
+                createFilledMealFood("불고기", portion = "2.0", calory = "350", iconId = 12L),
+            ),
+        )
+
+        val response = mealService.updateMealFoodsV2(userId, mealId, foodsRequest, Language.KO)
+
+        assertEquals(MealStatus.COMPLETED, response.status)
+        assertEquals(MealStatus.COMPLETED, meal.status)
+        // 300 + 350 × 2 = 1000, 탄수화물 10 + 10 × 2 = 30, 단백질 20 + 20 × 2 = 60, 지방 4 + 4 × 2 = 12
+        assertEquals(1000, meal.calory)
+        assertEquals(30, meal.carbs)
+        assertEquals(60, meal.protein)
+        assertEquals(12, meal.fat)
+        assertEquals(5L, meal.iconId)
+        assertEquals("든든하게 먹었다냥", meal.catComment)
+        // 기다리던 작업은 지우고 새 작업은 만들지 않는다. 작업이 없으므로 Worker도 푸시도 없다.
+        verify(exactly = 1) { mealAnalysisJobRepository.deleteMealAnalysisJobById(77L) }
+        verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
+    }
+
+    @Test
+    fun `새로 구할 값이 없어도 아직 계산이 끝난 적 없는 식사면 코멘트를 만들어야 하므로 작업을 만든다`() {
+        val meal = createMealV2(MealStatus.WAITING).apply { updateName("불고기 백반") }
+        givenMealToUpdate(
+            meal,
+            mealFoods = listOf(createFilledMealFood("불고기", portion = "1.5", calory = "350", iconId = 12L)),
+        )
+
+        val response = mealService.updateMealFoodsV2(userId, mealId, foodsRequest, Language.KO)
+
+        assertEquals(MealStatus.WAITING, response.status)
+        assertNull(meal.calory)
+        verify(exactly = 1) { mealAnalysisJobRepository.save(any()) }
+    }
+
+    @Test
+    fun `1인분이나 아이콘을 다시 구해야 하는 줄이 하나라도 있으면 작업을 만든다`() {
+        val filled = createFilledMealFood("불고기", portion = "1.5", calory = "350", iconId = 12L)
+        val withoutServingNutrition =
+            MealFood(mealId = 0L, mealFoodSnapshotId = null, displayOrder = 2, name = "김치", portion = BigDecimal("0.5"))
+                .apply { updateIconId(7L) }
+        val withoutIcon =
+            MealFood(mealId = 0L, mealFoodSnapshotId = null, displayOrder = 2, name = "김치", portion = BigDecimal("0.5"))
+                .apply {
+                    updateServingNutrition(
+                        ServingNutrition(BigDecimal("30"), BigDecimal("6"), BigDecimal("2"), BigDecimal("0")),
+                    )
+                }
+
+        listOf(withoutServingNutrition, withoutIcon).forEach { mealFood ->
+            val meal = createCompletedMealV2()
+            givenMealToUpdate(meal, mealFoods = listOf(filled, mealFood))
+
+            val response = mealService.updateMealFoodsV2(userId, mealId, foodsRequest, Language.KO)
+
+            assertEquals(MealStatus.WAITING, response.status)
+            assertNull(meal.calory)
+        }
+        verify(exactly = 2) { mealAnalysisJobRepository.save(any()) }
+    }
+
+    @Test
+    fun `음식 목록을 보내면 식사의 합계와 아이콘을 비우고 WAITING으로 바꾸며 이름과 코멘트는 그대로 둔다`() {
+        val meal = createCompletedMealV2()
+        givenMealToUpdate(meal)
+
+        val response = mealService.updateMealFoodsV2(userId, mealId, foodsRequest, Language.KO)
+
+        assertEquals(MealStatus.WAITING, response.status)
+        assertEquals(MealStatus.WAITING, meal.status)
+        assertNull(meal.calory)
+        assertNull(meal.iconId)
+        assertEquals("불고기 백반", meal.name)
+        assertEquals("든든하게 먹었다냥", meal.catComment)
+    }
+
+    @Test
+    fun `계산을 기다리거나 계산 중이거나 끝난 식사는 음식 목록을 받는다`() {
+        listOf(MealStatus.WAITING, MealStatus.ANALYZING, MealStatus.COMPLETED).forEach { status ->
+            givenMealToUpdate(createMealV2(status))
+
+            val response = mealService.updateMealFoodsV2(userId, mealId, foodsRequest, Language.KO)
+
+            assertEquals(MealStatus.WAITING, response.status)
+        }
+    }
+
+    @Test
+    fun `인식 중이거나 실패한 식사는 MEAL_FOODS_NOT_UPDATABLE이고 음식 줄과 새 작업을 만들지 않는다`() {
+        listOf(MealStatus.RECOGNIZING, MealStatus.FAILED).forEach { status ->
+            val meal = createMealV2(status)
+            givenMealToUpdate(meal)
+
+            assertBusinessException(MealErrorCode.MEAL_FOODS_NOT_UPDATABLE) {
+                mealService.updateMealFoodsV2(userId, mealId, foodsRequest, Language.KO)
+            }
+
+            assertEquals(status, meal.status)
+        }
+        verify(exactly = 0) { mealFoodService.updateMealFoods(any(), any()) }
+        verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
+    }
+
+    @Test
+    fun `V1 식사는 음식 목록이 없으므로 MEAL_FOODS_NOT_UPDATABLE이다`() {
+        val meal = givenAnalyzedMeal()
+        givenMealToUpdate(meal)
+
+        assertBusinessException(MealErrorCode.MEAL_FOODS_NOT_UPDATABLE) {
+            mealService.updateMealFoodsV2(userId, mealId, foodsRequest, Language.KO)
+        }
+
+        assertEquals(MealStatus.COMPLETED, meal.status)
+        assertEquals(analyzedNutrition.calory, meal.calory)
+        verify(exactly = 0) { mealFoodService.updateMealFoods(any(), any()) }
+    }
+
+    @Test
+    fun `인분이 0_5 단위가 아니면 아무것도 잠그기 전에 INVALID_INPUT_VALUE로 거절한다`() {
+        val request = UpdateMealFoodsRequest(
+            foods = listOf(MealFoodRequest(mealFoodId = 1L, name = "불고기", portion = BigDecimal("1.3"))),
+        )
+
+        assertBusinessException(CommonErrorCode.INVALID_INPUT_VALUE) {
+            mealService.updateMealFoodsV2(userId, mealId, request, Language.KO)
+        }
+
+        verify(exactly = 0) { profileRepository.findProfileWithLockByUserId(any()) }
+        verify(exactly = 0) { mealAnalysisJobRepository.findIdByMealId(any()) }
+    }
+
+    @Test
+    fun `음식 목록을 보낼 식사가 없거나 삭제됐으면 MEAL_NOT_FOUND 예외를 던진다`() {
+        givenMealToUpdate(null)
+        assertBusinessException(MealErrorCode.MEAL_NOT_FOUND) {
+            mealService.updateMealFoodsV2(userId, mealId, foodsRequest, Language.KO)
+        }
+
+        givenMealToUpdate(createCompletedMealV2().apply { updateDeletedAt(now) })
+        assertBusinessException(MealErrorCode.MEAL_NOT_FOUND) {
+            mealService.updateMealFoodsV2(userId, mealId, foodsRequest, Language.KO)
+        }
+
+        verify(exactly = 0) { mealFoodService.updateMealFoods(any(), any()) }
+    }
+
+    @Test
+    fun `다른 사용자의 식사면 음식 목록을 바꾸지 않고 FORBIDDEN 예외를 던진다`() {
+        // 예외가 밖으로 나가야 @Transactional이 먼저 지운 작업까지 롤백한다.
+        val meal = createCompletedMealV2(ownerId = 2L)
+        givenMealToUpdate(meal, jobId = 77L)
+
+        assertBusinessException(AuthErrorCode.FORBIDDEN) {
+            mealService.updateMealFoodsV2(userId, mealId, foodsRequest, Language.KO)
+        }
+
+        assertEquals(MealStatus.COMPLETED, meal.status)
+        verify(exactly = 0) { mealFoodService.updateMealFoods(any(), any()) }
+        verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
+    }
+
+    @Test
+    fun `프로필이 없으면 PROFILE_NOT_FOUND이고 작업과 식사를 건드리지 않는다`() {
+        every { profileRepository.findProfileWithLockByUserId(userId) } returns null
+
+        assertBusinessException(UserErrorCode.PROFILE_NOT_FOUND) {
+            mealService.updateMealFoodsV2(userId, mealId, foodsRequest, Language.KO)
+        }
+
+        verify(exactly = 0) { mealAnalysisJobRepository.findIdByMealId(any()) }
+        verify(exactly = 0) { mealRepository.findMealWithLockById(any()) }
+    }
+
+    // deleteMealV2·cancelMealV2
+
+    @Test
+    fun `v2 식사를 지우면 프로필, 작업, 식사 순서로 잠그고 기다리던 작업을 지운 뒤 삭제 시각을 남긴다`() {
+        val meal = createMealV2(MealStatus.WAITING)
+        givenMealToUpdate(meal, jobId = 77L)
+
+        mealService.deleteMealV2(userId, mealId)
+
+        assertEquals(now, meal.deletedAt)
+        verifyOrder {
+            profileRepository.findProfileWithLockByUserId(userId)
+            mealAnalysisJobRepository.findIdByMealId(mealId)
+            mealAnalysisJobRepository.deleteMealAnalysisJobById(77L)
+            mealRepository.findMealWithLockById(mealId)
+        }
+    }
+
+    @Test
+    fun `기다리던 작업이 없는 v2 식사를 지우면 삭제 시각만 남긴다`() {
+        val meal = createCompletedMealV2()
+        givenMealToUpdate(meal, jobId = null)
+
+        mealService.deleteMealV2(userId, mealId)
+
+        assertEquals(now, meal.deletedAt)
+        verify(exactly = 0) { mealAnalysisJobRepository.deleteMealAnalysisJobById(any()) }
+    }
+
+    @Test
+    fun `v2 식사를 지워도 상태와 영양, 음식 줄은 그대로 둔다`() {
+        val meal = createCompletedMealV2()
+        givenMealToUpdate(meal)
+
+        mealService.deleteMealV2(userId, mealId)
+
+        assertEquals(MealStatus.COMPLETED, meal.status)
+        assertEquals(825, meal.calory)
+        verify(exactly = 0) { mealFoodService.updateMealFoods(any(), any()) }
+    }
+
+    @Test
+    fun `v2 경로로 지울 식사가 없거나 이미 지웠으면 MEAL_NOT_FOUND 예외를 던지고 삭제 시각을 바꾸지 않는다`() {
+        givenMealToUpdate(null)
+        assertBusinessException(MealErrorCode.MEAL_NOT_FOUND) { mealService.deleteMealV2(userId, mealId) }
+
+        val deletedAt = now.minusSeconds(5)
+        val deletedMeal = createCompletedMealV2().apply { updateDeletedAt(deletedAt) }
+        givenMealToUpdate(deletedMeal)
+        assertBusinessException(MealErrorCode.MEAL_NOT_FOUND) { mealService.deleteMealV2(userId, mealId) }
+
+        assertEquals(deletedAt, deletedMeal.deletedAt)
+    }
+
+    @Test
+    fun `다른 사용자의 식사를 v2 경로로 지우면 FORBIDDEN 예외를 던지고 지우지 않는다`() {
+        // 예외가 밖으로 나가야 @Transactional이 먼저 지운 작업까지 롤백한다.
+        val meal = createCompletedMealV2(ownerId = 2L)
+        givenMealToUpdate(meal, jobId = 77L)
+
+        assertBusinessException(AuthErrorCode.FORBIDDEN) { mealService.deleteMealV2(userId, mealId) }
+
+        assertNull(meal.deletedAt)
+    }
+
+    @Test
+    fun `기록을 취소하면 삭제와 같이 기다리던 작업을 지우고 삭제 시각을 남긴다`() {
+        val meal = createMealV2(MealStatus.WAITING)
+        givenMealToUpdate(meal, jobId = 77L)
+
+        mealService.cancelMealV2(userId, mealId)
+
+        assertEquals(now, meal.deletedAt)
+        verify(exactly = 1) { mealAnalysisJobRepository.deleteMealAnalysisJobById(77L) }
+    }
+
+    @Test
+    fun `취소할 식사가 없으면 MEAL_NOT_FOUND 예외를 던진다`() {
+        givenMealToUpdate(null)
+
+        assertBusinessException(MealErrorCode.MEAL_NOT_FOUND) { mealService.cancelMealV2(userId, mealId) }
+    }
+
+    // retryNutritionAnalysisV2
+
+    private fun givenMealToRetry(meal: Meal?) {
+        givenMealToUpdate(meal)
+        every { mealFoodService.deleteMealFoods(any()) } just Runs
+    }
+
+    @Test
+    fun `실패한 V2 식사를 재분석하면 음식 줄을 지우고 요청 언어의 인식 작업을 만들어 RECOGNIZING으로 돌린다`() {
+        val meal = createMealV2(MealStatus.FAILED).apply { updateName("불고기 백반") }
+        givenMealToRetry(meal)
+        val job = slot<MealAnalysisJob>()
+        every { mealAnalysisJobRepository.save(capture(job)) } answers { firstArg() }
+
+        val response = mealService.retryNutritionAnalysisV2(userId, mealId, Language.JA)
+
+        assertEquals(MealStatus.RECOGNIZING, response.status)
+        assertEquals(MealStatus.RECOGNIZING, meal.status)
+        verify(exactly = 1) { mealFoodService.deleteMealFoods(meal.id) }
+        assertEquals(MealAnalysisJobCategory.RECOGNITION, job.captured.category)
+        assertEquals(Language.JA, job.captured.language)
+        // 인식 작업은 미루지 않는다.
+        verify(exactly = 0) { mealAnalysisJobRepository.updateAvailableAt(any(), any()) }
+    }
+
+    @Test
+    fun `실패한 V2 식사를 재분석하면 대표 이름과 합계, 아이콘을 비우고 고양이 코멘트는 그대로 둔다`() {
+        // 완료됐던 식사를 고쳐 다시 계산하다 실패한 식사
+        val meal = createCompletedMealV2().apply { updateStatus(MealStatus.FAILED) }
+        givenMealToRetry(meal)
+
+        mealService.retryNutritionAnalysisV2(userId, mealId, Language.KO)
+
+        assertEquals("", meal.name)
+        assertNull(meal.calory)
+        assertNull(meal.iconId)
+        assertEquals("든든하게 먹었다냥", meal.catComment)
+    }
+
+    @Test
+    fun `재분석은 프로필 행을 먼저 잠가 같은 사용자의 요청을 줄 세운다`() {
+        givenMealToRetry(createMealV2(MealStatus.FAILED))
+
+        mealService.retryNutritionAnalysisV2(userId, mealId, Language.KO)
+
+        verifyOrder {
+            profileRepository.findProfileWithLockByUserId(userId)
+            mealRepository.findMealWithLockById(mealId)
+        }
+    }
+
+    @Test
+    fun `실패한 V1 식사를 v2 경로로 재분석하면 v1 분석 작업을 쌓고 WAITING으로 돌리며 음식 줄은 건드리지 않는다`() {
+        val meal = Meal(status = MealStatus.FAILED, imageKey = imageKey, mealAt = now, userId = userId)
+        givenMealToRetry(meal)
+        val job = slot<MealAnalysisJob>()
+        every { mealAnalysisJobRepository.save(capture(job)) } answers { firstArg() }
+
+        val response = mealService.retryNutritionAnalysisV2(userId, mealId, Language.EN)
+
+        assertEquals(MealStatus.WAITING, response.status)
+        assertNull(job.captured.category)
+        assertEquals(Language.EN, job.captured.language)
+        verify(exactly = 0) { mealFoodService.deleteMealFoods(any()) }
+    }
+
+    @Test
+    fun `FAILED가 아닌 식사는 ANALYSIS_NOT_RETRYABLE이고 음식 줄과 작업을 건드리지 않는다`() {
+        listOf(
+            MealStatus.RECOGNIZING,
+            MealStatus.WAITING,
+            MealStatus.ANALYZING,
+            MealStatus.COMPLETED,
+        ).forEach { status ->
+            val meal = createMealV2(status).apply { updateName("불고기 백반") }
+            givenMealToRetry(meal)
+
+            assertBusinessException(MealErrorCode.ANALYSIS_NOT_RETRYABLE) {
+                mealService.retryNutritionAnalysisV2(userId, mealId, Language.KO)
+            }
+
+            assertEquals(status, meal.status)
+            assertEquals("불고기 백반", meal.name)
+        }
+        verify(exactly = 0) { mealFoodService.deleteMealFoods(any()) }
+        verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
+    }
+
+    @Test
+    fun `v2 경로로 재분석할 식사가 없거나 삭제됐으면 MEAL_NOT_FOUND 예외를 던지고 작업을 쌓지 않는다`() {
+        givenMealToRetry(null)
+        assertBusinessException(MealErrorCode.MEAL_NOT_FOUND) {
+            mealService.retryNutritionAnalysisV2(userId, mealId, Language.KO)
+        }
+
+        givenMealToRetry(createMealV2(MealStatus.FAILED).apply { updateDeletedAt(now) })
+        assertBusinessException(MealErrorCode.MEAL_NOT_FOUND) {
+            mealService.retryNutritionAnalysisV2(userId, mealId, Language.KO)
+        }
+
+        verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
+    }
+
+    @Test
+    fun `다른 사용자의 식사를 v2 경로로 재분석하면 FORBIDDEN 예외를 던지고 작업을 쌓지 않는다`() {
+        val meal = createMealV2(MealStatus.FAILED, ownerId = 2L)
+        givenMealToRetry(meal)
+
+        assertBusinessException(AuthErrorCode.FORBIDDEN) {
+            mealService.retryNutritionAnalysisV2(userId, mealId, Language.KO)
+        }
+
+        assertEquals(MealStatus.FAILED, meal.status)
+        verify(exactly = 0) { mealFoodService.deleteMealFoods(any()) }
+        verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
+    }
+
+    // getDailyMeals·getDailyMealsV2
+
+    // 서울 2026-10-10 하루는 [10-09 15:00Z, 10-10 15:00Z)다.
+    private val dayStart = Instant.parse("2026-10-09T15:00:00Z")
+    private val dayEnd = Instant.parse("2026-10-10T15:00:00Z")
+
+    private fun givenDailyMeals(vararg meals: Meal) {
+        every { mealRepository.findMealsByUserIdAndPeriod(userId, dayStart, dayEnd) } returns meals.toList()
+        every { profileRepository.findProfileByUserId(userId) } returns null
+    }
+
+    @Test
+    fun `v2 하루 목록은 식사마다 분석 버전을 주고 버전이 없는 식사는 V1이다`() {
+        val v2Meal = createMealV2(MealStatus.COMPLETED).apply {
+            updateName("불고기 백반")
+            updateNutrition(Nutrition(calory = 825, carbs = 88, protein = 44, fat = 31))
+            updateIconId(12L)
+        }
+        val v1Meal = givenAnalyzedMeal()
+        givenDailyMeals(v2Meal, v1Meal)
+
+        val response = mealService.getDailyMealsV2(userId, 2026, 10, 10)
+
+        assertEquals(LocalDate.of(2026, 10, 10), response.date)
+        assertEquals(listOf(MealAnalysisVersion.V2, MealAnalysisVersion.V1), response.meals.map { it.analysisVersion })
+        assertEquals(listOf("불고기 백반", "김밥"), response.meals.map { it.name })
+        assertEquals(listOf(825, 520), response.meals.map { it.calory })
+        assertEquals(listOf<Long?>(12L, 3L), response.meals.map { it.iconId })
+    }
+
+    @Test
+    fun `v2 하루 목록에서 계산이 끝나지 않은 식사는 영양이 0이고 합계에도 0으로 더해진다`() {
+        val recognizingMeal = createMealV2(MealStatus.RECOGNIZING)
+        givenDailyMeals(recognizingMeal, givenAnalyzedMeal())
+
+        val response = mealService.getDailyMealsV2(userId, 2026, 10, 10)
+
+        assertEquals(listOf(MealStatus.RECOGNIZING, MealStatus.COMPLETED), response.meals.map { it.status })
+        assertEquals(0, response.meals.first().calory)
+        assertNull(response.meals.first().iconId)
+        assertEquals(analyzedNutrition, response.dailyNutrition.current)
+        // 프로필이 비어 있으면 기본 권장량이다.
+        assertEquals(Nutrition(calory = 2000, carbs = 250, protein = 100, fat = 70), response.dailyNutrition.target)
+    }
+
+    @Test
+    fun `v1 하루 목록은 같은 하루를 조회해 같은 합계와 목표를 준다`() {
+        givenDailyMeals(givenAnalyzedMeal())
+
+        val response = mealService.getDailyMeals(userId, 2026, 10, 10)
+
+        assertEquals(LocalDate.of(2026, 10, 10), response.date)
+        assertEquals(listOf("김밥"), response.meals.map { it.name })
+        assertEquals(analyzedNutrition, response.dailyNutrition.current)
+        assertEquals(Nutrition(calory = 2000, carbs = 250, protein = 100, fat = 70), response.dailyNutrition.target)
     }
 }

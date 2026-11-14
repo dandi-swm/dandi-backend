@@ -1,25 +1,38 @@
 package com.dandi.nyummy.meal.service
 
+import com.dandi.nyummy.exception.BusinessException
+import com.dandi.nyummy.exception.errorcode.CommonErrorCode
+import com.dandi.nyummy.exception.errorcode.ErrorCode
+import com.dandi.nyummy.exception.errorcode.MealErrorCode
+import com.dandi.nyummy.meal.dto.MealFoodNutritionRequest
 import com.dandi.nyummy.meal.dto.MealFoodRecognitionResult
+import com.dandi.nyummy.meal.dto.MealFoodRequest
 import com.dandi.nyummy.meal.dto.MealRecognitionResult
 import com.dandi.nyummy.meal.dto.ServingNutrition
 import com.dandi.nyummy.meal.dto.ServingNutritionResult
+import com.dandi.nyummy.meal.entity.Icon
 import com.dandi.nyummy.meal.entity.MealFood
 import com.dandi.nyummy.meal.entity.MealFoodSnapshot
 import com.dandi.nyummy.meal.entity.MealSnapshot
 import com.dandi.nyummy.meal.enum.MealInputCategory
 import com.dandi.nyummy.meal.enum.MealRecognitionCategory
+import com.dandi.nyummy.meal.repository.IconRepository
 import com.dandi.nyummy.meal.repository.MealFoodRepository
 import com.dandi.nyummy.meal.repository.MealFoodSnapshotRepository
 import com.dandi.nyummy.meal.repository.MealSnapshotRepository
+import io.mockk.Runs
 import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.spyk
+import io.mockk.verify
 import io.mockk.verifyOrder
 import java.math.BigDecimal
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -40,11 +53,13 @@ class MealFoodServiceTest {
     private val mealSnapshotRepository = mockk<MealSnapshotRepository>()
     private val mealFoodSnapshotRepository = mockk<MealFoodSnapshotRepository>()
     private val mealFoodRepository = mockk<MealFoodRepository>()
+    private val iconRepository = mockk<IconRepository>()
 
     private val mealFoodService = MealFoodService(
         mealSnapshotRepository = mealSnapshotRepository,
         mealFoodSnapshotRepository = mealFoodSnapshotRepository,
         mealFoodRepository = mealFoodRepository,
+        iconRepository = iconRepository,
     )
 
     private val mealSnapshot = slot<MealSnapshot>()
@@ -221,5 +236,239 @@ class MealFoodServiceTest {
         )
 
         assertEquals(listOf(first, second), mealFoods)
+    }
+
+    // updateMealFoods
+
+    private val deletedMealFoods = slot<Iterable<MealFood>>()
+
+    private fun assertBusinessException(expected: ErrorCode, block: () -> Unit) {
+        val exception = assertFailsWith<BusinessException>(block = block)
+        assertEquals(expected, exception.errorCode)
+    }
+
+    /** 식사의 지금 음식 줄이 [mealFoods]이고, 지우기와 저장이 받은 줄을 그대로 처리한다. */
+    private fun givenMealFoodsToUpdate(vararg mealFoods: MealFood) {
+        givenMealFoods(*mealFoods)
+        every { mealFoodRepository.deleteAllInBatch(capture(deletedMealFoods)) } just Runs
+    }
+
+    private fun createRequest(
+        mealFoodId: Long?,
+        name: String,
+        portion: String = "1.0",
+        nutrition: MealFoodNutritionRequest? = null,
+        iconId: Long? = null,
+    ) = MealFoodRequest(mealFoodId, name, BigDecimal(portion), nutrition, iconId)
+
+    @Test
+    fun `받은 순서대로 순서를 다시 매기고 맨 앞이 대표 음식이 된다`() {
+        val bulgogi =
+            createMealFood(displayOrder = 1, name = "불고기", servingNutrition = oldServingNutrition, iconId = 12L)
+        val rice = createMealFood(displayOrder = 2, name = "잡곡밥", servingNutrition = oldServingNutrition, iconId = 5L)
+        givenMealFoodsToUpdate(bulgogi, rice)
+
+        val mealFoods = mealFoodService.updateMealFoods(
+            mealId,
+            listOf(createRequest(2L, "잡곡밥"), createRequest(1L, "불고기")),
+        )
+
+        assertEquals(listOf("잡곡밥", "불고기"), mealFoods.map { it.name })
+        assertEquals(listOf(1, 2), mealFoods.map { it.displayOrder })
+    }
+
+    @Test
+    fun `인분만 바꾼 줄은 1인분과 아이콘을 그대로 둔다`() {
+        val bulgogi =
+            createMealFood(displayOrder = 1, name = "불고기", servingNutrition = oldServingNutrition, iconId = 12L)
+        givenMealFoodsToUpdate(bulgogi)
+
+        mealFoodService.updateMealFoods(mealId, listOf(createRequest(1L, "불고기", portion = "2.5")))
+
+        assertEquals(BigDecimal("2.5"), bulgogi.portion)
+        assertEquals(oldServingNutrition, bulgogi.servingNutrition)
+        assertEquals(12L, bulgogi.iconId)
+    }
+
+    @Test
+    fun `이름을 바꾼 줄은 고정하지 않은 1인분과 아이콘을 비워 다시 구하게 한다`() {
+        val bulgogi =
+            createMealFood(displayOrder = 1, name = "불고기", servingNutrition = oldServingNutrition, iconId = 12L)
+        givenMealFoodsToUpdate(bulgogi)
+
+        mealFoodService.updateMealFoods(mealId, listOf(createRequest(1L, "제육볶음")))
+
+        assertEquals("제육볶음", bulgogi.name)
+        assertNull(bulgogi.servingNutrition)
+        assertNull(bulgogi.iconId)
+    }
+
+    @Test
+    fun `영양을 채운 줄은 그 값을 인분으로 나눈 1인분을 저장하고 고정한다`() {
+        val bulgogi =
+            createMealFood(displayOrder = 1, name = "불고기", servingNutrition = oldServingNutrition, iconId = 12L)
+        givenMealFoodsToUpdate(bulgogi)
+
+        mealFoodService.updateMealFoods(
+            mealId,
+            listOf(
+                createRequest(
+                    1L,
+                    "불고기",
+                    portion = "1.5",
+                    nutrition = MealFoodNutritionRequest(calory = 415, carbs = 30, protein = 27, fat = 21),
+                ),
+            ),
+        )
+
+        // 415 ÷ 1.5 = 276.67, 30 ÷ 1.5 = 20.00, 27 ÷ 1.5 = 18.00, 21 ÷ 1.5 = 14.00
+        assertEquals(
+            ServingNutrition(BigDecimal("276.67"), BigDecimal("20.00"), BigDecimal("18.00"), BigDecimal("14.00")),
+            bulgogi.servingNutrition,
+        )
+        assertTrue(bulgogi.isNutritionFixed)
+        // 아이콘은 고치지 않았으므로 그대로이고 고정되지 않는다.
+        assertEquals(12L, bulgogi.iconId)
+        assertFalse(bulgogi.isIconFixed)
+    }
+
+    @Test
+    fun `영양을 채운 줄은 이름을 함께 바꿔도 보낸 영양으로 고정되고 아이콘만 다시 구한다`() {
+        val bulgogi =
+            createMealFood(displayOrder = 1, name = "불고기", servingNutrition = oldServingNutrition, iconId = 12L)
+        givenMealFoodsToUpdate(bulgogi)
+
+        mealFoodService.updateMealFoods(
+            mealId,
+            listOf(
+                createRequest(
+                    1L,
+                    "제육볶음",
+                    portion = "1.0",
+                    nutrition = MealFoodNutritionRequest(calory = 400, carbs = 20, protein = 30, fat = 22),
+                ),
+            ),
+        )
+
+        assertEquals(BigDecimal("400.00"), bulgogi.servingNutrition?.calory)
+        assertTrue(bulgogi.isNutritionFixed)
+        assertNull(bulgogi.iconId)
+    }
+
+    @Test
+    fun `아이콘을 채운 줄은 그 아이콘으로 고정한다`() {
+        val bulgogi =
+            createMealFood(displayOrder = 1, name = "불고기", servingNutrition = oldServingNutrition, iconId = 12L)
+        givenMealFoodsToUpdate(bulgogi)
+        every { iconRepository.findAllById(setOf(7L)) } returns listOf(mockk<Icon>())
+
+        mealFoodService.updateMealFoods(mealId, listOf(createRequest(1L, "불고기", iconId = 7L)))
+
+        assertEquals(7L, bulgogi.iconId)
+        assertTrue(bulgogi.isIconFixed)
+        assertFalse(bulgogi.isNutritionFixed)
+    }
+
+    @Test
+    fun `mealFoodId가 없는 줄은 스냅샷 짝이 없는 새 줄로 만든다`() {
+        val bulgogi =
+            createMealFood(displayOrder = 1, name = "불고기", servingNutrition = oldServingNutrition, iconId = 12L)
+        givenMealFoodsToUpdate(bulgogi)
+
+        val mealFoods = mealFoodService.updateMealFoods(
+            mealId,
+            listOf(createRequest(1L, "불고기"), createRequest(null, "김치", portion = "0.5")),
+        )
+
+        val kimchi = mealFoods[1]
+        assertEquals(mealId, kimchi.mealId)
+        assertNull(kimchi.mealFoodSnapshotId)
+        assertEquals(2, kimchi.displayOrder)
+        assertEquals("김치", kimchi.name)
+        assertEquals(BigDecimal("0.5"), kimchi.portion)
+        assertNull(kimchi.servingNutrition)
+        assertNull(kimchi.iconId)
+    }
+
+    @Test
+    fun `요청에 없는 기존 줄은 지운다`() {
+        val bulgogi = createMealFood(displayOrder = 1, name = "불고기")
+        val rice = createMealFood(displayOrder = 2, name = "잡곡밥")
+        givenMealFoodsToUpdate(bulgogi, rice)
+
+        val mealFoods = mealFoodService.updateMealFoods(mealId, listOf(createRequest(2L, "잡곡밥")))
+
+        assertEquals(listOf(bulgogi), deletedMealFoods.captured.toList())
+        assertEquals(listOf(rice), mealFoods)
+    }
+
+    @Test
+    fun `이 식사의 줄이 아닌 mealFoodId가 있으면 MEAL_FOOD_NOT_FOUND이고 아무 줄도 지우거나 바꾸지 않는다`() {
+        val bulgogi = createMealFood(displayOrder = 1, name = "불고기")
+        givenMealFoodsToUpdate(bulgogi)
+
+        assertBusinessException(MealErrorCode.MEAL_FOOD_NOT_FOUND) {
+            mealFoodService.updateMealFoods(mealId, listOf(createRequest(1L, "제육볶음"), createRequest(99L, "남의 줄")))
+        }
+
+        assertEquals("불고기", bulgogi.name)
+        verify(exactly = 0) { mealFoodRepository.deleteAllInBatch(any<Iterable<MealFood>>()) }
+        verify(exactly = 0) { mealFoodRepository.saveAll(any<List<MealFood>>()) }
+    }
+
+    @Test
+    fun `같은 mealFoodId가 두 번 오면 INVALID_INPUT_VALUE이고 아무 줄도 바꾸지 않는다`() {
+        val bulgogi = createMealFood(displayOrder = 1, name = "불고기")
+        givenMealFoodsToUpdate(bulgogi)
+
+        assertBusinessException(CommonErrorCode.INVALID_INPUT_VALUE) {
+            mealFoodService.updateMealFoods(mealId, listOf(createRequest(1L, "불고기"), createRequest(1L, "제육볶음")))
+        }
+
+        assertEquals("불고기", bulgogi.name)
+        verify(exactly = 0) { mealFoodRepository.saveAll(any<List<MealFood>>()) }
+    }
+
+    @Test
+    fun `없는 아이콘 id가 있으면 INVALID_INPUT_VALUE이고 음식 줄을 읽지도 않는다`() {
+        every { iconRepository.findAllById(setOf(7L, 999L)) } returns listOf(mockk<Icon>())
+
+        assertBusinessException(CommonErrorCode.INVALID_INPUT_VALUE) {
+            mealFoodService.updateMealFoods(
+                mealId,
+                listOf(createRequest(1L, "불고기", iconId = 7L), createRequest(null, "김치", iconId = 999L)),
+            )
+        }
+
+        verify(exactly = 0) { mealFoodRepository.findAllByMealIdOrderByDisplayOrderAsc(any()) }
+    }
+
+    // deleteMealFoods
+
+    @Test
+    fun `음식 줄과 스냅샷을 읽어서 있는 것을 id로 지운다`() {
+        val bulgogi = createMealFood(displayOrder = 1, name = "불고기")
+        val rice = createMealFood(displayOrder = 2, name = "잡곡밥")
+        givenMealFoodsToUpdate(bulgogi, rice)
+        val savedMealSnapshot = mockk<MealSnapshot>()
+        every { mealSnapshotRepository.findByMealId(mealId) } returns savedMealSnapshot
+        every { mealSnapshotRepository.deleteAllInBatch(any<Iterable<MealSnapshot>>()) } just Runs
+
+        mealFoodService.deleteMealFoods(mealId)
+
+        assertEquals(listOf(bulgogi, rice), deletedMealFoods.captured.toList())
+        // 스냅샷 줄은 스냅샷을 지우면 DB가 함께 지운다.
+        verify(exactly = 1) { mealSnapshotRepository.deleteAllInBatch(listOf(savedMealSnapshot)) }
+    }
+
+    @Test
+    fun `음식이 아니라고 판정돼 스냅샷이 없는 식사는 스냅샷을 지우지 않는다`() {
+        givenMealFoodsToUpdate()
+        every { mealSnapshotRepository.findByMealId(mealId) } returns null
+
+        mealFoodService.deleteMealFoods(mealId)
+
+        assertTrue(deletedMealFoods.captured.toList().isEmpty())
+        verify(exactly = 0) { mealSnapshotRepository.deleteAllInBatch(any<Iterable<MealSnapshot>>()) }
     }
 }

@@ -91,6 +91,47 @@ class MealFood(
             )
         }
 
+    fun updateDisplayOrder(displayOrder: Int) {
+        this.displayOrder = displayOrder
+    }
+
+    fun updatePortion(portion: BigDecimal) {
+        this.portion = portion
+    }
+
+    /**
+     * 이름을 바꾼다. 이름이 달라지면 사용자가 고정하지 않은 1인분 영양과 아이콘을 비워, 새 이름으로 다시 구하게 한다.
+     * 사용자가 직접 고친 영양과 직접 고른 아이콘은 이름을 바꿔도 그대로 둔다.
+     */
+    fun updateName(name: String) {
+        if (this.name == name) {
+            return
+        }
+
+        this.name = name
+        if (!isNutritionFixed) {
+            this.servingCalory = null
+            this.servingCarbs = null
+            this.servingProtein = null
+            this.servingFat = null
+        }
+        if (!isIconFixed) {
+            this.iconId = null
+        }
+    }
+
+    /** 사용자가 직접 고친 영양에서 구한 1인분을 저장하고 고정한다. 이후 이름을 바꿔도 이 값을 다시 구하지 않는다. */
+    fun updateFixedServingNutrition(servingNutrition: ServingNutrition) {
+        updateServingNutrition(servingNutrition)
+        this.isNutritionFixed = true
+    }
+
+    /** 사용자가 직접 고른 아이콘을 저장하고 고정한다. 이후 이름을 바꿔도 이 아이콘을 다시 구하지 않는다. */
+    fun updateFixedIconId(iconId: Long) {
+        this.iconId = iconId
+        this.isIconFixed = true
+    }
+
     fun updateServingNutrition(servingNutrition: ServingNutrition) {
         this.servingCalory = servingNutrition.calory
         this.servingCarbs = servingNutrition.carbs

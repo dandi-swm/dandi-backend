@@ -14,5 +14,8 @@ enum class MealStatus {
     companion object {
         val ANALYZABLE_STATUSES = setOf(WAITING, FAILED)
         val IN_PROGRESS_STATUSES = setOf(RECOGNIZING, WAITING, ANALYZING)
+
+        // 음식 목록을 고쳐 보낼 수 있는 상태. 음식 목록이 있는 상태다. 인식 중인 식사와 실패한 식사는 고칠 수 없다.
+        val MEAL_FOOD_UPDATABLE_STATUSES = setOf(WAITING, ANALYZING, COMPLETED)
     }
 }

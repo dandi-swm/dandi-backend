@@ -142,6 +142,17 @@
 - 하루 섭취 합계 `Current`와 목표 섭취량 `Target` — 응답에서 쌍으로 쓴다
 - Worker가 가져갈 영양 분석 작업 한 건 `MealAnalysisJob`(테이블 `meal_analysis_jobs`, Task 금지 — ECS task와 혼동)
 - 영양 분석 작업을 가져가 처리하는 별도 서비스 `Worker`(패키지 worker, 설정 `app.worker.enabled`, Consumer 금지)
+- 작업 종류 `MealAnalysisJobCategory`(`category`), 작업을 가져갈 수 있게 되는 시각 `availableAt` — lease 만료 시각 `leaseExpiresAt`, 쌓인 시각 `createdAt`과 다른 것
+- 식사 안의 음식 한 줄 `MealFood`(테이블 `meal_foods`, `mealFoodId`, 요청·응답 필드만 `foods`) — 음식 DB의 음식 `Food`와 다른 것. 한 줄을 Item·Line이라 부르지 않는다(게임 아이템 `Item`, 구매 구성품 `ItemPurchaseLine`과 충돌). 목록 순서 `displayOrder`
+- 인분 `portion`(Serving·Quantity·Amount 금지 — Quantity는 지급 개수), 음식 1인분의 영양 `Serving`(`servingCalory`, 값 객체 `ServingNutrition`) — 줄 영양과 식사 합계 `Nutrition`과 다른 것
+- 사용자가 직접 정해 다시 구하지 않는 값 `Fixed`(`isNutritionFixed`·`isIconFixed`, Locked·Manual·Custom 금지)
+- 사진에서 입력 유형·대표 이름·음식 줄을 알아내는 것 `Recognition`(동사 recognize, Detection·Classification 금지) — 영양을 구하는 `Analysis`와 다른 단계
+- AI가 처음 인식한 결과 `MealSnapshot`·`MealFoodSnapshot`(History·Original 금지) — 사용자가 고치는 지금 값 `Meal.name`·`MealFood`와 다른 것
+- 식사를 만든 분석의 버전 `MealAnalysisVersion`(`analysisVersion`), 인식이 판정한 입력 유형 `MealInputCategory`(`inputCategory`), 인식한 곳 `MealRecognitionCategory`
+- 식사 기록 요청 안에서 한 인식 시도의 결과 `MealRecognitionOutcome`, 요청 안에서 끝내지 못해 Worker로 넘긴 것 `Deferred`(`MealRecognitionDeferralCategory`, Delayed·Postponed 금지 — 지표의 `delayed`는 설정 오류로 미룬 작업)
+- 음식 목록을 고쳐 보낼 수 있는 식사 상태 묶음 `MEAL_FOOD_UPDATABLE_STATUSES` — `IN_PROGRESS_STATUSES`·`ANALYZABLE_STATUSES`와 다른 것
+- 고양이 코멘트 `CatComment`(`catComment`, `CatCommentClient`, Feedback·Message 금지 — Feedback은 분석 평가)
+- 탄단지가 칼로리에서 차지하는 비율 `CaloryShare`(Ratio·Rate 금지 — Rate는 0~100 정수 퍼센트), 목표 구성비보다 많은·부족한 영양소 `Excess`·`Lacking`(`CaloryShareBalanceResult`, Over·Under 금지)
 
 ### 스트릭
 
@@ -222,4 +233,4 @@
 - 관측 `Observation`(Tracing·Instrumentation 금지). 우리가 만드는 관측·메트릭 이름은 `nyummy.`로 시작하고 점으로 구분한다(라이브러리 이름은 그대로)
 - 트랜잭션 span `Transaction`(Tx 단독 금지, span 이름 접두 `tx`만 예외), 처리 결과 태그 `Outcome`(Result·Status 금지)
 - 앱이 요청을 받을 준비가 되기 전 구간 `Startup`(Boot·Init 금지)
-- 분석 작업이 쌓인 때부터 결과(COMPLETED·FAILED)까지 걸린 시간 `Elapsed`(Latency·Duration·Turnaround 금지 — 시도 한 번에 걸린 시간과 구분), 가져갈 수 있는 작업 중 가장 오래 기다린 시간 `OldestWait`(Age·Lag 금지)
+- 분석 작업을 가져갈 수 있게 된 때(미루지 않았으면 쌓인 때)부터 끝날 때까지 걸린 시간 `Elapsed`(Latency·Duration·Turnaround 금지 — 시도 한 번에 걸린 시간과 구분), 가져갈 수 있는 작업 중 가장 오래 기다린 시간 `OldestWait`(Age·Lag 금지)

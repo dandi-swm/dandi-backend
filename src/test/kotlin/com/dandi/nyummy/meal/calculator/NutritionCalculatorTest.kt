@@ -30,14 +30,19 @@ class NutritionCalculatorTest {
         weight: Int? = 70,
     ) = Profile(nickname = "냠미", birth = birth, gender = gender, height = height, weight = weight, userId = 1L)
 
-    private fun createMeal(calory: Int? = null, carbs: Int? = null, protein: Int? = null, fat: Int? = null) =
-        Meal(status = MealStatus.COMPLETED, imageKey = "meals/1/image.jpg", mealAt = Instant.EPOCH, userId = 1L)
-            .apply {
-                this.calory = calory
-                this.carbs = carbs
-                this.protein = protein
-                this.fat = fat
-            }
+    private fun createMeal(
+        calory: Int? = null,
+        carbs: Int? = null,
+        protein: Int? = null,
+        fat: Int? = null,
+        status: MealStatus = MealStatus.COMPLETED,
+    ) = Meal(status = status, imageKey = "meals/1/image.jpg", mealAt = Instant.EPOCH, userId = 1L)
+        .apply {
+            this.calory = calory
+            this.carbs = carbs
+            this.protein = protein
+            this.fat = fat
+        }
 
     // calculateRecommendedDailyIntake
 
@@ -193,14 +198,42 @@ class NutritionCalculatorTest {
     }
 
     @Test
-    fun `분석 전 식사는 영양을 0으로 합산한다`() {
+    fun `영양 계산이 끝나지 않았거나 실패한 식사만 있으면 UNRECORDED다`() {
+        listOf(MealStatus.RECOGNIZING, MealStatus.WAITING, MealStatus.ANALYZING, MealStatus.FAILED).forEach { status ->
+            assertEquals(DailyNutritionEvaluation.UNRECORDED, evaluate(listOf(createMeal(status = status))), "$status")
+        }
+    }
+
+    @Test
+    fun `영양을 모르는 식사가 섞여 있으면 완료된 식사만으로 평가한다`() {
+        // 완료된 한 끼가 권장량과 같다. 계산을 기다리는 식사와 실패한 식사를 0으로 더하지도, 평가를 미루지도 않는다.
+        val meals = listOf(
+            createMeal(calory = 2000, carbs = 250, protein = 100, fat = 70),
+            createMeal(status = MealStatus.WAITING),
+            createMeal(status = MealStatus.FAILED),
+        )
+
+        assertEquals(DailyNutritionEvaluation.POSITIVE, evaluate(meals))
+    }
+
+    @Test
+    fun `완료되지 않은 식사에 남아 있는 영양값은 더하지 않는다`() {
+        // 완료된 한 끼가 권장량과 같다. 완료가 아닌 식사의 값까지 더하면 120퍼센트를 넘어 NEGATIVE가 된다.
+        val meals = listOf(
+            createMeal(calory = 2000, carbs = 250, protein = 100, fat = 70),
+            createMeal(calory = 1000, carbs = 125, protein = 50, fat = 35, status = MealStatus.FAILED),
+        )
+
+        assertEquals(DailyNutritionEvaluation.POSITIVE, evaluate(meals))
+    }
+
+    @Test
+    fun `완료된 식사의 영양이 비어 있으면 0으로 더한다`() {
         val meals = listOf(
             createMeal(calory = 2000, carbs = 250, protein = 100, fat = 70),
             createMeal(),
         )
 
-        val result = evaluate(meals)
-
-        assertEquals(DailyNutritionEvaluation.POSITIVE, result)
+        assertEquals(DailyNutritionEvaluation.POSITIVE, evaluate(meals))
     }
 }

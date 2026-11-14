@@ -3,6 +3,7 @@ package com.dandi.nyummy.meal.calculator
 import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.enum.DailyNutritionEvaluation
+import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.mapper.toNutrition
 import com.dandi.nyummy.user.entity.Profile
 import com.dandi.nyummy.user.enum.Gender
@@ -18,8 +19,12 @@ private val MACRO_NUTRIENTS = listOf(
 )
 
 /**
- * 하루치 식사를 합산해 평가한다. 기록이 없으면 UNRECORDED다.
+ * 하루치 식사를 합산해 평가한다. 영양 계산이 끝난(COMPLETED) 식사만 더하고, 그런 식사가 없으면 UNRECORDED다.
  *
+ * 아직 계산하지 않은 식사와 실패한 식사는 영양을 모르므로 넣지 않는다. 0으로 더하면 덜 먹은 날로 판정된다.
+ * 그런 식사만 있는 날은 기록하지 않은 날로 본다. 음식이 아닌 사진만 올린 날도 그렇다.
+ *
+ * @param meals 그날의 식사. 상태와 상관없이 모두 넘긴다
  * @param intakeTolerance 권장량 대비 허용 오차 (0.2 = 80~120%)
  * @param minPositiveMacroCount 탄단지 3종 중 허용 범위에 들어야 하는 최소 개수
  */
@@ -29,11 +34,12 @@ fun calculateDailyNutritionEvaluation(
     intakeTolerance: Double,
     minPositiveMacroCount: Int,
 ): DailyNutritionEvaluation {
-    if (meals.isEmpty()) {
+    val completedMeals = meals.filter { it.status == MealStatus.COMPLETED }
+    if (completedMeals.isEmpty()) {
         return DailyNutritionEvaluation.UNRECORDED
     }
 
-    val totalNutrition = meals.fold(Nutrition.ZERO) { acc, meal -> acc + meal.toNutrition() }
+    val totalNutrition = completedMeals.fold(Nutrition.ZERO) { acc, meal -> acc + meal.toNutrition() }
 
     if (isPositiveNutrition(totalNutrition, recommended, intakeTolerance, minPositiveMacroCount)) {
         return DailyNutritionEvaluation.POSITIVE

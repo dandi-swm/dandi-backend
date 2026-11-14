@@ -8,6 +8,7 @@ import com.dandi.nyummy.internal.batch.repository.PushDeduplicationRepository
 import com.dandi.nyummy.language.createTestMessageSource
 import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.language.getMessage
+import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.repository.MealRepository
 import com.dandi.nyummy.notification.service.NotificationService
 import com.dandi.nyummy.user.repository.ProfileRepository
@@ -43,7 +44,7 @@ class MealReminderServiceTest {
 
     private fun sendLunchReminders(vararg targets: MealReminderTargetResult): Map<String, PushMessage> {
         every { profileRepository.findMealReminderTargets(LUNCH_HOUR) } returns targets.toList()
-        every { mealRepository.existsCompletedMealAfter(any(), any(), any()) } returns false
+        every { mealRepository.existsMealAfter(any(), any(), any()) } returns false
         every { pushDeduplicationRepository.createSentMark(any(), any()) } returns true
         val messagesByToken = slot<Map<String, PushMessage>>()
         every { notificationService.sendPushes(capture(messagesByToken)) } returns PushResult(
@@ -96,6 +97,26 @@ class MealReminderServiceTest {
             messageSource.getMessage("push.mealReminder.body", Language.EN, "냐미"),
             messagesByToken.getValue("en-token").body,
         )
+    }
+
+    @Test
+    fun `최근 한 시간 안에 실패하지 않은 식사가 있는 사용자에게는 보내지 않는다`() {
+        every { profileRepository.findMealReminderTargets(LUNCH_HOUR) } returns listOf(
+            createTarget(1L, "recorded-token", Language.KO),
+            createTarget(2L, "not-recorded-token", Language.KO),
+        )
+        // 지금은 12:00 KST(03:00Z)이고 한 시간 전은 02:00Z다. 실패한 식사만 빼고 본다.
+        val oneHourAgo = Instant.parse("2026-11-02T02:00:00Z")
+        every { mealRepository.existsMealAfter(1L, MealStatus.FAILED, oneHourAgo) } returns true
+        every { mealRepository.existsMealAfter(2L, MealStatus.FAILED, oneHourAgo) } returns false
+        every { pushDeduplicationRepository.createSentMark(any(), any()) } returns true
+        val messagesByToken = slot<Map<String, PushMessage>>()
+        every { notificationService.sendPushes(capture(messagesByToken)) } returns
+            PushResult(1, emptyList(), emptyList())
+
+        mealReminderService.sendMealReminders()
+
+        assertEquals(setOf("not-recorded-token"), messagesByToken.captured.keys)
     }
 
     private companion object {

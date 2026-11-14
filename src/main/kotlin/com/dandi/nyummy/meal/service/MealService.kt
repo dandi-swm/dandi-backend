@@ -11,6 +11,7 @@ import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.mail.enum.RewardBoxCategory
 import com.dandi.nyummy.mail.service.MailService
 import com.dandi.nyummy.meal.calculator.calculateDailyNutritionEvaluation
+import com.dandi.nyummy.meal.calculator.calculateMealNutrition
 import com.dandi.nyummy.meal.calculator.calculateMonthlyCalendarRange
 import com.dandi.nyummy.meal.calculator.calculateRecommendedDailyIntake
 import com.dandi.nyummy.meal.calculator.pickRewardBox
@@ -35,14 +36,18 @@ import com.dandi.nyummy.meal.dto.UpdateMealNameRequest
 import com.dandi.nyummy.meal.dto.UpdateMealNutritionRequest
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.entity.MealAnalysisJob
+import com.dandi.nyummy.meal.entity.MealFood
+import com.dandi.nyummy.meal.enum.MealAnalysisJobCategory
 import com.dandi.nyummy.meal.enum.MealAnalysisVersion
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.mapper.toCreateMealResponse
 import com.dandi.nyummy.meal.mapper.toCreateMealV2Response
 import com.dandi.nyummy.meal.mapper.toDailyMealResponse
+import com.dandi.nyummy.meal.mapper.toDailyMealV2Response
 import com.dandi.nyummy.meal.mapper.toEntity
 import com.dandi.nyummy.meal.mapper.toMealResponse
 import com.dandi.nyummy.meal.mapper.toMealStatusResponse
+import com.dandi.nyummy.meal.mapper.toMealV2Response
 import com.dandi.nyummy.meal.mapper.toNutrition
 import com.dandi.nyummy.meal.repository.MealAnalysisJobRepository
 import com.dandi.nyummy.meal.repository.MealRepository
@@ -71,6 +76,7 @@ class MealService(
     private val analysisFeedbackService: AnalysisFeedbackService,
     private val mealTransactionService: MealTransactionService,
     private val mealRecognitionService: MealRecognitionService,
+    private val mealFoodService: MealFoodService,
     private val random: Random,
     private val mailService: MailService,
 ) {
@@ -228,105 +234,224 @@ class MealService(
     }
 
     /**
-     * v2 분석 상태 조회. 지금은 고정 응답(Stub)으로 계산이 끝난 상태를 준다.
-     */
-    fun getMealStatusV2(): MealStatusResponse = MealStatusResponse(id = 2L, status = MealStatus.COMPLETED)
-
-    /**
-     * v2 식사 단건 조회. 지금은 고정 응답(Stub)으로 계산이 끝난 V2 식사를 준다.
+     * v2 식사 단건을 조회한다. v1 응답에 분석 버전과 음식 줄을 더한다.
      *
-     * @param name 대표 이름. 이름 수정 Stub이 받은 이름을 넣어 돌려줄 때 쓴다
-     */
-    fun getMealV2(name: String = "제육볶음 정식"): MealV2Response = MealV2Response(
-        mealId = 2L,
-        analysisVersion = MealAnalysisVersion.V2,
-        name = name,
-        mealAt = Instant.parse("2026-11-13T03:10:00Z"),
-        status = MealStatus.COMPLETED,
-        nutrition = Nutrition(calory = 726, carbs = 82, protein = 34, fat = 29),
-        imageUrl = "https://cdn.nyummy.co.kr/stub/meal.jpg",
-        canCreateAnalysisFeedback = true,
-        catComment = "탄수화물은 넉넉한데 단백질이 조금 아쉽다냥. 저녁엔 두부조림 어때?",
-        iconId = 3L,
-        foods = listOf(
-            MealFoodResponse(
-                mealFoodId = 11L,
-                name = "제육볶음",
-                portion = BigDecimal("1.5"),
-                nutrition = Nutrition(calory = 416, carbs = 14, protein = 27, fat = 28),
-                isNutritionFixed = false,
-                iconId = 3L,
-            ),
-            MealFoodResponse(
-                mealFoodId = 12L,
-                name = "밥",
-                portion = BigDecimal("1.0"),
-                nutrition = Nutrition(calory = 310, carbs = 68, protein = 7, fat = 1),
-                isNutritionFixed = false,
-                iconId = 5L,
-            ),
-        ),
-    )
-
-    /**
-     * v2 하루 식사 목록. 지금은 고정 응답(Stub)으로 날짜와 상관없이 V2 식사와 V1 식사를 하나씩 준다.
-     */
-    fun getDailyMealsV2(): DailyMealsV2Response = DailyMealsV2Response(
-        date = LocalDate.of(2026, 11, 13),
-        meals = listOf(
-            DailyMealV2Response(
-                mealId = 2L,
-                analysisVersion = MealAnalysisVersion.V2,
-                name = "제육볶음 정식",
-                mealAt = Instant.parse("2026-11-13T03:10:00Z"),
-                calory = 726,
-                carbs = 82,
-                protein = 34,
-                fat = 29,
-                status = MealStatus.COMPLETED,
-                iconId = 3L,
-            ),
-            DailyMealV2Response(
-                mealId = 1L,
-                analysisVersion = MealAnalysisVersion.V1,
-                name = "토스트",
-                mealAt = Instant.parse("2026-11-12T23:20:00Z"),
-                calory = 320,
-                carbs = 40,
-                protein = 10,
-                fat = 12,
-                status = MealStatus.COMPLETED,
-                iconId = 5L,
-            ),
-        ),
-        dailyNutrition = DailyNutritionResponse(
-            current = Nutrition(calory = 1046, carbs = 122, protein = 44, fat = 41),
-            target = Nutrition(calory = 2000, carbs = 300, protein = 60, fat = 55),
-        ),
-    )
-
-    /**
-     * v2 음식 목록 보내기. 지금은 고정 응답(Stub)이다. 인분이 0.5 단위인지만 검사하고, 다시 계산을 기다리는 상태를 준다.
-     * 줄 수·이름 길이·인분 범위·영양 범위는 요청 DTO가 검사한다. DB를 보지 않으므로 없는 식사·음식 줄·아이콘 id는 가려내지 않는다.
+     * 음식 줄은 목록 순서대로 주고, 줄 영양은 1인분 × 인분이다(아직 계산하지 않은 줄은 null).
+     * 음식 줄이 없는 식사는 foods가 null이다. V1 식사, 아직 인식 중인 식사, 음식이 아닌 식사가 그렇다.
      *
-     * @throws BusinessException [CommonErrorCode.INVALID_INPUT_VALUE] 인분이 0.5 단위가 아닌 경우
+     * @param userId 조회하는 사용자 ID
+     * @param mealId 조회할 식사 ID
+     * @return 식사 정보와 음식 줄, 이미지 URL, 평가 가능 여부를 담은 [MealV2Response]
+     * @throws BusinessException [MealErrorCode.MEAL_NOT_FOUND] mealId에 해당하는 식사가 없거나, 삭제된 경우
+     * @throws BusinessException [AuthErrorCode.FORBIDDEN] mealId에 해당하는 userId가 아닌 경우
      */
-    fun updateMealFoodsV2(request: UpdateMealFoodsRequest): MealStatusResponse {
-        if (request.foods.any { it.portion.remainder(BigDecimal("0.5")).signum() != 0 }) {
-            throw BusinessException(CommonErrorCode.INVALID_INPUT_VALUE)
+    @Transactional(readOnly = true)
+    fun getMealV2(userId: Long, mealId: Long): MealV2Response {
+        val meal = mealRepository.findMealByIdAndDeletedAtIsNull(mealId)
+            ?: throw BusinessException(MealErrorCode.MEAL_NOT_FOUND)
+
+        meal.validateOwnership(userId)
+
+        return convertMealV2Response(meal)
+    }
+
+    /** 음식 줄을 읽어 v2 단건 응답으로 바꾼다. V1 식사는 음식 줄이 없으므로 조회하지 않는다. */
+    private fun convertMealV2Response(meal: Meal): MealV2Response {
+        val mealFoods = if (meal.analysisVersion == MealAnalysisVersion.V2) {
+            mealFoodService.getMealFoods(meal.id)
+        } else {
+            emptyList()
         }
-        return MealStatusResponse(id = 2L, status = MealStatus.WAITING)
+
+        return meal.toMealV2Response(
+            imageUrl = imageService.createImageUrl(meal.imageKey),
+            canCreateAnalysisFeedback = analysisFeedbackService.canCreateAnalysisFeedback(meal),
+            mealFoods = mealFoods,
+        )
     }
 
     /**
-     * v2 대표 이름 수정. 지금은 고정 응답(Stub)으로 받은 이름을 넣은 단건 모양을 준다.
+     * v2 하루 식사 목록을 조회한다. [getDailyMeals]와 같고, 식사마다 분석 버전을 더한다.
+     * 앱은 이 값으로 상세 화면(음식 줄 화면, 기존 화면)을 고른다.
+     *
+     * @param userId 조회하는 사용자 ID
+     * @param year 조회할 날짜의 연도
+     * @param month 조회할 날짜의 월
+     * @param day 조회할 날짜의 일
+     * @return 해당 날짜의 식사 목록과 [DailyNutritionResponse]를 담은 [DailyMealsV2Response]
      */
-    fun updateMealNameV2(request: UpdateMealNameRequest): MealV2Response = getMealV2(request.name)
+    @Transactional(readOnly = true)
+    fun getDailyMealsV2(userId: Long, year: Int, month: Int, day: Int): DailyMealsV2Response {
+        val date = LocalDate.of(year, month, day)
+        val meals = getMealsByDate(userId, date)
+
+        return DailyMealsV2Response(
+            date = date,
+            meals = meals.map { it.toDailyMealV2Response() },
+            dailyNutrition = createDailyNutritionResponse(userId, date, meals),
+        )
+    }
 
     /**
-     * v2 기록 취소. 지금은 Stub이라 아무것도 하지 않는다.
+     * v2 식사의 음식 목록을 사용자가 보낸 목록으로 바꾸고 영양을 다시 계산하게 한다.
+     * 음식 목록 화면의 버튼 하나가 이 API다. 고치지 않았어도 같은 목록을 보내고, 계산이 끝난 뒤에도 몇 번이든 보낼 수 있다.
+     *
+     * 기다리던 작업은 지운다. 옛 목록으로 계산하던 Worker는 결과를 쓸 때 자기 작업 행이 없어 결과를 버린다.
+     * 그 뒤는 값을 새로 구해야 하는지에 따라 갈린다.
+     * - 새로 구할 값이 있으면(이름을 바꾼 줄, 영양을 적지 않은 새 줄) 바로 가져갈 영양 작업을 만들고 WAITING으로 둔다.
+     *   식사의 합계와 아이콘은 비운다. 계산이 끝나지 않은 식사는 영양이 없어야 하루 목록과 합계에 옛 값이 섞이지 않는다.
+     *   아직 한 번도 계산이 끝나지 않은 식사도 여기로 간다. 고양이 코멘트를 만들어야 해서다.
+     * - 새로 구할 값이 없으면(인분·순서만 바꿈, 줄을 지움, 영양·아이콘을 직접 적음) 이 요청 안에서 합계와 아이콘을 다시 계산해
+     *   COMPLETED로 끝낸다. 작업을 만들지 않으므로 완료 푸시도 가지 않는다.
+     *
+     * 요청 안에서 끝내는 것은 식사 DB만으로 끝낼 수 있을 때뿐이다. 값을 새로 구하는 일(모델 호출, 음식 DB 조회)은 Worker가 한다.
+     *
+     * 대표 이름과 고양이 코멘트는 바꾸지 않는다.
+     *
+     * 음식 목록이 있는 V2 식사만 받는다. 아직 인식 중인 식사, 실패한 식사, V1 식사는 거절한다.
+     * 실패한 식사는 재분석으로 처음부터 다시 한다.
+     *
+     * 줄 수·이름 길이·인분 범위·영양 범위는 요청 DTO가 검사하고, 음식 줄을 바꾸는 규칙은 [MealFoodService.updateMealFoods]에 있다.
+     *
+     * @param userId 보내는 사용자 ID
+     * @param mealId 음식 목록을 바꿀 식사 ID
+     * @param request 음식 줄 전체를 담은 [UpdateMealFoodsRequest]
+     * @param language 요청의 앱 언어. 새 작업에 실어 완료 푸시를 이 언어로 보낸다
+     * @return 다시 계산을 기다리면 WAITING, 요청 안에서 계산을 끝냈으면 COMPLETED를 담은 [MealStatusResponse]
+     * @throws BusinessException [CommonErrorCode.INVALID_INPUT_VALUE] 인분이 0.5 단위가 아니거나, 없는 아이콘 id이거나, 같은 mealFoodId가 두 번 온 경우
+     * @throws BusinessException [MealErrorCode.MEAL_NOT_FOUND] mealId에 해당하는 식사가 없거나, 삭제된 경우
+     * @throws BusinessException [AuthErrorCode.FORBIDDEN] mealId에 해당하는 userId가 아닌 경우
+     * @throws BusinessException [MealErrorCode.MEAL_FOODS_NOT_UPDATABLE] 음식 목록을 고칠 수 없는 식사인 경우
+     * @throws BusinessException [MealErrorCode.MEAL_FOOD_NOT_FOUND] 이 식사의 줄이 아닌 mealFoodId가 있는 경우
      */
-    fun cancelMealV2() = Unit
+    @Transactional
+    fun updateMealFoodsV2(
+        userId: Long,
+        mealId: Long,
+        request: UpdateMealFoodsRequest,
+        language: Language,
+    ): MealStatusResponse {
+        if (request.foods.any { it.portion.remainder(MealFood.PORTION_STEP).signum() != 0 }) {
+            throw BusinessException(CommonErrorCode.INVALID_INPUT_VALUE)
+        }
+
+        val meal = deleteMealAnalysisJobAndGetMealWithLock(userId, mealId)
+        if (meal.analysisVersion != MealAnalysisVersion.V2 ||
+            meal.status !in MealStatus.MEAL_FOOD_UPDATABLE_STATUSES
+        ) {
+            throw BusinessException(MealErrorCode.MEAL_FOODS_NOT_UPDATABLE)
+        }
+
+        val mealFoods = mealFoodService.updateMealFoods(meal.id, request.foods)
+        val topMealFoodIconId = mealFoods.firstOrNull()?.iconId
+        val hasAllServingNutritions = mealFoods.all { it.servingNutrition != null && it.iconId != null }
+        if (meal.catComment != null && topMealFoodIconId != null && hasAllServingNutritions) {
+            meal.updateNutrition(calculateMealNutrition(mealFoods))
+            meal.updateIconId(topMealFoodIconId)
+            meal.updateStatus(MealStatus.COMPLETED)
+        } else {
+            mealAnalysisJobRepository.save(
+                MealAnalysisJob(mealId = meal.id, language = language, category = MealAnalysisJobCategory.NUTRITION),
+            )
+            meal.resetNutrition()
+            meal.updateStatus(MealStatus.WAITING)
+        }
+
+        return meal.toMealStatusResponse()
+    }
+
+    /**
+     * 식사의 기다리던 작업을 지우고 식사를 잠가 돌려준다. 작업 행을 만들거나 지우는 v2 요청이 이 순서로 시작한다.
+     *
+     * 1. 프로필 행을 잠가 같은 사용자의 요청을 줄 세운다([MealTransactionService.createMeal]과 같은 방식).
+     *    줄 세우지 않으면 같은 식사의 요청 둘이 모두 "작업 없음"을 보고 새 작업을 둘 만들려다 유니크 제약에 걸린다.
+     *    트랜잭션의 첫 조회여야 한다. 잠금보다 먼저 일반 조회를 하면 앞선 요청이 커밋한 작업을 보지 못한다.
+     * 2. 작업 행이 있으면 id로 지운다. Worker와 같은 순서(작업 → 식사)로 잠가야 서로를 기다리는 데드락이 없다.
+     *    `meal_id`로 바로 지우지 않는 이유는 [MealAnalysisJobRepository.findIdByMealId]에 있다.
+     * 3. 식사를 잠가 읽는다.
+     *
+     * 식사의 소유자는 식사를 읽은 뒤에야 알 수 있어 작업을 먼저 지운다. 소유자가 아니면 예외로 트랜잭션이 롤백돼 작업도 되돌아온다.
+     *
+     * @throws BusinessException [UserErrorCode.PROFILE_NOT_FOUND] 가입 시 만들어져야 할 프로필이 없는 경우
+     * @throws BusinessException [MealErrorCode.MEAL_NOT_FOUND] mealId에 해당하는 식사가 없거나, 삭제된 경우
+     * @throws BusinessException [AuthErrorCode.FORBIDDEN] mealId에 해당하는 userId가 아닌 경우
+     */
+    private fun deleteMealAnalysisJobAndGetMealWithLock(userId: Long, mealId: Long): Meal {
+        profileRepository.findProfileWithLockByUserId(userId)
+            ?: throw BusinessException(UserErrorCode.PROFILE_NOT_FOUND)
+        mealAnalysisJobRepository.findIdByMealId(mealId)
+            ?.let { mealAnalysisJobRepository.deleteMealAnalysisJobById(it) }
+
+        val meal = mealRepository.findMealWithLockById(mealId)
+            ?.takeIf { it.deletedAt == null }
+            ?: throw BusinessException(MealErrorCode.MEAL_NOT_FOUND)
+
+        meal.validateOwnership(userId)
+
+        return meal
+    }
+
+    /**
+     * v2 식사의 대표 이름을 수정한다. AI가 추천한 이름을 사용자가 바꿀 때 쓴다.
+     *
+     * 이름만 바꾼다. 음식 줄과 영양은 그대로이고 다시 계산하지 않는다.
+     * 이름 길이(1~[Meal.NAME_MAX_LENGTH]자)는 요청 DTO가 검사한다.
+     *
+     * [updateMeal]과 같은 이유로 식사를 잠가 읽는다.
+     *
+     * @param userId 수정하는 사용자 ID
+     * @param mealId 수정할 식사 ID
+     * @param request 바꿀 대표 이름을 담은 [UpdateMealNameRequest]
+     * @return 수정된 식사 정보와 음식 줄을 담은 [MealV2Response]. 단건 조회와 같은 모양이다
+     * @throws BusinessException [MealErrorCode.MEAL_NOT_FOUND] mealId에 해당하는 식사가 없거나, 삭제된 경우
+     * @throws BusinessException [AuthErrorCode.FORBIDDEN] mealId에 해당하는 userId가 아닌 경우
+     */
+    @Transactional
+    fun updateMealNameV2(userId: Long, mealId: Long, request: UpdateMealNameRequest): MealV2Response {
+        val meal = mealRepository.findMealWithLockById(mealId)
+            ?.takeIf { it.deletedAt == null }
+            ?: throw BusinessException(MealErrorCode.MEAL_NOT_FOUND)
+
+        meal.validateOwnership(userId)
+
+        meal.updateName(request.name)
+
+        return convertMealV2Response(meal)
+    }
+
+    /**
+     * v2 식사 기록을 소프트 삭제하고(deletedAt 기록) 기다리던 작업을 지운다.
+     *
+     * v1 삭제([deleteMeal])는 작업을 그대로 두고 Worker가 가져갈 때 지워진 식사의 작업을 지운다.
+     * v2는 영양 작업이 5분을 기다리므로 여기서 바로 지운다. 그 작업을 처리하던 Worker는 결과를 쓸 때 자기 행이 없어 결과를 버린다.
+     *
+     * 음식 줄과 스냅샷은 지우지 않는다. 하루 기록 횟수, 보상 상자, 연속 기록도 되돌리지 않는다.
+     *
+     * @param userId 삭제하는 사용자 ID
+     * @param mealId 삭제할 식사 ID
+     * @throws BusinessException [MealErrorCode.MEAL_NOT_FOUND] mealId에 해당하는 식사가 없거나, 삭제된 경우
+     * @throws BusinessException [AuthErrorCode.FORBIDDEN] mealId에 해당하는 userId가 아닌 경우
+     */
+    @Transactional
+    fun deleteMealV2(userId: Long, mealId: Long) {
+        val meal = deleteMealAnalysisJobAndGetMealWithLock(userId, mealId)
+
+        meal.updateDeletedAt(Instant.now(clock))
+    }
+
+    /**
+     * v2 식사 기록을 취소한다. 기록 직후 음식 목록 화면의 X 버튼이다.
+     *
+     * 지금은 삭제([deleteMealV2])와 하는 일이 같다. 나중에 취소에만 다른 동작을 넣을 수 있게 API와 메서드를 따로 둔다.
+     *
+     * @param userId 취소하는 사용자 ID
+     * @param mealId 취소할 식사 ID
+     * @throws BusinessException [deleteMealV2]와 같다
+     */
+    @Transactional
+    fun cancelMealV2(userId: Long, mealId: Long) {
+        deleteMealV2(userId, mealId)
+    }
 
     /**
      * 튜토리얼 식사를 기록하고 보상 상자 우편을 하나 만든다. 사용자당 한 번만 성공한다.
@@ -378,29 +503,33 @@ class MealService(
      */
     @Transactional(readOnly = true)
     fun getDailyMeals(userId: Long, year: Int, month: Int, day: Int): DailyMealsResponse {
+        val date = LocalDate.of(year, month, day)
+        val meals = getMealsByDate(userId, date)
+
+        return DailyMealsResponse(
+            date = date,
+            meals = meals.map { it.toDailyMealResponse() },
+            dailyNutrition = createDailyNutritionResponse(userId, date, meals),
+        )
+    }
+
+    /** [date] 하루([0시, 다음 날 0시))에 먹은, 지우지 않은 식사. */
+    private fun getMealsByDate(userId: Long, date: LocalDate): List<Meal> {
         // TODO: 사용자별 timezone에 맞게 계산
         val zone = ZoneId.of("Asia/Seoul")
-        val date = LocalDate.of(year, month, day)
         val start = date.atStartOfDay(zone).toInstant()
         val end = date.plusDays(1).atStartOfDay(zone).toInstant()
 
-        val mealsByPeriod = mealRepository.findMealsByUserIdAndPeriod(userId, start, end)
+        return mealRepository.findMealsByUserIdAndPeriod(userId, start, end)
+    }
 
-        val meals = mealsByPeriod.map { it.toDailyMealResponse() }
-
+    /** 하루 섭취 합계와 목표. 합계는 모든 식사를 더하고, 영양을 아직 모르는 식사는 0으로 더해진다. */
+    private fun createDailyNutritionResponse(userId: Long, date: LocalDate, meals: List<Meal>): DailyNutritionResponse {
         val profile = profileRepository.findProfileByUserId(userId)
 
-        val recommended = calculateRecommendedDailyIntake(profile, LocalDate.of(year, month, day))
-
-        val dailyNutrition = DailyNutritionResponse(
-            current = mealsByPeriod.fold(Nutrition.ZERO) { acc, meal -> acc + meal.toNutrition() },
-            target = recommended,
-        )
-
-        return DailyMealsResponse(
-            date = LocalDate.of(year, month, day),
-            meals = meals,
-            dailyNutrition = dailyNutrition,
+        return DailyNutritionResponse(
+            current = meals.fold(Nutrition.ZERO) { acc, meal -> acc + meal.toNutrition() },
+            target = calculateRecommendedDailyIntake(profile, date),
         )
     }
 
@@ -546,6 +675,55 @@ class MealService(
 
         mealAnalysisJobRepository.save(MealAnalysisJob(mealId = meal.id, language = language))
         meal.updateStatus(MealStatus.WAITING)
+
+        return meal.toMealStatusResponse()
+    }
+
+    /**
+     * FAILED 상태의 식사를 v2 경로로 다시 분석한다. V2 식사는 어느 단계에서 실패했든 처음부터, 음식 인식부터 다시 한다.
+     *
+     * V2 식사가 FAILED가 되는 경우는 셋이다: 음식이 아니라고 판정됨, 인식 실패, 영양 계산 실패. 앱에서는 모두 같은 실패로 보이므로
+     * 재분석도 하나로 한다. 음식 줄과 스냅샷을 지우고(사용자가 고친 목록도 사라진다) 인식 작업을 만들어 RECOGNIZING으로 둔다.
+     * 대표 이름과 합계·아이콘도 비운다. 고양이 코멘트가 이미 있으면 그대로 둔다(식사당 한 번만 만든다).
+     *
+     * V1 식사는 분석 버전을 바꿀 수 없으므로 [retryNutritionAnalysis]와 같이 v1 분석 작업을 쌓고 WAITING으로 둔다.
+     * 새 앱의 하루 목록에는 V1 식사도 나오므로 이 경로로 들어올 수 있다.
+     *
+     * 작업 행을 만드는 요청이라 [deleteMealAnalysisJobAndGetMealWithLock]으로 시작한다. FAILED 식사에는 지울 작업이 없지만
+     * 같은 사용자의 요청을 줄 세워, 재분석을 두 번 눌러도 하나만 작업을 만들고 나머지는 거절된다.
+     *
+     * 음식이 아니라고 잘못 판정한 식사를 세려고(재분석해서 성공한 식사) 다시 분석하는 식사의 id와 직전 입력 유형을 로그로 남긴다.
+     *
+     * @param userId 재분석을 요청한 사용자 ID
+     * @param mealId 재분석할 식사 ID
+     * @param language 요청의 앱 언어. 새 인식 결과와 푸시를 이 언어로 만든다
+     * @return 다시 요청한 뒤의 분석 상태를 담은 [MealStatusResponse]. V2 식사는 RECOGNIZING, V1 식사는 WAITING이다
+     * @throws BusinessException [MealErrorCode.MEAL_NOT_FOUND] mealId에 해당하는 식사가 없거나, 삭제된 경우
+     * @throws BusinessException [AuthErrorCode.FORBIDDEN] userId가 소유자가 아닌 경우
+     * @throws BusinessException [MealErrorCode.ANALYSIS_NOT_RETRYABLE] 식사가 FAILED 상태가 아닌 경우
+     */
+    @Transactional
+    fun retryNutritionAnalysisV2(userId: Long, mealId: Long, language: Language): MealStatusResponse {
+        val meal = deleteMealAnalysisJobAndGetMealWithLock(userId, mealId)
+        if (meal.status != MealStatus.FAILED) {
+            throw BusinessException(MealErrorCode.ANALYSIS_NOT_RETRYABLE)
+        }
+
+        if (meal.analysisVersion != MealAnalysisVersion.V2) {
+            mealAnalysisJobRepository.save(MealAnalysisJob(mealId = meal.id, language = language))
+            meal.updateStatus(MealStatus.WAITING)
+
+            return meal.toMealStatusResponse()
+        }
+
+        logger.info("실패한 v2 식사를 처음부터 다시 분석합니다: mealId={}, inputCategory={}", meal.id, meal.inputCategory)
+        mealFoodService.deleteMealFoods(meal.id)
+        mealAnalysisJobRepository.save(
+            MealAnalysisJob(mealId = meal.id, language = language, category = MealAnalysisJobCategory.RECOGNITION),
+        )
+        meal.updateName("")
+        meal.resetNutrition()
+        meal.updateStatus(MealStatus.RECOGNIZING)
 
         return meal.toMealStatusResponse()
     }

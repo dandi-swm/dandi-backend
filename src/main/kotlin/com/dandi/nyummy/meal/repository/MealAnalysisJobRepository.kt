@@ -64,6 +64,27 @@ interface MealAnalysisJobRepository : JpaRepository<MealAnalysisJob, Long> {
     fun deleteByIdAndLeaseCount(@Param("id") id: Long, @Param("leaseCount") leaseCount: Int): Int
 
     /**
+     * 식사의 작업 id. 작업이 없으면 null. 잠그지 않고 읽는다.
+     *
+     * 식사의 작업을 지울 때 `meal_id`로 바로 지우지 않고 이 id로 지운다([deleteMealAnalysisJobById]).
+     * 없는 행을 `meal_id`로 지우려 하면 InnoDB가 유니크 인덱스의 빈 구간을 잠그는데, 이 테이블은 거의 비어 있어 그 구간이
+     * 테이블 전체가 된다. 그러면 서로 다른 식사의 요청 둘이 겹쳤을 때 서로의 INSERT를 막아 데드락이 난다.
+     */
+    @Query("select j.id from MealAnalysisJob j where j.mealId = :mealId")
+    fun findIdByMealId(@Param("mealId") mealId: Long): Long?
+
+    /**
+     * 작업을 id로 지운다. 사용자가 음식 목록을 다시 보내거나 식사를 지울 때 기다리던 작업을 없앤다.
+     * 그 작업을 처리하던 Worker는 결과를 쓸 때 자기 행이 없어 결과를 버린다.
+     *
+     * 조회 후 삭제하는 파생 메서드와 달리 바로 실행되는 한 문장이라, 같은 트랜잭션에서 이어서 새 작업을 저장해도
+     * `meal_id` 유니크 제약에 걸리지 않는다.
+     */
+    @Modifying
+    @Query("delete from MealAnalysisJob j where j.id = :id")
+    fun deleteMealAnalysisJobById(@Param("id") id: Long): Int
+
+    /**
      * 작업이 아직 [leaseCount]번째 시도일 때만 lease를 풀어 대기로 되돌린다. 바뀐 행 수가 0이면 이 Worker의 작업이 아니다.
      * lease_count는 그대로 두어, 다음에 가져갈 때 다음 번호가 된다.
      */

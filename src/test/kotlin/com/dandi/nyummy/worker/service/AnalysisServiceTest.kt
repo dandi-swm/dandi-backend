@@ -780,6 +780,31 @@ class AnalysisServiceTest {
     }
 
     @Test
+    fun `이미 한 번 완료됐던 식사를 다시 계산한 것은 완료 알림을 보내지 않지만 completed로는 센다`() {
+        givenAnalysisMeal(
+            createAnalysisMeal(bulgogiServingNutrition, 12L, riceServingNutrition, 5L, hasCatComment = true),
+        )
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        verify(exactly = 1) { mealAnalysisJobTransactionService.confirmMealNutrition(nutritionJob, emptyMap(), null) }
+        verify(exactly = 0) { notificationService.sendServicePush(any(), any()) }
+        assertEquals(1, countAnalysis("completed", "none"))
+    }
+
+    @Test
+    fun `다시 계산이 실패하면 완료였던 식사가 FAILED가 되므로 실패 알림은 보낸다`() {
+        givenAnalysisMeal(createAnalysisMeal(hasCatComment = true))
+        every { servingNutritionClient.getServingNutritions(any(), any()) } throws
+            AnalysisFailureException(AnalysisFailureCategory.INVALID_RESPONSE, "실패")
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        verify(exactly = 1) { mealAnalysisJobTransactionService.failMealAnalysis(nutritionJob) }
+        assertFailedPushSent(title = "사진을 못 알아봤다냥 🐾", body = "다시 시도해줄래?")
+    }
+
+    @Test
     fun `영양 작업이 끝나면 completed로 세고 작업의 언어로 완료 알림을 보낸다`() {
         val japaneseJob = nutritionJob.copy(language = Language.JA)
         givenAnalysisMeal(createAnalysisMeal(bulgogiServingNutrition, 12L, riceServingNutrition, 5L))

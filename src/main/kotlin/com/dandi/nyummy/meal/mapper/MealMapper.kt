@@ -6,10 +6,13 @@ import com.dandi.nyummy.meal.dto.CreateMealRequest
 import com.dandi.nyummy.meal.dto.CreateMealResponse
 import com.dandi.nyummy.meal.dto.CreateMealV2Response
 import com.dandi.nyummy.meal.dto.DailyMealResponse
+import com.dandi.nyummy.meal.dto.DailyMealV2Response
+import com.dandi.nyummy.meal.dto.MealFoodNutritionRequest
 import com.dandi.nyummy.meal.dto.MealFoodResponse
 import com.dandi.nyummy.meal.dto.MealRecognitionOutcome
 import com.dandi.nyummy.meal.dto.MealResponse
 import com.dandi.nyummy.meal.dto.MealStatusResponse
+import com.dandi.nyummy.meal.dto.MealV2Response
 import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.dto.UpdateMealNutritionRequest
 import com.dandi.nyummy.meal.entity.Meal
@@ -61,6 +64,14 @@ fun Meal.toNutrition() = Nutrition(
     carbs = this.carbs ?: 0,
     protein = this.protein ?: 0,
     fat = this.fat ?: 0,
+)
+
+/** 사용자가 음식 한 줄에 직접 적어 보낸 줄 영양. */
+fun MealFoodNutritionRequest.toNutrition() = Nutrition(
+    calory = this.calory,
+    carbs = this.carbs,
+    protein = this.protein,
+    fat = this.fat,
 )
 
 /** 요청에 담긴 항목만 바꾸고, 생략한 항목은 [meal]의 지금 값을 그대로 둔 [Nutrition]을 만든다. */
@@ -122,6 +133,40 @@ fun Meal.toDailyMealResponse() = DailyMealResponse(
     // 영양 값은 0으로 채우지만 iconId는 0이 가리킬 아이콘이 없으므로 null 그대로 내려준다.
     iconId = this.iconId,
 )
+
+/** v2 하루 목록의 식사 한 끼. 분석 버전이 비어 있는 식사는 V1이다. */
+fun Meal.toDailyMealV2Response() = DailyMealV2Response(
+    mealId = this.id,
+    analysisVersion = this.analysisVersion ?: MealAnalysisVersion.V1,
+    name = this.name,
+    mealAt = this.mealAt,
+    calory = this.calory ?: 0,
+    carbs = this.carbs ?: 0,
+    protein = this.protein ?: 0,
+    fat = this.fat ?: 0,
+    status = this.status,
+    iconId = this.iconId,
+)
+
+/**
+ * v2 식사 단건 응답. 분석 버전이 비어 있는 식사는 V1이다.
+ *
+ * @param mealFoods 식사의 음식 줄(순서대로). 음식 줄이 없으면(V1 식사, 인식 중, 음식 아님) 응답의 foods는 null이다
+ */
+fun Meal.toMealV2Response(imageUrl: String, canCreateAnalysisFeedback: Boolean, mealFoods: List<MealFood>) =
+    MealV2Response(
+        mealId = this.id,
+        analysisVersion = this.analysisVersion ?: MealAnalysisVersion.V1,
+        name = this.name,
+        mealAt = this.mealAt,
+        status = this.status,
+        nutrition = this.toNutrition(),
+        imageUrl = imageUrl,
+        canCreateAnalysisFeedback = canCreateAnalysisFeedback,
+        catComment = this.catComment,
+        iconId = this.iconId,
+        foods = mealFoods.takeIf { it.isNotEmpty() }?.map { it.toMealFoodResponse() },
+    )
 
 fun Meal.toMealResponse(imageUrl: String, canCreateAnalysisFeedback: Boolean) = MealResponse(
     mealId = this.id,
