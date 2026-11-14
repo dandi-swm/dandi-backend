@@ -8,12 +8,15 @@ import com.dandi.nyummy.exception.errorcode.S3ErrorCode
 import com.dandi.nyummy.image.dto.UploadedImageResult
 import com.dandi.nyummy.image.enum.ImagePurpose
 import com.dandi.nyummy.image.service.ImageService
+import com.dandi.nyummy.infra.discord.DiscordClient
 import com.dandi.nyummy.inquiry.dto.CreateInquiryRequest
 import com.dandi.nyummy.inquiry.dto.UpdateInquiryRequest
 import com.dandi.nyummy.inquiry.entity.Inquiry
 import com.dandi.nyummy.inquiry.enum.InquiryCategory
 import com.dandi.nyummy.inquiry.repository.InquiryRepository
+import io.mockk.Runs
 import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
@@ -21,10 +24,12 @@ import io.mockk.verifyOrder
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.SliceImpl
 import org.springframework.test.util.ReflectionTestUtils
+import org.springframework.web.client.ResourceAccessException
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
 import kotlin.test.Test
+import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
@@ -32,7 +37,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * 이미지 확정 순서(검증 → 확정 → 저장)와 cursor 계산, 읽음·삭제 처리를 다룬다.
+ * 이미지 확정 순서(검증 → 확정 → 저장)와 새 문의 알림, cursor 계산, 읽음·삭제 처리를 다룬다.
  * 이미지 공통 검증은 ImageServiceTest, answeredAt 기반 규칙은 InquiryTest가 맡는다.
  */
 class InquiryServiceTest {
@@ -47,11 +52,13 @@ class InquiryServiceTest {
     private val inquiryRepository = mockk<InquiryRepository>()
     private val imageService = mockk<ImageService>()
     private val inquiryTransactionService = mockk<InquiryTransactionService>()
+    private val discordClient = mockk<DiscordClient>()
 
     private val inquiryService = InquiryService(
         inquiryRepository = inquiryRepository,
         imageService = imageService,
         inquiryTransactionService = inquiryTransactionService,
+        discordClient = discordClient,
         clock = clock,
     )
 
@@ -64,6 +71,7 @@ class InquiryServiceTest {
             UploadedImageResult(imageKey = thirdArg(), capturedAt = null)
         }
         every { imageService.createImageUrl(any()) } answers { "https://image.example/${firstArg<String>()}" }
+        every { discordClient.sendMessage(any()) } just Runs
     }
 
     private fun inquiry(
@@ -135,6 +143,7 @@ class InquiryServiceTest {
         }
         verify(exactly = 0) { imageService.confirmUpload(any(), any(), any(), any()) }
         verify(exactly = 0) { inquiryRepository.save(any()) }
+        verify(exactly = 0) { discordClient.sendMessage(any()) }
     }
 
     @Test
@@ -146,6 +155,36 @@ class InquiryServiceTest {
             inquiryService.createInquiry(userId, createRequest(imageKey), appVersion = null)
         }
         verify(exactly = 0) { inquiryRepository.save(any()) }
+    }
+
+    @Test
+    fun `저장한 뒤 운영자 채널에 문의 id와 유형만 알린다`() {
+        every { inquiryRepository.save(any()) } answers {
+            firstArg<Inquiry>().also { ReflectionTestUtils.setField(it, "id", inquiryId) }
+        }
+        val message = slot<String>()
+        every { discordClient.sendMessage(capture(message)) } just Runs
+
+        inquiryService.createInquiry(userId, createRequest(), appVersion = null)
+
+        verifyOrder {
+            inquiryRepository.save(any())
+            discordClient.sendMessage(any())
+        }
+        assertContains(message.captured, "inquiryId=$inquiryId")
+        assertContains(message.captured, "category=${InquiryCategory.BUG_REPORT}")
+        // 사용자가 쓴 글은 외부 서비스에 보내지 않는다.
+        assertFalse(message.captured.contains("제목"))
+        assertFalse(message.captured.contains("내용"))
+    }
+
+    @Test
+    fun `Discord 알림이 실패해도 문의 생성은 성공한다`() {
+        every { discordClient.sendMessage(any()) } throws ResourceAccessException("timeout")
+
+        inquiryService.createInquiry(userId, createRequest(), appVersion = null)
+
+        verify { inquiryRepository.save(any()) }
     }
 
     // getInquiries

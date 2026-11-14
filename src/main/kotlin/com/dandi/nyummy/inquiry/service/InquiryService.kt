@@ -6,6 +6,7 @@ import com.dandi.nyummy.exception.errorcode.InquiryErrorCode
 import com.dandi.nyummy.exception.errorcode.S3ErrorCode
 import com.dandi.nyummy.image.enum.ImagePurpose
 import com.dandi.nyummy.image.service.ImageService
+import com.dandi.nyummy.infra.discord.DiscordClient
 import com.dandi.nyummy.inquiry.dto.CreateInquiryRequest
 import com.dandi.nyummy.inquiry.dto.InquiriesResponse
 import com.dandi.nyummy.inquiry.dto.InquiryResponse
@@ -20,6 +21,7 @@ import org.springframework.data.domain.PageRequest
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.web.client.RestClientException
 import java.time.Clock
 import java.time.Instant
 
@@ -28,6 +30,7 @@ class InquiryService(
     private val inquiryRepository: InquiryRepository,
     private val imageService: ImageService,
     private val inquiryTransactionService: InquiryTransactionService,
+    private val discordClient: DiscordClient,
     private val clock: Clock,
 ) {
     companion object {
@@ -43,6 +46,8 @@ class InquiryService(
      * 앱 버전은 공통 헤더(X-App-Version)에서 받아 문의를 쓴 시점의 값으로 남긴다. 헤더가 없으면 null이다.
      * 컬럼 길이를 넘으면 저장하지 않고 null로 둔다. 부가 정보 때문에 문의 생성이 실패하지 않게 하기 위함이다.
      *
+     * 저장한 뒤 운영자 Discord 채널에 새 문의를 알린다. 트랜잭션 밖이라 알림을 기다리는 동안 DB 커넥션을 잡지 않는다.
+     *
      * @throws BusinessException [InquiryErrorCode.DUPLICATE_IMAGE_KEY] 이미 문의에 사용된 imageKey인 경우
      * @throws BusinessException [S3ErrorCode.INVALID_KEY] imageKey가 요청자의 문의 경로(`inquiries/{userId}/`)가 아닌 경우
      * @throws BusinessException [S3ErrorCode.OBJECT_NOT_FOUND] imageKey에 해당하는 객체가 S3에 없는 경우
@@ -52,7 +57,22 @@ class InquiryService(
     fun createInquiry(userId: Long, request: CreateInquiryRequest, appVersion: String?) {
         val imageKey = request.imageKey?.let { confirmImage(userId, it) }
 
-        inquiryRepository.save(request.toInquiry(userId, imageKey, convertAppVersion(userId, appVersion)))
+        val inquiry = inquiryRepository.save(request.toInquiry(userId, imageKey, convertAppVersion(userId, appVersion)))
+
+        sendDiscordMessage(inquiry)
+    }
+
+    /**
+     * 운영자 채널에 새 문의를 알린다. 저장이 커밋된 뒤라 실패해도 문의 생성은 성공으로 둔다.
+     *
+     * 사용자가 쓴 제목·본문은 넣지 않는다. Discord는 외부 서비스라 개인정보가 섞이면 밖에 남는다. 내용은 어드민 화면에서 본다.
+     */
+    private fun sendDiscordMessage(inquiry: Inquiry) {
+        try {
+            discordClient.sendMessage("새 문의가 등록됐습니다. inquiryId=${inquiry.id} category=${inquiry.category}")
+        } catch (e: RestClientException) {
+            logger.warn("새 문의 Discord 알림을 보내지 못했습니다. inquiryId={}", inquiry.id, e)
+        }
     }
 
     /**

@@ -176,6 +176,12 @@ app:
     credentials-base64: ${FCM_CREDENTIALS_BASE64}
     # true면 FCM까지 왕복해 검증만 받고 기기에 배달하지 않는다.
     dry-run: false
+  discord:
+    # 새 문의를 알릴 운영자 채널의 Webhook URL. 비어 있으면 보내지 않는다(local·test).
+    webhook-url: ${DISCORD_WEBHOOK_URL:}
+    # 문의 생성 요청 안에서 동기로 보내므로 짧게 둔다. 넘으면 알림만 건너뛴다.
+    connect-timeout: 2s
+    read-timeout: 3s
   image:
     upload-method: "PUT"
     upload-url-time-to-live-minutes: 10
