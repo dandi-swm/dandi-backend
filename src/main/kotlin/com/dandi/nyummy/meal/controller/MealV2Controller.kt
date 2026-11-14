@@ -38,7 +38,11 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 
-@Tag(name = "Meal v2", description = "AI 고도화 영양 분석 식사 API. 기록·상태·단건·하루 목록·음식 목록 보내기·이름 수정·기록 취소는 지금 고정 응답(Stub)이다")
+@Tag(
+    name = "Meal v2",
+    description = "AI 고도화 영양 분석 식사 API. 식사를 기록하면 음식 줄을 인식하고, 음식 목록을 확인해 보내면 영양을 계산한다. " +
+        "월간 캘린더 · 튜토리얼 · 분석 평가는 v1과 같다.",
+)
 @RestController
 @RequestMapping("/api/v2/meals")
 class MealV2Controller(
