@@ -8,6 +8,7 @@ import io.restassured.module.kotlin.extensions.Given
 import io.restassured.module.kotlin.extensions.Then
 import io.restassured.module.kotlin.extensions.When
 import io.restassured.path.json.JsonPath
+import org.hamcrest.Matchers.emptyString
 import org.hamcrest.Matchers.equalTo
 import org.hamcrest.Matchers.hasItems
 import org.hamcrest.Matchers.oneOf
@@ -159,16 +160,30 @@ class MealV2E2eTest {
                 body("code", equalTo("api.meal.analysisNotRetryable"))
             }
 
+            // 8. 사용자의 확인을 기다리는 식사의 줄은 하나씩 고치거나 지울 수 없다. 음식 목록 보내기로 한 번에 고친다.
+            val firstFoodId = (firstFood["mealFoodId"] as Number).toLong()
+            Given {
+                spec(RequestSpecs.createAuthorizedSpec())
+                body(mapOf("portion" to 2.0))
+            } When {
+                patch("/api/v2/meals/$mealId/foods/$firstFoodId")
+            } Then {
+                statusCode(409)
+                body("code", equalTo("api.meal.mealFoodsNotUpdatable"))
+            }
+            Given { spec(RequestSpecs.createAuthorizedSpec()) } When {
+                delete("/api/v2/meals/$mealId/foods/$firstFoodId")
+            } Then {
+                statusCode(409)
+                body("code", equalTo("api.meal.mealFoodsNotUpdatable"))
+            }
+
             // 거부된 요청들이 음식 줄과 상태를 바꾸지 않았는지 본다. 4xx가 와도 저장이 먼저 일어났을 수 있다.
             val untouchedMeal = getMeal(mealId)
             assertEquals("CONFIRMING", untouchedMeal.getString("status"))
-            assertEquals(
-                recognizedFoods.map { it["mealFoodId"] to it["name"] },
-                untouchedMeal.getList<Map<String, Any?>>("foods").map { it["mealFoodId"] to it["name"] },
-                "거부된 요청이 음식 줄을 바꿨습니다",
-            )
+            assertEquals(recognizedFoods, untouchedMeal.getList<Map<String, Any?>>("foods"), "거부된 요청이 음식 줄을 바꿨습니다")
 
-            // 8. 음식 목록을 보낸다. 맨 위 줄의 인분을 바꾸고 김치 반 인분을 더한다.
+            // 9. 음식 목록을 보낸다. 맨 위 줄의 인분을 바꾸고 김치 반 인분을 더한다.
             // 5분을 기다리던 계산 대신 바로 계산한다. 처음 계산이라 Worker가 1인분 영양과 아이콘을 구하고 코멘트를 만든다. 응답은 WAITING이다.
             val firstPortion = if (convertPortion(firstFood) == 1.0) 1.5 else 1.0
             val sentFoods = listOf(convertFoodBody(firstFood) + mapOf("portion" to firstPortion)) +
@@ -176,7 +191,7 @@ class MealV2E2eTest {
                 mapOf("mealFoodId" to null, "name" to ADDED_FOOD_NAME, "portion" to 0.5)
             assertEquals("WAITING", updateMealFoods(mealId, sentFoods))
 
-            // 9. 영양 계산이 끝난다.
+            // 10. 영양 계산이 끝난다.
             assertEquals(
                 "COMPLETED",
                 waitForStatus(mealId, setOf("COMPLETED", "FAILED")),
@@ -207,13 +222,13 @@ class MealV2E2eTest {
                 "계산이 끝났는데 고양이 코멘트가 없거나 너무 깁니다: $catComment",
             )
 
-            // 10. 하루 목록에 V2 식사로 나오고 합계가 같다.
+            // 11. 하루 목록에 V2 식사로 나오고 합계가 같다.
             val dailyMeal = getDailyMeals(today).single { (it["mealId"] as Number).toLong() == mealId }
             assertEquals("V2", dailyMeal["analysisVersion"])
             assertEquals("COMPLETED", dailyMeal["status"])
             assertEquals(completedCalory, dailyMeal["calory"])
 
-            // 11. 인분만 바꿔 다시 보낸다. 새로 구할 값이 없으므로 요청 안에서 계산이 끝나 응답이 COMPLETED다.
+            // 12. 인분만 바꿔 다시 보낸다. 새로 구할 값이 없으므로 요청 안에서 계산이 끝나 응답이 COMPLETED다.
             val addedFood = completedFoods.last()
             val portionChangedFoods = completedFoods.dropLast(1).map { convertFoodBody(it) } +
                 (convertFoodBody(addedFood) + mapOf("portion" to 1.0))
@@ -224,7 +239,7 @@ class MealV2E2eTest {
             // 코멘트는 처음 계산 때 만든 것이 그대로 남는다.
             assertEquals(catComment, portionChangedMeal.getString("catComment"))
 
-            // 12. 줄 영양을 직접 적어 보낸다. 그 줄은 적은 값으로 고정되고, 이번에도 요청 안에서 끝난다.
+            // 13. 줄 영양을 직접 적어 보낸다. 그 줄은 적은 값으로 고정되고, 이번에도 요청 안에서 끝난다.
             val fixedNutrition = mapOf("calory" to 15, "carbs" to 3, "protein" to 1, "fat" to 0)
             val nutritionFixedFoods = completedFoods.dropLast(1).map { convertFoodBody(it) } +
                 (convertFoodBody(addedFood) + mapOf("portion" to 1.0, "nutrition" to fixedNutrition))
@@ -233,7 +248,7 @@ class MealV2E2eTest {
             assertEquals(true, fixedFood["isNutritionFixed"])
             assertEquals(fixedNutrition, fixedFood["nutrition"])
 
-            // 13. 대표 이름을 바꾼다. 음식 줄은 그대로다.
+            // 14. 대표 이름을 바꾼다. 음식 줄은 그대로다.
             Given {
                 spec(RequestSpecs.createAuthorizedSpec())
                 body(mapOf("name" to UPDATED_MEAL_NAME))
@@ -255,7 +270,131 @@ class MealV2E2eTest {
             }
             assertEquals(UPDATED_MEAL_NAME, getMeal(mealId).getString("name"), "거부된 이름 수정이 이름을 바꿨습니다")
 
-            // 14. 기록을 취소하면 더 조회되지 않고 하루 목록에서도 빠진다.
+            // 15. 계산이 끝난 식사의 한 줄을 고친다. 인분만 바꾸면 새로 구할 값이 없어 식사는 COMPLETED로 남고 합계가 바로 바뀐다.
+            val foodsBeforePatch = getMeal(mealId).getList<Map<String, Any?>>("foods")
+            val patchedFoodId = (foodsBeforePatch.first()["mealFoodId"] as Number).toLong()
+            val patchedPortion = if (convertPortion(foodsBeforePatch.first()) == 2.0) 2.5 else 2.0
+            updateMealFood(mealId, patchedFoodId, mapOf("portion" to patchedPortion))
+            val portionPatchedMeal = getMeal(mealId)
+            assertEquals("COMPLETED", portionPatchedMeal.getString("status"))
+            val portionPatchedFoods = portionPatchedMeal.getList<Map<String, Any?>>("foods")
+            assertEquals(patchedPortion, convertPortion(portionPatchedFoods.first()))
+            assertEquals(foodsBeforePatch.drop(1), portionPatchedFoods.drop(1), "고치지 않은 줄이 바뀌었습니다")
+            assertCaloryTotal(portionPatchedMeal)
+            assertEquals(catComment, portionPatchedMeal.getString("catComment"))
+
+            // 16. 받지 않는 줄 수정: 바꾸려는 항목이 없음, 0.5 단위가 아닌 인분, 30자를 넘는 이름, 없는 아이콘,
+            // 이 식사의 줄이 아닌 id, 남의 식사
+            val invalidFoodUpdates = listOf(
+                emptyMap(),
+                mapOf("portion" to 0.7),
+                mapOf("name" to "가".repeat(31)),
+                mapOf<String, Any?>("iconId" to NOT_EXISTING_ICON_ID),
+            )
+            invalidFoodUpdates.forEach { invalidFoodUpdate ->
+                Given {
+                    spec(RequestSpecs.createAuthorizedSpec())
+                    body(invalidFoodUpdate)
+                } When {
+                    patch("/api/v2/meals/$mealId/foods/$patchedFoodId")
+                } Then {
+                    statusCode(400)
+                    body("code", equalTo("api.common.invalidInputValue"))
+                }
+            }
+            Given {
+                spec(RequestSpecs.createAuthorizedSpec())
+                body(mapOf("portion" to 1.0))
+            } When {
+                patch("/api/v2/meals/$mealId/foods/$NOT_EXISTING_MEAL_FOOD_ID")
+            } Then {
+                statusCode(404)
+                body("code", equalTo("api.meal.mealFoodNotFound"))
+            }
+            Given {
+                spec(otherSpec)
+                body(mapOf("portion" to 1.0))
+            } When {
+                patch("/api/v2/meals/$mealId/foods/$patchedFoodId")
+            } Then {
+                statusCode(403)
+                body("code", equalTo("api.auth.forbidden"))
+            }
+            assertEquals(
+                portionPatchedFoods,
+                getMeal(mealId).getList<Map<String, Any?>>("foods"),
+                "거부된 줄 수정이 음식 줄을 바꿨습니다",
+            )
+
+            // 17. 줄의 이름을 고치면 그 줄의 영양과 아이콘을 새 이름으로 다시 구한다. Worker가 계산하는 동안 식사는 COMPLETED가 아니다.
+            val renamedFoodName =
+                if (portionPatchedFoods.first()["name"] == RENAMED_FOOD_NAME) ADDED_FOOD_NAME else RENAMED_FOOD_NAME
+            updateMealFood(mealId, patchedFoodId, mapOf("name" to renamedFoodName))
+            assertTrue(
+                getAnalysisStatus(mealId) in setOf("WAITING", "ANALYZING"),
+                "이름을 고쳤는데 다시 계산을 시작하지 않았습니다(mealId=$mealId)",
+            )
+            assertEquals(
+                "COMPLETED",
+                waitForStatus(mealId, setOf("COMPLETED", "FAILED")),
+                "이름을 고친 뒤 다시 계산이 끝나지 않았거나 실패했습니다(mealId=$mealId). dev Worker 로그를 확인하세요.",
+            )
+            val renamedMeal = getMeal(mealId)
+            val foodsBeforeDelete = renamedMeal.getList<Map<String, Any?>>("foods")
+            val renamedFood = foodsBeforeDelete.first()
+            assertEquals(renamedFoodName, renamedFood["name"])
+            assertEquals(patchedPortion, convertPortion(renamedFood))
+            assertNotNull(renamedFood["nutrition"], "다시 계산이 끝났는데 이름을 고친 줄의 영양이 없습니다")
+            assertNotNull(renamedFood["iconId"], "다시 계산이 끝났는데 이름을 고친 줄의 아이콘이 없습니다")
+            assertEquals(renamedFood["iconId"], renamedMeal.get<Any?>("iconId"))
+            assertEquals(portionPatchedFoods.drop(1), foodsBeforeDelete.drop(1), "이름을 고치지 않은 줄이 바뀌었습니다")
+            assertCaloryTotal(renamedMeal)
+            // 코멘트는 식사당 한 번만 만든다. 다시 계산해도 그대로다.
+            assertEquals(catComment, renamedMeal.getString("catComment"))
+
+            // 18. 줄을 지운다. 남은 줄로 합계가 바로 바뀌고 식사는 COMPLETED로 남는다.
+            deleteMealFood(mealId, (foodsBeforeDelete.last()["mealFoodId"] as Number).toLong())
+            val foodDeletedMeal = getMeal(mealId)
+            assertEquals("COMPLETED", foodDeletedMeal.getString("status"))
+            val remainingFoods = foodDeletedMeal.getList<Map<String, Any?>>("foods")
+            assertEquals(foodsBeforeDelete.dropLast(1), remainingFoods)
+            assertCaloryTotal(foodDeletedMeal)
+
+            // 19. 받지 않는 줄 삭제: 이 식사의 줄이 아닌 id, 남의 식사, 하나 남은 줄
+            Given { spec(RequestSpecs.createAuthorizedSpec()) } When {
+                delete("/api/v2/meals/$mealId/foods/$NOT_EXISTING_MEAL_FOOD_ID")
+            } Then {
+                statusCode(404)
+                body("code", equalTo("api.meal.mealFoodNotFound"))
+            }
+            Given { spec(otherSpec) } When {
+                delete("/api/v2/meals/$mealId/foods/$patchedFoodId")
+            } Then {
+                statusCode(403)
+                body("code", equalTo("api.auth.forbidden"))
+            }
+            assertEquals(
+                remainingFoods,
+                getMeal(mealId).getList<Map<String, Any?>>("foods"),
+                "거부된 줄 삭제가 음식 줄을 바꿨습니다",
+            )
+            // 한 줄만 남을 때까지 지운 뒤, 남은 줄을 지우려 한다.
+            remainingFoods.drop(1).forEach { deleteMealFood(mealId, (it["mealFoodId"] as Number).toLong()) }
+            Given { spec(RequestSpecs.createAuthorizedSpec()) } When {
+                delete("/api/v2/meals/$mealId/foods/$patchedFoodId")
+            } Then {
+                statusCode(409)
+                body("code", equalTo("api.meal.lastMealFoodNotDeletable"))
+            }
+            val lastFoodMeal = getMeal(mealId)
+            assertEquals("COMPLETED", lastFoodMeal.getString("status"))
+            assertEquals(
+                listOf(remainingFoods.first()),
+                lastFoodMeal.getList<Map<String, Any?>>("foods"),
+                "하나 남은 줄을 지우려던 요청이 음식 줄을 바꿨습니다",
+            )
+
+            // 20. 기록을 취소하면 더 조회되지 않고 하루 목록에서도 빠진다.
             Given { spec(RequestSpecs.createAuthorizedSpec()) } When {
                 post("/api/v2/meals/$mealId/cancel")
             } Then {
@@ -529,6 +668,39 @@ class MealV2E2eTest {
         path("status")
     }
 
+    // 계산이 끝난 식사의 음식 한 줄을 고친다. 바꾸려는 항목만 보내고, 응답은 본문이 없다.
+    private fun updateMealFood(mealId: Long, mealFoodId: Long, foodUpdate: Map<String, Any?>) {
+        Given {
+            spec(RequestSpecs.createAuthorizedSpec())
+            body(foodUpdate)
+        } When {
+            patch("/api/v2/meals/$mealId/foods/$mealFoodId")
+        } Then {
+            statusCode(204)
+            body(emptyString())
+        }
+    }
+
+    // 계산이 끝난 식사의 음식 한 줄을 지운다. 응답은 본문이 없다.
+    private fun deleteMealFood(mealId: Long, mealFoodId: Long) {
+        Given { spec(RequestSpecs.createAuthorizedSpec()) } When {
+            delete("/api/v2/meals/$mealId/foods/$mealFoodId")
+        } Then {
+            statusCode(204)
+            body(emptyString())
+        }
+    }
+
+    // 식사 합계는 줄 영양의 합이다. 합계는 소수로 더한 뒤 한 번 반올림하므로 줄마다 1까지 차이 날 수 있다.
+    private fun assertCaloryTotal(meal: JsonPath) {
+        val foods = meal.getList<Map<String, Any?>>("foods")
+        val calory = meal.getInt("nutrition.calory")
+        assertTrue(
+            abs(calory - foods.sumOf { convertCalory(it) }) <= foods.size,
+            "식사 합계($calory)가 줄 영양의 합과 다릅니다",
+        )
+    }
+
     private fun getAnalysisStatus(mealId: Long): String = Given {
         spec(RequestSpecs.createAuthorizedSpec())
     } When {
@@ -581,7 +753,9 @@ class MealV2E2eTest {
 
         private const val NOT_EXISTING_MEAL_ID = Long.MAX_VALUE
         private const val NOT_EXISTING_ICON_ID = Long.MAX_VALUE
+        private const val NOT_EXISTING_MEAL_FOOD_ID = Long.MAX_VALUE
         private const val ADDED_FOOD_NAME = "김치"
+        private const val RENAMED_FOOD_NAME = "바나나"
         private const val UPDATED_MEAL_NAME = "E2E 점심"
 
         // 서버는 식사 날짜를 한국 시간 기준으로 나눈다(MealAttemptService.MEAL_ZONE).
