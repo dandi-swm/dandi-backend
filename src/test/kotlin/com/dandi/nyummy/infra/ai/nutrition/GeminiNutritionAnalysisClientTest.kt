@@ -49,6 +49,9 @@ class GeminiNutritionAnalysisClientTest {
     private val aiProperties = AiProperties(
         apiKey = "test-api-key",
         model = "gemini-test",
+        recognitionModel = "gemini-recognition-test",
+        servingNutritionModel = "gemini-serving-nutrition-test",
+        catCommentModel = "gemini-cat-comment-test",
         baseUrl = "https://gemini.test",
         connectTimeout = Duration.ofSeconds(1),
         readTimeout = Duration.ofSeconds(1),

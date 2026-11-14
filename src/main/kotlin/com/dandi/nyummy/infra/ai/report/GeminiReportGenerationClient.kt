@@ -6,7 +6,6 @@ import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.language.getMessage
 import com.dandi.nyummy.report.dto.NutritionBalanceResult
 import com.dandi.nyummy.report.dto.ReportTextResult
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBooleanProperty
 import org.springframework.context.MessageSource
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Component
@@ -19,7 +18,6 @@ import tools.jackson.core.JacksonException
 import tools.jackson.databind.ObjectMapper
 
 @Component
-@ConditionalOnBooleanProperty("app.ai.enabled")
 class GeminiReportGenerationClient(
     private val restClient: RestClient,
     private val aiProperties: AiProperties,

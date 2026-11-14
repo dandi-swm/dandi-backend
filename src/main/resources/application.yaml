@@ -238,10 +238,17 @@ app:
     weight-update-interval-days: 1
     weight-update-tolerance: 0.2
   ai:
-    # Gemini 빈(연결 풀·클라이언트)을 만들지. 기본은 Worker 설정을 따라 Worker에서만 켜지고, API 서비스는 GEMINI_API_KEY가 필요 없다.
-    enabled: ${app.worker.enabled}
+    # Gemini 빈(연결 풀·클라이언트)은 모든 서비스에서 만든다. Worker뿐 아니라 API 서비스도 식사 인식 v2에서 Gemini를 부른다.
+    # 그래서 GEMINI_API_KEY가 없으면 어느 서비스도 뜨지 않는다.
     api-key: ${GEMINI_API_KEY}
     model: "gemini-3.6-flash"
+    # 식사 인식 v2의 음식 인식(사진 → 입력 유형·대표 이름·음식 줄)에 쓰는 모델.
+    # 식사 기록 요청 안에서 응답 기한을 두고 부르므로 응답이 빠른 모델을 쓴다.
+    recognition-model: "gemini-3.5-flash-lite"
+    # 식사 인식 v2에서 음식 이름마다 1인분 영양과 아이콘을 구하는 데 쓰는 모델. 글만 넣는 호출이고 Worker가 부른다.
+    serving-nutrition-model: "gemini-3.5-flash-lite"
+    # 식사 인식 v2에서 영양 계산이 처음 끝났을 때 고양이 코멘트를 쓰는 모델. 글만 넣는 호출이고 Worker가 부른다.
+    cat-comment-model: "gemini-3.5-flash-lite"
     base-url: "https://aiplatform.googleapis.com"
     connect-timeout: 5s
     read-timeout: 30s

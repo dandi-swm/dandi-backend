@@ -3,7 +3,7 @@
 package com.dandi.nyummy.report.dto
 
 import com.dandi.nyummy.meal.dto.Nutrition
-import com.dandi.nyummy.report.enum.MacroNutrient
+import com.dandi.nyummy.meal.enum.MacroNutrient
 import java.time.DayOfWeek
 import java.time.LocalDate
 

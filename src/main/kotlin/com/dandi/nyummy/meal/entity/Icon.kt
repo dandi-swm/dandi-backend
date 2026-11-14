@@ -39,4 +39,9 @@ class Icon(
     fun updateImageUrl(imageUrl: String) {
         this.imageUrl = imageUrl
     }
+
+    companion object {
+        /** 맞는 아이콘이 없을 때 쓰는 밥 아이콘. v1 분석 프롬프트도 같은 id를 쓴다. */
+        const val DEFAULT_ID = 5L
+    }
 }

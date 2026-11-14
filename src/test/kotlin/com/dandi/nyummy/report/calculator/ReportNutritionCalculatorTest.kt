@@ -5,8 +5,8 @@ import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.language.getMessage
 import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.entity.Meal
+import com.dandi.nyummy.meal.enum.MacroNutrient
 import com.dandi.nyummy.meal.enum.MealStatus
-import com.dandi.nyummy.report.enum.MacroNutrient
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
