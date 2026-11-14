@@ -49,6 +49,39 @@ export type InquiryFilter = {
   isAnswered?: boolean;
 };
 
+export type Nutrition = { calory: number; carbs: number; protein: number; fat: number };
+
+/** 평가 대상 식사. 메뉴명·영양은 평가 당시가 아니라 지금 값이다(사용자가 고쳤을 수 있다). */
+export type AdminAnalysisFeedbackMeal = {
+  mealId: number;
+  name: string;
+  mealAt: string;
+  nutrition: Nutrition;
+  catComment: string | null;
+  imageUrl: string;
+  deletedAt: string | null;
+};
+
+/** 분석 품질을 보는 화면이라 누가 평가했는지(userId)는 서버가 내리지 않는다. */
+export type AdminAnalysisFeedback = {
+  analysisFeedbackId: number;
+  rating: number;
+  reason: string | null;
+  createdAt: string;
+  meal: AdminAnalysisFeedbackMeal;
+};
+
+export type AdminAnalysisFeedbacks = {
+  analysisFeedbacks: AdminAnalysisFeedback[];
+  nextCursor: number | null;
+  hasNext: boolean;
+};
+
+export type AnalysisFeedbackFilter = {
+  maxRating?: number;
+  hasReason?: boolean;
+};
+
 /** 음식 아이콘. imageUrl은 앱과 같은 규칙(CDN 주소 + /icons/{iconId}.png)의 미리보기 주소다. */
 export type AdminIcon = { iconId: number; name: string; imageUrl: string };
 
@@ -108,6 +141,15 @@ export function getInquiries(filter: InquiryFilter, cursor: number | null, size 
   if (cursor !== null) params.set("cursor", String(cursor));
 
   return request<AdminInquiries>(`${PREFIX}/inquiries?${params}`);
+}
+
+export function getAnalysisFeedbacks(filter: AnalysisFeedbackFilter, cursor: number | null, size = 20) {
+  const params = new URLSearchParams({ size: String(size) });
+  if (filter.maxRating !== undefined) params.set("maxRating", String(filter.maxRating));
+  if (filter.hasReason !== undefined) params.set("hasReason", String(filter.hasReason));
+  if (cursor !== null) params.set("cursor", String(cursor));
+
+  return request<AdminAnalysisFeedbacks>(`${PREFIX}/analysis-feedbacks?${params}`);
 }
 
 export const getInquiry = (inquiryId: number) => request<AdminInquiry>(`${PREFIX}/inquiries/${inquiryId}`);

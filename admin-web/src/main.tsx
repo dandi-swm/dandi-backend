@@ -4,6 +4,7 @@ import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@ta
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import { isUnauthorized } from "./api/client";
 import { AdminLayout } from "./components/AdminLayout";
+import { AnalysisFeedbackListPage } from "./pages/AnalysisFeedbackListPage";
 import { IconListPage } from "./pages/IconListPage";
 import { ItemPurchaseListPage } from "./pages/ItemPurchaseListPage";
 import { LinksPage } from "./pages/LinksPage";
@@ -44,6 +45,7 @@ const router = createBrowserRouter(
       { path: "/", element: <LinksPage /> },
       { path: "/inquiries", element: <InquiryListPage /> },
       { path: "/inquiries/:inquiryId", element: <InquiryDetailPage /> },
+      { path: "/analysis-feedbacks", element: <AnalysisFeedbackListPage /> },
       { path: "/icons", element: <IconListPage /> },
       { path: "/room-items", element: <RoomItemListPage /> },
       { path: "/products", element: <ProductListPage /> },
