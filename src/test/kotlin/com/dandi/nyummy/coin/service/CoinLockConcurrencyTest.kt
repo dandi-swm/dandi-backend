@@ -117,7 +117,7 @@ class CoinLockConcurrencyTest @Autowired constructor(
             }
         }
         assertTrue(locked.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
-        val claimer = executor.submit { mailService.claimMails(userId) }
+        val claimer = executor.submit { mailService.claimMails(userId, Language.KO) }
 
         // 모두 받기가 잠금 대기에 들어갈 시간을 준다. 우편을 먼저 잠그는 코드면 이때 갭 잠금을 쥐고 코인을 기다려
         // 아래 INSERT와 교착이 난다. 시간이 모자라면 교착을 놓칠 뿐 코인을 먼저 잠그는 코드가 실패하지는 않는다.

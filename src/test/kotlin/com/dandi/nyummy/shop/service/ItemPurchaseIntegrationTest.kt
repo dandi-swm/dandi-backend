@@ -175,7 +175,7 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
         assertEquals(-3500, coinHistory.quantity)
         assertEquals(STARTING_BALANCE - 3500, coinHistory.balanceAfter)
 
-        mailService.claimMails(userId)
+        mailService.claimMails(userId, Language.KO)
 
         assertEquals(
             5,
@@ -219,6 +219,28 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
             .coinHistories.single().title
         assertTrue("肉球クッション" in jaTitle, jaTitle)
         assertEquals("상품 구매", koTitle)
+    }
+
+    @Test
+    fun `SQL로 넣은 아이템 이름 번역으로 받은 우편 아이템과 보유 아이템 이름을 요청 언어로 준다`() {
+        val userId = createUser()
+        val product = createProduct(price = 500)
+        jdbcTemplate.update(
+            """update items set name_translations = '{"ja": "かぼちゃクッション"}' where id = ?""",
+            product.representativeItemId,
+        )
+        createCartItem(userId, product, quantity = 1)
+        purchase(userId, listOf(product to 1))
+
+        val reward = mailService.claimMails(userId, Language.JA)
+        val jaNames = roomService.getOwnedRoomItems(userId, RoomItemCategory.BED, null, 10, Language.JA)
+            .ownedRoomItems.map { it.name }
+        val koNames = roomService.getOwnedRoomItems(userId, RoomItemCategory.BED, null, 10, Language.KO)
+            .ownedRoomItems.map { it.name }
+
+        assertEquals(listOf("かぼちゃクッション"), reward.items?.map { it.name })
+        assertEquals(listOf("かぼちゃクッション"), jaNames)
+        assertEquals(listOf("아이템"), koNames)
     }
 
     @Test
@@ -291,7 +313,7 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
         val tasks: List<() -> Unit> = products.flatMap { product ->
             listOf(
                 { purchase(userId, listOf(product to 1)) },
-                { mailService.claimMails(userId) },
+                { mailService.claimMails(userId, Language.KO) },
             )
         }
         val results = runConcurrently(tasks.size) { index -> tasks[index]() }
@@ -404,7 +426,7 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
             cartService.createCartItem(userId, CreateCartItemRequest(background.id, 1))
         }
 
-        mailService.claimMails(userId)
+        mailService.claimMails(userId, Language.KO)
 
         assertBusinessException(ShopErrorCode.ALREADY_OWNED) {
             cartService.createCartItem(userId, CreateCartItemRequest(background.id, 1))
@@ -421,7 +443,7 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
         purchase(userId, listOf(product to 2))
         assertEquals(2, getOwnedCount(userId, product))
 
-        mailService.claimMails(userId)
+        mailService.claimMails(userId, Language.KO)
         assertEquals(2, getOwnedCount(userId, product))
     }
 
@@ -523,7 +545,7 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
 
         assertEquals(1, getOwnedCount(userId, product))
 
-        val reward = mailService.claimMails(userId)
+        val reward = mailService.claimMails(userId, Language.KO)
 
         assertEquals(1, reward.items?.single()?.quantity)
         assertEquals(1, queryForInt("select count(*) from owned_room_items where user_id = ?", userId))
@@ -539,7 +561,7 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
         createCartItem(otherUserId, background, quantity = 1)
         purchase(userId, listOf(background to 1))
         purchase(otherUserId, listOf(background to 1))
-        mailService.claimMails(otherUserId)
+        mailService.claimMails(otherUserId, Language.KO)
         assertEquals(ShopErrorCode.ALREADY_OWNED, getUnavailableErrorCode(userId, background))
         assertEquals(ShopErrorCode.ALREADY_OWNED, getUnavailableErrorCode(otherUserId, background))
 
@@ -556,16 +578,22 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
         val product = createProduct(price = 500)
         createCartItem(userId, product, quantity = 2)
         purchase(userId, listOf(product to 2))
-        mailService.claimMails(userId)
+        mailService.claimMails(userId, Language.KO)
         val revokedId = getFirstOwnedRoomItemId(userId)
-        val remainingId = roomService.getOwnedRoomItems(userId, RoomItemCategory.BED, null, 10)
+        val remainingId = roomService.getOwnedRoomItems(userId, RoomItemCategory.BED, null, 10, Language.KO)
             .ownedRoomItems.map { it.ownedRoomItemId }.single { it != revokedId }
         roomService.updateEquippedRoomItems(userId, createEquippedRoomItemsRequest(revokedId, remainingId))
 
         // 장착 해제는 환불이 하지만, 조회는 장착 상태와 관계없이 회수된 행을 빼야 한다
         revokeRow("owned_room_items", revokedId)
 
-        val ownedRoomItems = roomService.getOwnedRoomItems(userId, RoomItemCategory.BED, null, 10).ownedRoomItems
+        val ownedRoomItems = roomService.getOwnedRoomItems(
+            userId,
+            RoomItemCategory.BED,
+            null,
+            10,
+            Language.KO,
+        ).ownedRoomItems
         assertEquals(listOf(remainingId), ownedRoomItems.map { it.ownedRoomItemId })
         assertEquals(listOf(remainingId), roomService.getEquippedRoomItems(userId).map { it.ownedRoomItemId })
         assertEquals(1, getOwnedCount(userId, product))
@@ -580,9 +608,9 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
         val product = createProduct(price = 500)
         createCartItem(userId, product, quantity = 2)
         purchase(userId, listOf(product to 2))
-        mailService.claimMails(userId)
+        mailService.claimMails(userId, Language.KO)
         val revokedId = getFirstOwnedRoomItemId(userId)
-        val remainingId = roomService.getOwnedRoomItems(userId, RoomItemCategory.BED, null, 10)
+        val remainingId = roomService.getOwnedRoomItems(userId, RoomItemCategory.BED, null, 10, Language.KO)
             .ownedRoomItems.map { it.ownedRoomItemId }.single { it != revokedId }
         roomService.updateEquippedRoomItems(userId, createEquippedRoomItemsRequest(revokedId, remainingId))
         val revoked = CountDownLatch(1)

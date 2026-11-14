@@ -7,6 +7,8 @@ import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.Table
+import org.hibernate.annotations.JdbcTypeCode
+import org.hibernate.type.SqlTypes
 import org.springframework.data.annotation.CreatedDate
 import org.springframework.data.jpa.domain.support.AuditingEntityListener
 import java.time.Instant
@@ -31,6 +33,11 @@ class Item(
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id", nullable = false)
     val id: Long = 0L
+
+    /** [name]의 번역. 키는 언어 코드이고 원본(한국어)은 넣지 않는다. null이면 모든 언어에서 [name]으로 응답한다 */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "name_translations")
+    var nameTranslations: Map<String, String>? = null
 
     @CreatedDate
     @Column(name = "created_at", nullable = false)
