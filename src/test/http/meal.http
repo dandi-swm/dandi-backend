@@ -258,7 +258,7 @@ Authorization: Bearer {{accessToken}}
   ]
 }
 
-### [실패] 이 식사의 줄이 아닌 mealFoodId → api.meal.mealFoodNotFound
+### [실패] 이 식사의 줄이 아닌 mealFoodId → api.meal.mealFoodNotFound (404)
 PUT {{url}}/api/v2/meals/{{mealIdV2}}/foods
 Content-Type: application/json
 Authorization: Bearer {{accessToken}}
@@ -281,6 +281,76 @@ Authorization: Bearer {{accessToken}}
   "foods": [
     { "mealFoodId": null, "name": "불고기", "portion": 1.0 }
   ]
+}
+
+### 음식 줄 수정 API v2 (인분 고치기)
+# 계산이 끝난(COMPLETED) 식사의 한 줄을 고친다. 바꾸려는 항목만 보낸다. 응답은 204이고 본문이 없으므로 단건을 다시 조회한다.
+# 인분·영양·아이콘만 고치면 식사는 COMPLETED로 남고 합계가 바로 바뀐다.
+# CONFIRMING인 식사는 이 API로 고칠 수 없다. 위의 음식 목록 보내기로 한 번에 고친다.
+PATCH {{url}}/api/v2/meals/{{mealIdV2}}/foods/{{mealFoodId1}}
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "portion": 2.0
+}
+
+### 음식 줄 수정 API v2 (이름 고치기)
+# 이름을 바꾸면 그 줄의 영양과 아이콘을 다시 구한다(고정한 값은 그대로). 식사가 WAITING이 되므로 단건을 다시 조회한 뒤
+# 분석 상태가 COMPLETED가 될 때까지 폴링한다. 그동안은 음식 줄을 고칠 수 없다. 다시 계산이 끝나도 완료 푸시는 가지 않는다.
+PATCH {{url}}/api/v2/meals/{{mealIdV2}}/foods/{{mealFoodId1}}
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "name": "제육볶음"
+}
+
+### 음식 줄 수정 API v2 (영양·아이콘 직접 고치기)
+# nutrition을 보내면 그 값으로 고정된다(1인분 = 값 ÷ 인분). iconId를 보내면 그 아이콘으로 고정된다.
+# 단건 조회에서 isNutritionFixed가 true로 온다.
+PATCH {{url}}/api/v2/meals/{{mealIdV2}}/foods/{{mealFoodId2}}
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "nutrition": { "calory": 310, "carbs": 68, "protein": 7, "fat": 1 },
+  "iconId": 5
+}
+
+### [실패] 바꾸려는 항목이 없는 본문 → api.common.invalidInputValue
+PATCH {{url}}/api/v2/meals/{{mealIdV2}}/foods/{{mealFoodId1}}
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{}
+
+### [실패] 0.5 단위가 아닌 인분으로 고치기 → api.common.invalidInputValue
+PATCH {{url}}/api/v2/meals/{{mealIdV2}}/foods/{{mealFoodId1}}
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "portion": 0.7
+}
+
+### [실패] 이 식사의 줄이 아닌 mealFoodId를 고치기 → api.meal.mealFoodNotFound (404)
+PATCH {{url}}/api/v2/meals/{{mealIdV2}}/foods/999999
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "portion": 1.0
+}
+
+### [실패] 계산이 끝나지 않은 식사, V1 식사의 줄을 고치기 → api.meal.mealFoodsNotUpdatable
+# @notUpdatableMealId에 status가 COMPLETED가 아닌 V2 식사(CONFIRMING 포함)나 V1 식사의 id를 넣는다.
+PATCH {{url}}/api/v2/meals/{{notUpdatableMealId}}/foods/{{mealFoodId1}}
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "portion": 1.0
 }
 
 ### 식사 기록 취소 API v2

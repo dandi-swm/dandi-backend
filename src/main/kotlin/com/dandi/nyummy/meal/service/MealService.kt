@@ -31,6 +31,7 @@ import com.dandi.nyummy.meal.dto.MonthlyMealDayResponse
 import com.dandi.nyummy.meal.dto.MonthlyMealsResponse
 import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.dto.TodayMealSummaryResponse
+import com.dandi.nyummy.meal.dto.UpdateMealFoodRequest
 import com.dandi.nyummy.meal.dto.UpdateMealFoodsRequest
 import com.dandi.nyummy.meal.dto.UpdateMealNameRequest
 import com.dandi.nyummy.meal.dto.UpdateMealNutritionRequest
@@ -346,21 +347,88 @@ class MealService(
         }
 
         val mealFoods = mealFoodService.updateMealFoods(meal.id, request.foods)
+        recalculateMealNutrition(meal, mealFoods, language)
+
+        return meal.toMealStatusResponse()
+    }
+
+    /**
+     * v2 식사의 음식 한 줄을 고친다. 요청에 담긴 항목(이름·인분·영양·아이콘)만 바꾸고, 식사의 영양을 다시 계산하게 한다.
+     *
+     * 계산이 끝난(COMPLETED) V2 식사만 받는다. 사용자의 확인을 기다리는 식사(CONFIRMING)는 음식 목록 보내기로 한 번에 고치고,
+     * 계산을 기다리거나 계산 중인 식사는 끝날 때까지 고칠 수 없다.
+     *
+     * 고친 뒤 식사가 어떻게 되는지는 [recalculateMealNutrition]에 있다. 이름을 바꿔 값을 새로 구해야 하면 WAITING이 되고,
+     * 인분·영양·아이콘만 고쳤으면 요청 안에서 합계를 다시 계산해 COMPLETED로 남는다. 응답에는 본문이 없으므로
+     * 앱은 단건을 다시 조회해 상태를 본다.
+     *
+     * 작업 행을 만들 수 있는 요청이라 [deleteMealAnalysisJobAndGetMealWithLock]으로 시작한다. 완료된 식사에는 지울 작업이 없지만
+     * 같은 사용자의 요청을 줄 세워, 이름 수정을 두 번 눌러도 하나만 작업을 만들고 나머지는 거절된다.
+     *
+     * 이름 길이·인분 범위·영양 범위는 요청 DTO가 검사하고, 음식 줄을 바꾸는 규칙은 [MealFoodService.updateMealFood]에 있다.
+     *
+     * @param userId 고치는 사용자 ID
+     * @param mealId 음식 줄이 있는 식사 ID
+     * @param mealFoodId 고칠 음식 줄 ID
+     * @param request 바꾸려는 항목만 담은 [UpdateMealFoodRequest]
+     * @param language 요청의 앱 언어. 새 작업에 실어, 다시 계산이 실패했을 때의 푸시를 이 언어로 보낸다
+     * @throws BusinessException [CommonErrorCode.INVALID_INPUT_VALUE] 바꾸려는 항목이 하나도 없거나, 이름이 비었거나, 인분이 0.5 단위가 아니거나, 없는 아이콘 id인 경우
+     * @throws BusinessException [MealErrorCode.MEAL_NOT_FOUND] mealId에 해당하는 식사가 없거나, 삭제된 경우
+     * @throws BusinessException [AuthErrorCode.FORBIDDEN] mealId에 해당하는 userId가 아닌 경우
+     * @throws BusinessException [MealErrorCode.MEAL_FOODS_NOT_UPDATABLE] 계산이 끝난 V2 식사가 아닌 경우
+     * @throws BusinessException [MealErrorCode.MEAL_FOOD_NOT_FOUND] 이 식사의 줄이 아닌 mealFoodId인 경우
+     */
+    @Transactional
+    fun updateMealFoodV2(
+        userId: Long,
+        mealId: Long,
+        mealFoodId: Long,
+        request: UpdateMealFoodRequest,
+        language: Language,
+    ) {
+        val hasNoUpdate =
+            request.name == null && request.portion == null && request.nutrition == null && request.iconId == null
+        val hasBlankName = request.name?.isBlank() == true
+        val hasInvalidPortion = request.portion?.let { it.remainder(MealFood.PORTION_STEP).signum() != 0 } == true
+        if (hasNoUpdate || hasBlankName || hasInvalidPortion) {
+            throw BusinessException(CommonErrorCode.INVALID_INPUT_VALUE)
+        }
+
+        val meal = deleteMealAnalysisJobAndGetMealWithLock(userId, mealId)
+        if (meal.analysisVersion != MealAnalysisVersion.V2 || meal.status != MealStatus.COMPLETED) {
+            throw BusinessException(MealErrorCode.MEAL_FOODS_NOT_UPDATABLE)
+        }
+
+        val mealFoods = mealFoodService.updateMealFood(meal.id, mealFoodId, request)
+        recalculateMealNutrition(meal, mealFoods, language)
+    }
+
+    /**
+     * 음식 줄이 바뀐 식사의 영양을 다시 계산하게 한다. 값을 새로 구해야 하는지에 따라 갈린다.
+     * - 1인분 영양이나 아이콘이 빈 줄이 있으면 바로 가져갈 영양 작업을 만들고, 식사의 합계와 아이콘을 비워 WAITING으로 둔다.
+     *   아직 한 번도 계산이 끝나지 않은 식사(코멘트 없음)도 코멘트를 만들어야 하므로 작업을 만든다.
+     * - 모든 줄에 값이 있고 한 번 계산이 끝났던 식사면 이 요청 안에서 합계와 맨 위 줄의 아이콘을 식사에 넣고 COMPLETED로 둔다.
+     *
+     * @param meal 잠가 읽은 식사
+     * @param mealFoods 바뀐 뒤의 음식 줄 전체(순서대로)
+     * @param language 새 작업에 실을 요청의 앱 언어
+     */
+    private fun recalculateMealNutrition(meal: Meal, mealFoods: List<MealFood>, language: Language) {
         val topMealFoodIconId = mealFoods.firstOrNull()?.iconId
         val hasAllServingNutritions = mealFoods.all { it.servingNutrition != null && it.iconId != null }
         if (meal.catComment != null && topMealFoodIconId != null && hasAllServingNutritions) {
             meal.updateNutrition(calculateMealNutrition(mealFoods))
             meal.updateIconId(topMealFoodIconId)
             meal.updateStatus(MealStatus.COMPLETED)
-        } else {
-            mealAnalysisJobRepository.save(
-                MealAnalysisJob(mealId = meal.id, language = language, category = MealAnalysisJobCategory.NUTRITION),
-            )
-            meal.resetNutrition()
-            meal.updateStatus(MealStatus.WAITING)
+
+            return
         }
 
-        return meal.toMealStatusResponse()
+        mealAnalysisJobRepository.save(
+            MealAnalysisJob(mealId = meal.id, language = language, category = MealAnalysisJobCategory.NUTRITION),
+        )
+        meal.resetNutrition()
+        meal.updateStatus(MealStatus.WAITING)
     }
 
     /**

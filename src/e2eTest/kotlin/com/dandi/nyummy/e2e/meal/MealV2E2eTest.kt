@@ -127,23 +127,26 @@ class MealV2E2eTest {
             // 6. 받지 않는 음식 목록: 이 식사의 줄이 아닌 id, 없는 아이콘, 0.5 단위가 아닌 인분
             val firstFood = recognizedFoods.first()
             val invalidFoods = listOf(
-                "api.meal.mealFoodNotFound" to mapOf(
-                    "mealFoodId" to Long.MAX_VALUE,
-                    "name" to "남의 줄",
-                    "portion" to 1.0,
+                Triple(
+                    404,
+                    "api.meal.mealFoodNotFound",
+                    mapOf("mealFoodId" to Long.MAX_VALUE, "name" to "남의 줄", "portion" to 1.0),
                 ),
-                "api.common.invalidInputValue" to
+                Triple(
+                    400,
+                    "api.common.invalidInputValue",
                     convertFoodBody(firstFood) + mapOf("iconId" to NOT_EXISTING_ICON_ID),
-                "api.common.invalidInputValue" to convertFoodBody(firstFood) + mapOf("portion" to 0.7),
+                ),
+                Triple(400, "api.common.invalidInputValue", convertFoodBody(firstFood) + mapOf("portion" to 0.7)),
             )
-            invalidFoods.forEach { (expectedCode, invalidFood) ->
+            invalidFoods.forEach { (expectedStatus, expectedCode, invalidFood) ->
                 Given {
                     spec(RequestSpecs.createAuthorizedSpec())
                     body(mapOf("foods" to listOf(invalidFood)))
                 } When {
                     put("/api/v2/meals/$mealId/foods")
                 } Then {
-                    statusCode(400)
+                    statusCode(expectedStatus)
                     body("code", equalTo(expectedCode))
                 }
             }

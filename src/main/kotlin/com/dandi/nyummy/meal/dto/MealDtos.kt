@@ -190,6 +190,30 @@ data class MealFoodNutritionRequest(
     val fat: Int,
 )
 
+/**
+ * 음식 한 줄 수정 요청. 바꾸려는 항목만 담는다. 생략하거나 null로 보낸 항목은 그대로 두고, 하나도 없으면 받지 않는다.
+ *
+ * @property name 음식 이름(1~30자). 바꾸면 고정하지 않은 영양과 아이콘을 새 이름으로 다시 구한다
+ * @property nutrition 영양을 직접 고칠 때 채운다. 채우면 그 줄은 고정된다
+ * @property iconId 아이콘을 직접 고를 때 채운다. 채우면 그 줄의 아이콘은 고정된다
+ */
+data class UpdateMealFoodRequest(
+    // 비어 있는 이름인지는 MealService에서 검사한다. 생략할 수 있는 항목이라 @NotBlank를 쓸 수 없다.
+    @field:Size(max = 30)
+    val name: String? = null,
+
+    // 0.5 단위인지는 MealService에서 검사한다. 아래는 범위 검증과 Swagger 문서용.
+    @field:Schema(description = "인분 (0.5 ~ 5.0, 0.5 단위)", example = "1.0", multipleOf = 0.5)
+    @field:DecimalMin("0.5")
+    @field:DecimalMax("5.0")
+    val portion: BigDecimal? = null,
+
+    @field:Valid
+    val nutrition: MealFoodNutritionRequest? = null,
+
+    val iconId: Long? = null,
+)
+
 data class UpdateMealNameRequest(
     @field:NotBlank
     @field:Size(max = 20)

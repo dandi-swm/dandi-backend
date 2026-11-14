@@ -13,6 +13,7 @@ import com.dandi.nyummy.meal.dto.DailyMealsV2Response
 import com.dandi.nyummy.meal.dto.MealStatusResponse
 import com.dandi.nyummy.meal.dto.MealV2Response
 import com.dandi.nyummy.meal.dto.MonthlyMealsResponse
+import com.dandi.nyummy.meal.dto.UpdateMealFoodRequest
 import com.dandi.nyummy.meal.dto.UpdateMealFoodsRequest
 import com.dandi.nyummy.meal.dto.UpdateMealNameRequest
 import com.dandi.nyummy.meal.service.AnalysisFeedbackService
@@ -28,6 +29,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.PutMapping
@@ -141,6 +143,38 @@ class MealV2Controller(
         @Valid @RequestBody request: UpdateMealFoodsRequest,
         @CurrentLanguage language: Language,
     ): MealStatusResponse = mealService.updateMealFoodsV2(user.userId, mealId, request, language)
+
+    @Operation(
+        summary = "음식 줄 수정 v2",
+        description = "계산이 끝난(COMPLETED) 식사의 음식 한 줄을 고친다. 이름(1~30자), 인분(0.5~5.0, 0.5 단위), " +
+            "nutrition(칼로리 0~9999, 탄수화물·단백질·지방 0~999), iconId 중 바꾸려는 항목만 보낸다. " +
+            "하나도 보내지 않으면 받지 않는다. nutrition과 iconId를 보내면 그 줄은 그 값으로 고정된다. " +
+            "응답은 본문이 없으므로 단건을 다시 조회한다. 이름을 바꿔 값을 새로 구해야 하면 식사가 WAITING이 되고 " +
+            "(분석 상태를 폴링한다), 인분·영양·아이콘만 고쳤으면 COMPLETED로 남고 합계가 바로 바뀐다. " +
+            "사용자의 확인을 기다리는 식사(CONFIRMING)는 음식 목록 보내기로 고치고, " +
+            "인식 중·계산을 기다리는 중·계산 중·실패한 식사와 V1 식사는 받지 않는다.",
+    )
+    @ApiResponse(responseCode = "204", description = "수정 성공")
+    @ApiErrorCodes(
+        meal = [
+            MealErrorCode.MEAL_NOT_FOUND,
+            MealErrorCode.MEAL_FOODS_NOT_UPDATABLE,
+            MealErrorCode.MEAL_FOOD_NOT_FOUND,
+        ],
+        auth = [AuthErrorCode.FORBIDDEN],
+    )
+    @PatchMapping("/{mealId}/foods/{mealFoodId}")
+    fun updateMealFoodV2(
+        @CurrentUser user: AuthUser,
+        @Parameter(description = "식사 ID") @PathVariable("mealId") mealId: Long,
+        @Parameter(description = "음식 줄 ID") @PathVariable("mealFoodId") mealFoodId: Long,
+        @Valid @RequestBody request: UpdateMealFoodRequest,
+        @CurrentLanguage language: Language,
+    ): ResponseEntity<Void> {
+        mealService.updateMealFoodV2(user.userId, mealId, mealFoodId, request, language)
+
+        return ResponseEntity.noContent().build()
+    }
 
     @Operation(
         summary = "식사 이름 수정 v2",
