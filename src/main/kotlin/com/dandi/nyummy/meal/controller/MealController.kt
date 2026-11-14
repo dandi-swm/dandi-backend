@@ -180,7 +180,8 @@ class MealController(
     @Operation(
         summary = "영양 분석 재시도",
         description = "실패한(FAILED) 식사의 영양 분석을 다시 요청하고 분석 상태(WAITING)를 반환한다. " +
-            "결과는 영양 분석 상태 조회 API로 확인한다.",
+            "결과는 영양 분석 상태 조회 API로 확인한다. " +
+            "v2 API로 기록한 식사는 처음부터 다시 인식하므로 RECOGNIZING을 반환한다.",
     )
     @ApiErrorCodes(
         meal = [MealErrorCode.MEAL_NOT_FOUND, MealErrorCode.ANALYSIS_NOT_RETRYABLE],

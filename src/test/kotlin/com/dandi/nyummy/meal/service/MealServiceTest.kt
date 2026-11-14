@@ -527,12 +527,15 @@ class MealServiceTest {
     @Test
     fun `FAILED인 식사를 재시도하면 작업을 다시 쌓고 WAITING을 돌려준다`() {
         val meal = Meal(status = MealStatus.FAILED, imageKey = imageKey, mealAt = now, userId = userId)
-        every { mealRepository.findMealWithLockById(mealId) } returns meal
+        givenMealToRetry(meal)
 
         val response = mealService.retryNutritionAnalysis(userId, mealId, Language.JA)
 
+        // V1 식사는 종류 없는 작업(v1 분석)을 쌓는다.
         verify(exactly = 1) {
-            mealAnalysisJobRepository.save(match { it.mealId == meal.id && it.language == Language.JA })
+            mealAnalysisJobRepository.save(
+                match { it.mealId == meal.id && it.language == Language.JA && it.category == null },
+            )
         }
         assertEquals(MealStatus.WAITING, meal.status)
         assertEquals(meal.id, response.id)
@@ -540,8 +543,24 @@ class MealServiceTest {
     }
 
     @Test
+    fun `v1 재시도에 FAILED인 V2 식사가 들어오면 v1 분석으로 덮지 않고 음식 줄을 지워 처음부터 다시 인식하게 한다`() {
+        // 업데이트하지 않은 기기의 v1 하루 목록에도 V2 식사가 나오므로 v1 재시도로 들어올 수 있다.
+        val meal = createMealV2(MealStatus.FAILED).apply { updateName("불고기 백반") }
+        givenMealToRetry(meal)
+        val job = slot<MealAnalysisJob>()
+        every { mealAnalysisJobRepository.save(capture(job)) } answers { firstArg() }
+
+        val response = mealService.retryNutritionAnalysis(userId, mealId, Language.KO)
+
+        assertEquals(MealStatus.RECOGNIZING, response.status)
+        assertEquals(MealStatus.RECOGNIZING, meal.status)
+        assertEquals(MealAnalysisJobCategory.RECOGNITION, job.captured.category)
+        verify(exactly = 1) { mealFoodService.deleteMealFoods(meal.id) }
+    }
+
+    @Test
     fun `재시도할 식사가 없으면 MEAL_NOT_FOUND 예외를 던지고 작업을 쌓지 않는다`() {
-        every { mealRepository.findMealWithLockById(mealId) } returns null
+        givenMealToRetry(null)
 
         assertBusinessException(MealErrorCode.MEAL_NOT_FOUND) {
             mealService.retryNutritionAnalysis(userId, mealId, Language.KO)
@@ -555,7 +574,7 @@ class MealServiceTest {
         val meal = Meal(status = MealStatus.FAILED, imageKey = imageKey, mealAt = now, userId = userId).apply {
             updateDeletedAt(now.minusSeconds(5))
         }
-        every { mealRepository.findMealWithLockById(mealId) } returns meal
+        givenMealToRetry(meal)
 
         assertBusinessException(MealErrorCode.MEAL_NOT_FOUND) {
             mealService.retryNutritionAnalysis(userId, mealId, Language.KO)
@@ -568,7 +587,7 @@ class MealServiceTest {
     fun `다른 사용자의 식사를 재시도하면 FORBIDDEN 예외를 던지고 작업을 쌓지 않는다`() {
         val otherUserId = 2L
         val meal = Meal(status = MealStatus.FAILED, imageKey = imageKey, mealAt = now, userId = otherUserId)
-        every { mealRepository.findMealWithLockById(mealId) } returns meal
+        givenMealToRetry(meal)
 
         assertBusinessException(AuthErrorCode.FORBIDDEN) {
             mealService.retryNutritionAnalysis(userId, mealId, Language.KO)
@@ -583,7 +602,7 @@ class MealServiceTest {
 
         notRetryableStatuses.forEach { status ->
             val meal = Meal(status = status, imageKey = imageKey, mealAt = now, userId = userId)
-            every { mealRepository.findMealWithLockById(mealId) } returns meal
+            givenMealToRetry(meal)
 
             assertBusinessException(MealErrorCode.ANALYSIS_NOT_RETRYABLE) {
                 mealService.retryNutritionAnalysis(userId, mealId, Language.KO)
