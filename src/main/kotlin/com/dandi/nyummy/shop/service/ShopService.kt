@@ -6,6 +6,7 @@ import com.dandi.nyummy.exception.errorcode.CommonErrorCode
 import com.dandi.nyummy.exception.errorcode.ShopErrorCode
 import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.language.getMessage
+import com.dandi.nyummy.language.pickTranslation
 import com.dandi.nyummy.shop.calculator.calculateMaxDiscountRates
 import com.dandi.nyummy.shop.calculator.calculatePurchasePrice
 import com.dandi.nyummy.shop.config.ShopProperties
@@ -152,6 +153,7 @@ class ShopService(
             promotionProducts = promotionProducts,
             productsById = productsById,
             discountRates = discountRates,
+            language = language,
         )
 
         val isLayoutB = shopLayoutVariant?.trim() == LAYOUT_B
@@ -244,6 +246,10 @@ class ShopService(
         val shopItems = shopItemService.createShopItems(userId, page.items, discountRates, now, language)
         return PromotionProductsResponse(
             banner = shopBanner.toShopBannerResponse(
+                title = shopBanner.titleTranslations.pickTranslation(language, shopBanner.title),
+                description = shopBanner.description?.let {
+                    shopBanner.descriptionTranslations.pickTranslation(language, it)
+                },
                 imageUrl = createImageUrl(shopBanner.imageKey),
                 cornerStyle = BannerCornerStyle.SQUARE,
                 price = createPromotionPriceText(promotion, products, discountRates),
@@ -280,6 +286,7 @@ class ShopService(
         promotionProducts: List<PromotionProduct>,
         productsById: Map<Long, Product>,
         discountRates: Map<Long, Int>,
+        language: Language,
     ): List<SduiComponentResponse> {
         val promotionsById = promotions.associateBy { it.id }
         val banners = shopBanners
@@ -288,6 +295,10 @@ class ShopService(
                 val promotion = promotionsById.getValue(shopBanner.promotionId)
                 val products = getPromotionProductsInOrder(promotion.id, promotionProducts, productsById)
                 shopBanner.toShopBannerResponse(
+                    title = shopBanner.titleTranslations.pickTranslation(language, shopBanner.title),
+                    description = shopBanner.description?.let {
+                        shopBanner.descriptionTranslations.pickTranslation(language, it)
+                    },
                     imageUrl = createImageUrl(shopBanner.imageKey),
                     cornerStyle = BannerCornerStyle.ROUNDED,
                     price = createPromotionPriceText(promotion, products, discountRates),
