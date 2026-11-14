@@ -404,6 +404,36 @@ class MealService(
     }
 
     /**
+     * v2 식사의 음식 한 줄을 지우고, 남은 줄로 식사의 영양을 다시 계산하게 한다. 맨 위 줄을 지우면 다음 줄이 대표 음식이 된다.
+     *
+     * [updateMealFoodV2]와 같이 계산이 끝난(COMPLETED) V2 식사만 받는다. 사용자의 확인을 기다리는 식사(CONFIRMING)는
+     * 줄을 뺀 목록을 음식 목록 보내기로 보낸다.
+     *
+     * 계산이 끝난 식사의 줄은 모두 값이 있으므로, 남은 줄의 합계와 맨 위 줄의 아이콘을 요청 안에서 식사에 넣고 COMPLETED로 둔다
+     * ([recalculateMealNutrition]). 하나 남은 줄은 지울 수 없다.
+     *
+     * @param userId 지우는 사용자 ID
+     * @param mealId 음식 줄이 있는 식사 ID
+     * @param mealFoodId 지울 음식 줄 ID
+     * @param language 요청의 앱 언어. 남은 줄에 값을 새로 구할 것이 있어 작업을 만들게 되면 그 작업에 싣는다
+     * @throws BusinessException [MealErrorCode.MEAL_NOT_FOUND] mealId에 해당하는 식사가 없거나, 삭제된 경우
+     * @throws BusinessException [AuthErrorCode.FORBIDDEN] mealId에 해당하는 userId가 아닌 경우
+     * @throws BusinessException [MealErrorCode.MEAL_FOODS_NOT_UPDATABLE] 계산이 끝난 V2 식사가 아닌 경우
+     * @throws BusinessException [MealErrorCode.MEAL_FOOD_NOT_FOUND] 이 식사의 줄이 아닌 mealFoodId인 경우
+     * @throws BusinessException [MealErrorCode.LAST_MEAL_FOOD_NOT_DELETABLE] 식사에 하나 남은 줄인 경우
+     */
+    @Transactional
+    fun deleteMealFoodV2(userId: Long, mealId: Long, mealFoodId: Long, language: Language) {
+        val meal = deleteMealAnalysisJobAndGetMealWithLock(userId, mealId)
+        if (meal.analysisVersion != MealAnalysisVersion.V2 || meal.status != MealStatus.COMPLETED) {
+            throw BusinessException(MealErrorCode.MEAL_FOODS_NOT_UPDATABLE)
+        }
+
+        val mealFoods = mealFoodService.deleteMealFood(meal.id, mealFoodId)
+        recalculateMealNutrition(meal, mealFoods, language)
+    }
+
+    /**
      * 음식 줄이 바뀐 식사의 영양을 다시 계산하게 한다. 값을 새로 구해야 하는지에 따라 갈린다.
      * - 1인분 영양이나 아이콘이 빈 줄이 있으면 바로 가져갈 영양 작업을 만들고, 식사의 합계와 아이콘을 비워 WAITING으로 둔다.
      *   아직 한 번도 계산이 끝나지 않은 식사(코멘트 없음)도 코멘트를 만들어야 하므로 작업을 만든다.

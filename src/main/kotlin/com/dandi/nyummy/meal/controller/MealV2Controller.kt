@@ -177,6 +177,36 @@ class MealV2Controller(
     }
 
     @Operation(
+        summary = "음식 줄 삭제 v2",
+        description = "계산이 끝난(COMPLETED) 식사의 음식 한 줄을 지운다. 남은 줄의 순서를 다시 매기고, " +
+            "맨 위 줄을 지우면 다음 줄이 대표 음식이 된다. 식사의 합계와 아이콘은 남은 줄로 바로 바뀐다. " +
+            "응답은 본문이 없으므로 단건을 다시 조회한다. 하나 남은 줄은 지울 수 없다. " +
+            "사용자의 확인을 기다리는 식사(CONFIRMING)는 줄을 뺀 목록을 음식 목록 보내기로 보내고, " +
+            "인식 중·계산을 기다리는 중·계산 중·실패한 식사와 V1 식사는 받지 않는다.",
+    )
+    @ApiResponse(responseCode = "204", description = "삭제 성공")
+    @ApiErrorCodes(
+        meal = [
+            MealErrorCode.MEAL_NOT_FOUND,
+            MealErrorCode.MEAL_FOODS_NOT_UPDATABLE,
+            MealErrorCode.MEAL_FOOD_NOT_FOUND,
+            MealErrorCode.LAST_MEAL_FOOD_NOT_DELETABLE,
+        ],
+        auth = [AuthErrorCode.FORBIDDEN],
+    )
+    @DeleteMapping("/{mealId}/foods/{mealFoodId}")
+    fun deleteMealFoodV2(
+        @CurrentUser user: AuthUser,
+        @Parameter(description = "식사 ID") @PathVariable("mealId") mealId: Long,
+        @Parameter(description = "음식 줄 ID") @PathVariable("mealFoodId") mealFoodId: Long,
+        @CurrentLanguage language: Language,
+    ): ResponseEntity<Void> {
+        mealService.deleteMealFoodV2(user.userId, mealId, mealFoodId, language)
+
+        return ResponseEntity.noContent().build()
+    }
+
+    @Operation(
         summary = "식사 이름 수정 v2",
         description = "대표 이름을 본문으로 받는다(1~20자). 음식 줄과 영양은 바뀌지 않고 다시 계산하지 않는다. " +
             "응답은 단건 조회와 같은 모양이다.",

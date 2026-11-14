@@ -353,6 +353,27 @@ Authorization: Bearer {{accessToken}}
   "portion": 1.0
 }
 
+### 음식 줄 삭제 API v2
+# 계산이 끝난(COMPLETED) 식사의 한 줄을 지운다. 남은 줄의 순서를 다시 매기고, 맨 위 줄을 지우면 다음 줄이 대표 음식이 된다.
+# 식사의 합계와 아이콘은 남은 줄로 바로 바뀐다. 응답은 204이고 본문이 없으므로 단건을 다시 조회한다.
+# CONFIRMING인 식사는 이 API로 지울 수 없다. 줄을 뺀 목록을 위의 음식 목록 보내기로 보낸다.
+DELETE {{url}}/api/v2/meals/{{mealIdV2}}/foods/{{mealFoodId2}}
+Authorization: Bearer {{accessToken}}
+
+### [실패] 하나 남은 줄을 삭제 → api.meal.lastMealFoodNotDeletable
+# 위 요청으로 한 줄만 남긴 뒤 남은 줄의 id로 보낸다.
+DELETE {{url}}/api/v2/meals/{{mealIdV2}}/foods/{{mealFoodId1}}
+Authorization: Bearer {{accessToken}}
+
+### [실패] 이 식사의 줄이 아닌 mealFoodId를 삭제 → api.meal.mealFoodNotFound (404)
+DELETE {{url}}/api/v2/meals/{{mealIdV2}}/foods/999999
+Authorization: Bearer {{accessToken}}
+
+### [실패] 계산이 끝나지 않은 식사, V1 식사의 줄을 삭제 → api.meal.mealFoodsNotUpdatable
+# @notUpdatableMealId에 status가 COMPLETED가 아닌 V2 식사(CONFIRMING 포함)나 V1 식사의 id를 넣는다.
+DELETE {{url}}/api/v2/meals/{{notUpdatableMealId}}/foods/{{mealFoodId1}}
+Authorization: Bearer {{accessToken}}
+
 ### 식사 기록 취소 API v2
 # 기록 직후 음식 목록 화면의 X 버튼이다. 식사를 삭제하고 기다리던 영양 계산을 없앤다.
 # 하루 기록 횟수, 보상 상자, 연속 기록은 되돌아가지 않는다. 응답은 204이고 본문이 없다.

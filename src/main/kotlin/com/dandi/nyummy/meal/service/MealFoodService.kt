@@ -156,6 +156,38 @@ class MealFoodService(
         return mealFoods
     }
 
+    /**
+     * 식사의 음식 한 줄을 지우고, 남은 줄의 순서를 빈 번호 없이 다시 매긴다. 맨 위 줄을 지우면 다음 줄이 대표 음식이 된다.
+     *
+     * 식사에는 음식 줄이 하나 이상 있어야 하므로 하나 남은 줄은 지우지 않는다. 음식 목록 보내기가 빈 목록을 받지 않는 것과 같다.
+     * AI가 처음 낸 목록(스냅샷)은 건드리지 않는다.
+     *
+     * 식사의 합계를 다시 계산하는 일과 함께 커밋돼야 하므로 호출하는 쪽 트랜잭션에 합류한다.
+     *
+     * @param mealId 음식 줄이 있는 식사 ID
+     * @param mealFoodId 지울 음식 줄 ID
+     * @return 남은 음식 줄(순서대로). 식사의 합계를 다시 계산하는 데 쓴다
+     * @throws BusinessException [MealErrorCode.MEAL_FOOD_NOT_FOUND] 이 식사의 줄이 아닌 mealFoodId인 경우
+     * @throws BusinessException [MealErrorCode.LAST_MEAL_FOOD_NOT_DELETABLE] 식사에 하나 남은 줄인 경우
+     */
+    @Transactional
+    fun deleteMealFood(mealId: Long, mealFoodId: Long): List<MealFood> {
+        val mealFoods = mealFoodRepository.findAllByMealIdOrderByDisplayOrderAsc(mealId)
+        val mealFood = mealFoods.find { it.id == mealFoodId }
+            ?: throw BusinessException(MealErrorCode.MEAL_FOOD_NOT_FOUND)
+        if (mealFoods.size == 1) {
+            throw BusinessException(MealErrorCode.LAST_MEAL_FOOD_NOT_DELETABLE)
+        }
+
+        mealFoodRepository.deleteAllInBatch(listOf(mealFood))
+        val remainingMealFoods = mealFoods.filter { it.id != mealFoodId }
+        remainingMealFoods.forEachIndexed { index, remainingMealFood ->
+            remainingMealFood.updateDisplayOrder(index + 1)
+        }
+
+        return remainingMealFoods
+    }
+
     /** 사용자가 고른 아이콘이 모두 있는 아이콘인지 본다. 없는 id는 음식 줄에 저장할 수 없다. */
     private fun validateIconIds(iconIds: Set<Long>) {
         if (iconIds.isNotEmpty() && iconRepository.findAllById(iconIds).size != iconIds.size) {
