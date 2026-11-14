@@ -135,7 +135,7 @@
 - 하루 제한을 세는 식사 기록 요청 `Attempt`(`countDailyAttempts`)
 - 영양 분석 `Analysis` — 명사 자리(`AnalysisService`). 동사는 analyze이고 analysis·analyse를 동사로 쓰지 않는다
 - 분석이 끝나지 않은 식사 상태 묶음 `InProgress`(`IN_PROGRESS_STATUSES`, Pending 금지) — 분석을 다시 시작할 수 있는 상태 묶음 `ANALYZABLE_STATUSES`와 다른 것
-- 분석 결과에 대한 사용자 평가 `AnalysisFeedback`(Review·Survey 금지, Evaluation은 하루 평가 전용) — 별점 `Rating`(Star·Score 금지 — Score는 식사 영양 점수), 이유 `Reason`(Comment 금지 — catComment와 충돌), 평가 가능 여부 `canCreateAnalysisFeedback`(hasAnalysisFeedback·isRated 금지)
+- 분석 결과에 대한 사용자 평가 `AnalysisFeedback`(Review·Survey 금지, Evaluation은 하루 평가 전용) — 별점 `Rating`(Star·Score 금지 — Score는 식사 영양 점수), 이유 `Reason`(Comment 금지 — catComment와 충돌), 평가 가능 여부 `canCreateAnalysisFeedback`(hasAnalysisFeedback·isRated 금지), 조회할 별점 상한 `maxRating`, 이유를 적은 평가인지 `hasReason`
 - 영양 4종 값 객체 `Nutrition`, 개별 항목 `Nutrient`(목록 `Nutrients`), 탄단지 묶음 `MacroNutrient`(Macro 단독 금지)
 - 칼로리 `calory`(calories 금지), 탄수화물 `carbs`(carbohydrate 금지), 단백질 `protein`, 지방 `fat` — 단수형
 - 하루 평가 `DailyNutritionEvaluation`, 권장 섭취량 `RecommendedDailyIntake`(전용 클래스 없이 `calculateRecommendedDailyIntake()`가 `Nutrition` 반환)
