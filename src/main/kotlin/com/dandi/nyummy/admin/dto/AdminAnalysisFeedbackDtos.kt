@@ -11,9 +11,11 @@ data class AdminAnalysisFeedbacksResponse(
     val hasNext: Boolean,
 )
 
+/**
+ * 분석 품질을 보는 화면이라 누가 평가했는지는 필요 없어 userId를 내리지 않는다(최소 열람).
+ */
 data class AdminAnalysisFeedbackResponse(
     val analysisFeedbackId: Long,
-    val userId: Long,
     val rating: Float,
     val reason: String?,
     val createdAt: Instant,

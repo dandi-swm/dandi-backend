@@ -4,6 +4,8 @@ import com.dandi.nyummy.admin.config.AdminPaths
 import com.dandi.nyummy.admin.config.ConditionalOnAdminEnabled
 import com.dandi.nyummy.admin.dto.AdminAnalysisFeedbacksResponse
 import com.dandi.nyummy.admin.service.AdminAnalysisFeedbackService
+import com.dandi.nyummy.security.AuthAdmin
+import com.dandi.nyummy.security.CurrentAdmin
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.security.SecurityRequirements
@@ -30,6 +32,7 @@ class AdminAnalysisFeedbackController(private val adminAnalysisFeedbackService: 
     )
     @GetMapping
     fun getAnalysisFeedbacks(
+        @CurrentAdmin admin: AuthAdmin,
         @Parameter(description = "이 별점 이하만 조회. 생략하면 모든 별점") @RequestParam(required = false) maxRating: Float?,
         @Parameter(description = "이유 여부. 생략하면 모두, true면 이유를 적은 평가만")
         @RequestParam(required = false)
@@ -41,5 +44,5 @@ class AdminAnalysisFeedbackController(private val adminAnalysisFeedbackService: 
         @Max(50)
         size: Int,
     ): AdminAnalysisFeedbacksResponse =
-        adminAnalysisFeedbackService.getAnalysisFeedbacks(maxRating, hasReason, cursor, size)
+        adminAnalysisFeedbackService.getAnalysisFeedbacks(admin.adminId, maxRating, hasReason, cursor, size)
 }

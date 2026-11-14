@@ -9,7 +9,6 @@ import com.dandi.nyummy.meal.mapper.toNutrition
 fun AnalysisFeedback.toAdminAnalysisFeedbackResponse(meal: AdminAnalysisFeedbackMealResponse) =
     AdminAnalysisFeedbackResponse(
         analysisFeedbackId = this.id,
-        userId = this.userId,
         rating = this.rating,
         reason = this.reason,
         createdAt = this.createdAt,

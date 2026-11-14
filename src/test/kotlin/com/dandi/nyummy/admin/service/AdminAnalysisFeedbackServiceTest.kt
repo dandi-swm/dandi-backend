@@ -25,6 +25,7 @@ import kotlin.test.assertTrue
 class AdminAnalysisFeedbackServiceTest {
 
     private val now = Instant.parse("2026-11-14T03:00:00Z")
+    private val adminId = 7L
     private val userId = 1L
 
     private val analysisFeedbackRepository = mockk<AnalysisFeedbackRepository>()
@@ -77,6 +78,7 @@ class AdminAnalysisFeedbackServiceTest {
         every { mealRepository.findAllById(listOf(300L, 200L)) } returns listOf(meal(id = 200), meal(id = 300))
 
         val response = adminAnalysisFeedbackService.getAnalysisFeedbacks(
+            adminId = adminId,
             maxRating = null,
             hasReason = null,
             cursor = null,
@@ -96,6 +98,7 @@ class AdminAnalysisFeedbackServiceTest {
         every { mealRepository.findAllById(listOf(100L)) } returns listOf(meal(id = 100))
 
         val response = adminAnalysisFeedbackService.getAnalysisFeedbacks(
+            adminId = adminId,
             maxRating = 2.0f,
             hasReason = true,
             cursor = 20L,
@@ -122,7 +125,7 @@ class AdminAnalysisFeedbackServiceTest {
         )
         every { mealRepository.findAllById(listOf(100L)) } returns listOf(meal(id = 100))
 
-        val analysisFeedback = adminAnalysisFeedbackService.getAnalysisFeedbacks(null, null, null, 20)
+        val analysisFeedback = adminAnalysisFeedbackService.getAnalysisFeedbacks(adminId, null, null, null, 20)
             .analysisFeedbacks.single()
 
         assertEquals(1.5f, analysisFeedback.rating)
@@ -147,7 +150,7 @@ class AdminAnalysisFeedbackServiceTest {
         } returns SliceImpl(listOf(analysisFeedback(id = 10, mealId = 100)), PageRequest.of(0, 20), false)
         every { mealRepository.findAllById(listOf(100L)) } returns listOf(meal(id = 100, deletedAt = deletedAt))
 
-        val analysisFeedback = adminAnalysisFeedbackService.getAnalysisFeedbacks(null, null, null, 20)
+        val analysisFeedback = adminAnalysisFeedbackService.getAnalysisFeedbacks(adminId, null, null, null, 20)
             .analysisFeedbacks.single()
 
         assertEquals(deletedAt, analysisFeedback.meal.deletedAt)
