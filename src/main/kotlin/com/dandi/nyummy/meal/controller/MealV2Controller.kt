@@ -3,6 +3,7 @@ package com.dandi.nyummy.meal.controller
 import com.dandi.nyummy.config.openapi.ApiErrorCodes
 import com.dandi.nyummy.exception.errorcode.AuthErrorCode
 import com.dandi.nyummy.exception.errorcode.MealErrorCode
+import com.dandi.nyummy.exception.errorcode.S3ErrorCode
 import com.dandi.nyummy.language.CurrentLanguage
 import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.meal.dto.CreateAnalysisFeedbackRequest
@@ -44,16 +45,30 @@ class MealV2Controller(
 ) {
 
     @Operation(
-        summary = "식사 생성 v2 (Stub)",
-        description = "AI 고도화 영양 분석의 식사 생성이다. 지금은 고정 응답이고 실제 인식·저장을 하지 않는다. " +
-            "5초 안에 인식된 경우의 모양으로 대표 이름(20자 이내)과 음식 줄을 준다. 맨 위 줄이 대표 음식이다. " +
-            "음식 줄의 nutrition과 iconId는 영양 계산 전이라 null이다.",
+        summary = "식사 생성 v2",
+        description = "업로드된 이미지 키로 식사를 생성하고, 응답 전에 사진의 음식을 인식한다. 서버는 요청을 받고 4.5초 안에 응답한다. " +
+            "음식으로 인식하면 status는 WAITING이고 대표 이름(20자 이내)과 음식 줄을 준다. 맨 위 줄이 대표 음식이고, " +
+            "음식 줄의 nutrition과 iconId는 영양 계산 전이라 null이다. 영양은 5분 뒤에, 또는 음식 목록을 보내면 바로 계산한다. " +
+            "음식이 아니면 status는 FAILED이고 name은 빈 문자열, foods는 null이다. " +
+            "기한 안에 인식을 끝내지 못하면 status는 RECOGNIZING이고 name과 foods는 null이다. 서버가 이어서 인식하므로 " +
+            "영양 분석 상태 조회 API로 WAITING이 되는지 확인한다. " +
+            "어느 경우든 기록 횟수에 들어가고 보상 상자 우편이 하나 생기며, 응답의 rewardBoxCategory에 그 상자의 등급을 담는다.",
+    )
+    @ApiErrorCodes(
+        meal = [MealErrorCode.DUPLICATE_IMAGE_KEY, MealErrorCode.DAILY_COUNT_EXCEEDED, MealErrorCode.STALE_IMAGE],
+        s3 = [
+            S3ErrorCode.INVALID_KEY,
+            S3ErrorCode.OBJECT_NOT_FOUND,
+            S3ErrorCode.FILE_SIZE_EXCEEDED,
+            S3ErrorCode.UNSUPPORTED_CONTENT_TYPE,
+        ],
     )
     @PostMapping
     fun createMealV2(
         @CurrentUser user: AuthUser,
         @Valid @RequestBody request: CreateMealRequest,
-    ): CreateMealV2Response = mealService.createMealV2()
+        @CurrentLanguage language: Language,
+    ): CreateMealV2Response = mealService.createMealV2(user.userId, request, language)
 
     @Operation(
         summary = "영양 분석 상태 조회 v2 (Stub)",

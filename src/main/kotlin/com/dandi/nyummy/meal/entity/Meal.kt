@@ -109,6 +109,10 @@ class Meal(
         this.name = name
     }
 
+    fun updateInputCategory(inputCategory: MealInputCategory) {
+        this.inputCategory = inputCategory
+    }
+
     fun updateNutrition(nutrition: Nutrition) {
         this.calory = nutrition.calory
         this.carbs = nutrition.carbs

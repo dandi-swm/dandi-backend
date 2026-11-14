@@ -1,5 +1,6 @@
 package com.dandi.nyummy.e2e.meal
 
+import com.dandi.nyummy.e2e.support.ImageFixture
 import com.dandi.nyummy.e2e.support.RequestSpecs
 import io.restassured.module.kotlin.extensions.Extract
 import io.restassured.module.kotlin.extensions.Given
@@ -9,38 +10,116 @@ import org.hamcrest.Matchers.equalTo
 import org.hamcrest.Matchers.hasItems
 import org.hamcrest.Matchers.hasSize
 import org.hamcrest.Matchers.nullValue
+import org.hamcrest.Matchers.oneOf
 import org.junit.jupiter.api.Test
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
- * v2 식사 API. 지금은 고정 응답(Stub)이라 값이 아니라 응답 모양과 요청 검증을 본다.
+ * v2 식사 API. 식사 기록은 실제로 사진을 인식하고 저장한다. 조회·수정은 아직 고정 응답(Stub)이라 값이 아니라
+ * 응답 모양과 요청 검증을 본다.
  *
- * Stub은 dev에만 배포하므로 prod에서 도는 @Smoke는 붙이지 않는다.
+ * 식사를 만들거나 Stub을 부르므로 prod에서 도는 @Smoke는 붙이지 않는다.
  * 월간 캘린더·삭제·튜토리얼·재시도·평가는 v1 서비스를 그대로 부르므로 데이터를 남기지 않는 경로만 본다.
  */
 class MealV2E2eTest {
 
     @Test
-    fun `식사를 기록하면 대표 이름과 계산 전 음식 줄을 준다`() {
-        Given {
+    fun `식사를 기록하면 인식한 음식 줄을 주거나 인식 중으로 응답하고 같은 사진은 다시 받지 않는다`() {
+        val imageKey = ImageFixture.createUploadedImage("MEAL", "/images/cake-undated.jpeg", "image/jpeg")
+        val latestMailIdBefore = getLatestMailId()
+
+        val created = Given {
             spec(RequestSpecs.createAuthorizedSpec())
-            body(mapOf("imageKey" to "meals/stub.jpg"))
+            body(mapOf("imageKey" to imageKey))
         } When {
             post("/api/v2/meals")
         } Then {
             statusCode(200)
             body("keySet()", hasItems("id", "status", "rewardBoxCategory", "name", "foods"))
-            body("status", equalTo("WAITING"))
-            body("foods", hasSize<Any>(2))
-            body(
-                "foods[0].keySet()",
-                hasItems("mealFoodId", "name", "portion", "nutrition", "isNutritionFixed", "iconId"),
-            )
-            // 영양과 줄 아이콘은 영양 계산 때 정해지므로 기록 직후에는 비어 있다.
-            body("foods[0].nutrition", nullValue())
-            body("foods[0].iconId", nullValue())
+            // 서버는 응답 기한 안에 인식하면 WAITING, 못 끝내면 RECOGNIZING으로 응답한다. 어느 쪽이 될지는 그때의 Gemini 응답 시간에 달렸다.
+            // FAILED면 테스트 사진을 음식이 아니라고 본 것이다.
+            body("status", oneOf("WAITING", "RECOGNIZING"))
+            body("rewardBoxCategory", oneOf("BRONZE", "SILVER", "GOLD"))
+        } Extract {
+            jsonPath()
+        }
+        val mealId = created.getLong("id")
+        var rewardBoxMailId: Long? = null
+
+        try {
+            // 1. 응답의 대표 이름과 음식 줄
+            if (created.getString("status") == "WAITING") {
+                val name = created.getString("name")
+                assertTrue(name.isNotBlank() && name.length <= 20, "대표 이름은 1~20자여야 합니다: $name")
+                val foods = created.getList<Map<String, Any?>>("foods")
+                assertTrue(foods.size in 1..10, "음식 줄은 1~10개여야 합니다: ${foods.size}")
+                foods.forEach { food ->
+                    assertTrue(
+                        food.keys.containsAll(
+                            listOf("mealFoodId", "name", "portion", "nutrition", "isNutritionFixed", "iconId"),
+                        ),
+                        "음식 줄의 필드가 빠졌습니다: ${food.keys}",
+                    )
+                    val foodName = food["name"] as String
+                    assertTrue(foodName.isNotBlank() && foodName.length <= 30, "음식 이름은 1~30자여야 합니다: $foodName")
+                    // 인분은 0.5 단위로 0.5~5.0이다. 두 배 하면 1~10의 정수가 된다.
+                    val doubledPortion = (food["portion"] as Number).toDouble() * 2
+                    assertTrue(
+                        doubledPortion in 1.0..10.0 && doubledPortion == Math.floor(doubledPortion),
+                        "인분은 0.5 단위로 0.5~5.0이어야 합니다: ${food["portion"]}",
+                    )
+                    // 영양과 줄 아이콘은 영양 계산 때 정해지므로 기록 직후에는 비어 있다.
+                    assertNull(food["nutrition"], "기록 직후에는 줄 영양이 없어야 합니다")
+                    assertNull(food["iconId"], "기록 직후에는 줄 아이콘이 없어야 합니다")
+                    assertEquals(false, food["isNutritionFixed"])
+                }
+            } else {
+                // 인식 전이라 이름과 음식 줄이 없다.
+                assertNull(created.getString("name"), "인식 중인 식사에 이름이 있습니다")
+                assertNull(created.getList<Any>("foods"), "인식 중인 식사에 음식 줄이 있습니다")
+            }
+
+            // 2. 기록 보상 상자 우편이 하나 생긴다.
+            rewardBoxMailId = Given {
+                spec(RequestSpecs.createAuthorizedSpec())
+                queryParam("size", 1)
+            } When {
+                get("/api/v1/mails")
+            } Then {
+                statusCode(200)
+                body("mails[0].category", equalTo("REWARD_BOX"))
+                body("mails[0].isClaimed", equalTo(false))
+            } Extract {
+                jsonPath().getLong("mails[0].mailId")
+            }
+            assertTrue(rewardBoxMailId != latestMailIdBefore, "식사를 기록했는데 새 보상 상자 우편이 없습니다")
+
+            // 3. 같은 사진으로는 다시 기록할 수 없다.
+            val attemptCountBefore = getTodayAttemptCount()
+            Given {
+                spec(RequestSpecs.createAuthorizedSpec())
+                body(mapOf("imageKey" to imageKey))
+            } When {
+                post("/api/v2/meals")
+            } Then {
+                statusCode(409)
+                body("code", equalTo("api.meal.duplicateImageKey"))
+            }
+            // 거부됐어도 식사나 우편이 먼저 만들어졌을 수 있으므로 기록 시도 횟수와 가장 최근 우편이 그대로인지 본다.
+            assertEquals(attemptCountBefore, getTodayAttemptCount(), "거부된 기록이 시도 횟수에 들어갔습니다")
+            assertEquals(rewardBoxMailId, getLatestMailId(), "거부된 기록에 보상 상자 우편이 생겼습니다")
+        } finally {
+            // 중간에 실패하면 이미 삭제된 상태일 수 있다(그때는 404). 정리는 결과를 검증하지 않는다.
+            Given { spec(RequestSpecs.createAuthorizedSpec()) } When { delete("/api/v2/meals/$mealId") }
+            // 기록 보상 상자는 받은 우편만 삭제할 수 있어 받은 뒤 지운다(MealE2eTest와 같다). 결과는 검증하지 않는다.
+            rewardBoxMailId?.let { mailId ->
+                Given { spec(RequestSpecs.createAuthorizedSpec()) } When { post("/api/v1/mails/$mailId/claim") }
+                Given { spec(RequestSpecs.createAuthorizedSpec()) } When { delete("/api/v1/mails/$mailId") }
+            }
         }
     }
 
@@ -299,6 +378,18 @@ class MealV2E2eTest {
         assertEquals(latestMailIdBefore, getLatestMailId(), "튜토리얼 거부 후 새 우편이 생겼습니다")
     }
 
+    // 오늘의 기록 시도 횟수. 삭제한 식사와 실패한 식사도 센다.
+    private fun getTodayAttemptCount(): Int = Given {
+        spec(RequestSpecs.createAuthorizedSpec())
+    } When {
+        get("/api/v1/home")
+    } Then {
+        statusCode(200)
+    } Extract {
+        jsonPath().getInt("todayMealSummary.todayAttemptCount")
+    }
+
+    // 우편 목록은 최신순이라 첫 우편이 가장 최근 우편이다. 우편이 하나도 없으면 null이다.
     private fun getLatestMailId(): Long? = Given {
         spec(RequestSpecs.createAuthorizedSpec())
         queryParam("size", 1)

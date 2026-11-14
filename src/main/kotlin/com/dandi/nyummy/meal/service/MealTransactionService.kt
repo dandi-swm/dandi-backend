@@ -4,15 +4,26 @@ import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.UserErrorCode
 import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.mail.service.MailService
+import com.dandi.nyummy.meal.dto.MealRecognitionOutcome
+import com.dandi.nyummy.meal.dto.MealRecognitionResult
 import com.dandi.nyummy.meal.dto.RewardBoxResult
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.entity.MealAnalysisJob
+import com.dandi.nyummy.meal.entity.MealFood
+import com.dandi.nyummy.meal.entity.MealFoodSnapshot
+import com.dandi.nyummy.meal.entity.MealSnapshot
+import com.dandi.nyummy.meal.enum.MealAnalysisJobCategory
+import com.dandi.nyummy.meal.enum.MealRecognitionCategory
 import com.dandi.nyummy.meal.repository.MealAnalysisJobRepository
+import com.dandi.nyummy.meal.repository.MealFoodRepository
+import com.dandi.nyummy.meal.repository.MealFoodSnapshotRepository
 import com.dandi.nyummy.meal.repository.MealRepository
+import com.dandi.nyummy.meal.repository.MealSnapshotRepository
 import com.dandi.nyummy.streak.service.StreakService
 import com.dandi.nyummy.user.repository.ProfileRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.time.Duration
 import java.time.Instant
 
 /**
@@ -27,6 +38,9 @@ class MealTransactionService(
     private val mealAttemptService: MealAttemptService,
     private val mealRepository: MealRepository,
     private val mealAnalysisJobRepository: MealAnalysisJobRepository,
+    private val mealSnapshotRepository: MealSnapshotRepository,
+    private val mealFoodSnapshotRepository: MealFoodSnapshotRepository,
+    private val mealFoodRepository: MealFoodRepository,
     private val mailService: MailService,
     private val streakService: StreakService,
 ) {
@@ -73,5 +87,119 @@ class MealTransactionService(
         )
         streakService.updateStreak(meal.userId)
         return meal
+    }
+
+    /**
+     * v2 식사와 인식 결과에 딸린 행들, 보상 상자 우편을 한 트랜잭션으로 저장하고 연속 기록을 갱신한다.
+     * 하루 시도 횟수를 다시 세는 방식과 프로필 행을 잠그는 이유는 [createMeal]과 같다.
+     *
+     * 인식 결과에 따라 저장하는 것이 다르다.
+     * - 음식으로 인식했으면 AI가 처음 낸 목록의 스냅샷과 음식 줄을 저장하고, [nutritionDelay] 뒤부터 가져갈 영양 작업을 만든다.
+     *   그 시간 안에 사용자가 음식 목록을 보내면 이 작업을 지우고 바로 계산한다.
+     * - 음식이 아니면 식사만 남긴다. 작업이 없으므로 Worker는 이 식사를 건드리지 않는다.
+     * - 요청 안에서 인식을 끝내지 못했으면 바로 가져갈 인식 작업을 만든다. 음식 줄은 Worker가 인식한 뒤에 생긴다.
+     *
+     * 보상 상자와 연속 기록은 인식 결과와 상관없이 기록한 것으로 인정한다.
+     *
+     * @param meal 저장할 식사. 상태·대표 이름·입력 유형은 [outcome]에 맞춰 채워져 있어야 한다
+     * @param outcome 식사 기록 요청 안에서 음식 인식을 시도한 결과
+     * @param nutritionDelay 영양 작업을 가져가기까지 기다리는 시간
+     * @param language 식사를 기록한 요청의 앱 언어. 보상 상자 우편의 문구를 이 언어로 저장하고, 작업에 실어 결과를 이 언어로 만든다
+     * @return 저장한 음식 줄(순서대로). 음식으로 인식하지 못했으면 빈 목록
+     * @throws BusinessException [UserErrorCode.PROFILE_NOT_FOUND] 가입 시 만들어져야 할 프로필이 없는 경우
+     * @throws BusinessException [com.dandi.nyummy.exception.errorcode.MealErrorCode.DAILY_COUNT_EXCEEDED] 다시 센 오늘 시도 횟수가 상한인 경우
+     */
+    @Transactional
+    fun createMealV2(
+        meal: Meal,
+        outcome: MealRecognitionOutcome,
+        rewardBox: RewardBoxResult,
+        rewardMailExpiresAt: Instant,
+        nutritionDelay: Duration,
+        language: Language,
+    ): List<MealFood> {
+        profileRepository.findProfileWithLockByUserId(meal.userId)
+            ?: throw BusinessException(UserErrorCode.PROFILE_NOT_FOUND)
+        mealAttemptService.validateDailyCount(meal.userId)
+
+        mealRepository.save(meal)
+        val mealFoods = when (outcome) {
+            is MealRecognitionOutcome.Recognized -> {
+                val mealFoods = createMealFoods(meal.id, outcome.recognition)
+                val job = mealAnalysisJobRepository.save(
+                    MealAnalysisJob(
+                        mealId = meal.id,
+                        language = language,
+                        category = MealAnalysisJobCategory.NUTRITION,
+                    ),
+                )
+                if (nutritionDelay.toSeconds() > 0) {
+                    mealAnalysisJobRepository.updateLeaseExpiresAt(job.id, nutritionDelay.toSeconds())
+                }
+                mealFoods
+            }
+
+            MealRecognitionOutcome.NotFood -> emptyList()
+
+            is MealRecognitionOutcome.Deferred -> {
+                mealAnalysisJobRepository.save(
+                    MealAnalysisJob(
+                        mealId = meal.id,
+                        language = language,
+                        category = MealAnalysisJobCategory.RECOGNITION,
+                    ),
+                )
+                emptyList()
+            }
+        }
+        mailService.createMealRewardMail(
+            userId = meal.userId,
+            rewardBoxCategory = rewardBox.category,
+            coinQuantity = rewardBox.coinQuantity,
+            expiresAt = rewardMailExpiresAt,
+            language = language,
+        )
+        streakService.updateStreak(meal.userId)
+
+        return mealFoods
+    }
+
+    /**
+     * 인식 결과를 스냅샷(AI가 처음 낸 목록)과 음식 줄(사용자가 고치는 지금 값)로 저장한다.
+     * 음식 줄은 짝이 되는 스냅샷 줄을 가리키고, 순서는 인식이 낸 순서(맨 앞이 대표 음식)다.
+     */
+    private fun createMealFoods(mealId: Long, recognition: MealRecognitionResult): List<MealFood> {
+        val mealSnapshot = mealSnapshotRepository.save(
+            MealSnapshot(
+                mealId = mealId,
+                name = recognition.name,
+                recognitionCategory = MealRecognitionCategory.SYNC,
+                model = recognition.model,
+                promptVersion = recognition.promptVersion,
+                inputCategory = recognition.inputCategory,
+            ),
+        )
+        val mealFoodSnapshots = mealFoodSnapshotRepository.saveAll(
+            recognition.foods.mapIndexed { index, food ->
+                MealFoodSnapshot(
+                    mealSnapshotId = mealSnapshot.id,
+                    displayOrder = index + 1,
+                    name = food.name,
+                    portion = food.portion,
+                )
+            },
+        )
+
+        return mealFoodRepository.saveAll(
+            mealFoodSnapshots.map { mealFoodSnapshot ->
+                MealFood(
+                    mealId = mealId,
+                    mealFoodSnapshotId = mealFoodSnapshot.id,
+                    displayOrder = mealFoodSnapshot.displayOrder,
+                    name = mealFoodSnapshot.name,
+                    portion = mealFoodSnapshot.portion,
+                )
+            },
+        )
     }
 }

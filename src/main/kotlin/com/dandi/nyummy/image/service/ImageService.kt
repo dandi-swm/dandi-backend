@@ -6,6 +6,7 @@ import com.dandi.nyummy.image.ExifCaptureTimeReader
 import com.dandi.nyummy.image.config.ImageProperties
 import com.dandi.nyummy.image.dto.CreateUploadUrlRequest
 import com.dandi.nyummy.image.dto.UploadUrlResponse
+import com.dandi.nyummy.image.dto.UploadedImageContentResult
 import com.dandi.nyummy.image.dto.UploadedImageResult
 import com.dandi.nyummy.image.enum.ImagePurpose
 import com.dandi.nyummy.image.service.ImageService.Companion.ALLOWED_CONTENT_TYPES
@@ -143,7 +144,23 @@ class ImageService(
         purpose: ImagePurpose,
         imageKey: String,
         validateAfterUpload: (UploadedImageResult) -> Unit = {},
-    ): UploadedImageResult = runBlocking {
+    ): UploadedImageResult = confirmUploadContent(userId, purpose, imageKey, validateAfterUpload).uploadedImage
+
+    /**
+     * [confirmUpload]와 같은 검증과 확정을 하고, 그 과정에서 내려받은 이미지 내용까지 돌려준다.
+     *
+     * 확정하려면 실제 콘텐츠와 EXIF를 보느라 이미지 전체를 한 번 내려받는다. 확정 직후 같은 이미지를 써야 하는 호출부
+     * (식사 기록의 음식 인식)가 다시 내려받지 않게 하려는 것이다.
+     *
+     * @return 확정된 이미지, 그 바이트, 실제 콘텐츠에서 감지한 MIME 타입을 담은 [UploadedImageContentResult]
+     * @throws BusinessException [confirmUpload]와 같다
+     */
+    fun confirmUploadContent(
+        userId: Long,
+        purpose: ImagePurpose,
+        imageKey: String,
+        validateAfterUpload: (UploadedImageResult) -> Unit = {},
+    ): UploadedImageContentResult = runBlocking {
         // 1. imageKey가 이 용도·이 사용자의 경로인지 확인
         if (!imageKey.startsWith("${purpose.prefix}/$userId/")) {
             throw BusinessException(S3ErrorCode.INVALID_KEY)
@@ -159,7 +176,8 @@ class ImageService(
         // 3. 확장자를 믿지 않고 실제 콘텐츠 앞부분에서 MIME 타입을 감지해 지원 포맷인지 확인 (jpg, png)
         val objectBytes = s3StorageClient.downloadObject(imageKey).bytes
 
-        val detectedExtension = MIME_TO_EXTENSION[tika.detect(objectBytes)]
+        val contentType = tika.detect(objectBytes)
+        val detectedExtension = MIME_TO_EXTENSION[contentType]
             ?: throw BusinessException(S3ErrorCode.UNSUPPORTED_CONTENT_TYPE)
 
         // 4. 감지된 확장자가 imageKey의 확장자와 일치하는지 확인 (키와 실제 내용의 불일치 방지)
@@ -178,7 +196,7 @@ class ImageService(
         // 6. 모든 검증을 통과했으므로 라이프사이클 정리 대상에서 제외되도록 확정 처리
         s3StorageClient.confirmObject(imageKey)
 
-        uploadedImage
+        UploadedImageContentResult(uploadedImage = uploadedImage, bytes = objectBytes, contentType = contentType)
     }
 
     /**
