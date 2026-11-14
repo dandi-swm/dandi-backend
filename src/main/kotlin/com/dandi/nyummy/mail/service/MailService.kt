@@ -7,6 +7,7 @@ import com.dandi.nyummy.exception.errorcode.AuthErrorCode
 import com.dandi.nyummy.exception.errorcode.MailErrorCode
 import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.language.getMessage
+import com.dandi.nyummy.language.pickTranslation
 import com.dandi.nyummy.mail.dto.MailItemResult
 import com.dandi.nyummy.mail.dto.MailsResponse
 import com.dandi.nyummy.mail.dto.RewardResponse
@@ -229,10 +230,11 @@ class MailService(
      * @throws BusinessException [MailErrorCode.MAIL_NOT_FOUND] 우편이 없거나, 삭제된 경우
      * @throws BusinessException [AuthErrorCode.FORBIDDEN] 다른 사용자의 우편인 경우
      * @throws BusinessException [MailErrorCode.ALREADY_CLAIMED] 이미 받은 우편인 경우
+     * @param language 요청의 `X-Language`로 정한 앱 언어. 응답의 아이템 이름을 이 언어로 고른다
      * @throws BusinessException [MailErrorCode.MAIL_EXPIRED] 만료된 우편인 경우
      */
     @Transactional
-    fun claimMail(userId: Long, mailId: Long): RewardResponse {
+    fun claimMail(userId: Long, mailId: Long, language: Language): RewardResponse {
         val coin = coinService.lockCoin(userId)
         val mail = mailRepository.findMailWithLockByIdAndDeletedAtIsNull(mailId)
             ?: throw BusinessException(MailErrorCode.MAIL_NOT_FOUND)
@@ -244,7 +246,7 @@ class MailService(
         createOwnedRoomItems(userId, mailItems)
         mail.coinQuantity?.let { coinService.increaseBalance(coin, it, CoinHistoryCategory.MAIL_CLAIM, mail.id) }
 
-        return mail.toRewardResponse(items = mailItems.toRewardItemResponses())
+        return mail.toRewardResponse(items = mailItems.toRewardItemResponses(pickItemNames(mailItems, language)))
     }
 
     /**
@@ -259,9 +261,11 @@ class MailService(
      * 응답의 아이템은 여러 우편의 같은 아이템을 하나로 합치고, 우편 순서 → 우편에 넣은 순서로 준다.
      *
      * 받을 우편이 없으면 coin과 items가 모두 null이다.
+     *
+     * @param language 요청의 `X-Language`로 정한 앱 언어. 응답의 아이템 이름을 이 언어로 고른다
      */
     @Transactional
-    fun claimMails(userId: Long): TotalRewardResponse {
+    fun claimMails(userId: Long, language: Language): TotalRewardResponse {
         val coin = coinService.lockCoin(userId)
         val now = Instant.now(clock)
         val mails = mailRepository.findMailsWithLockByUserIdAndClaimedAtIsNull(userId, now)
@@ -277,8 +281,12 @@ class MailService(
             mail.coinQuantity?.let { coinService.increaseBalance(coin, it, CoinHistoryCategory.MAIL_CLAIM, mail.id) }
         }
 
-        return mails.toTotalRewardResponse(items = mailItems.toRewardItemResponses())
+        return mails.toTotalRewardResponse(items = mailItems.toRewardItemResponses(pickItemNames(mailItems, language)))
     }
+
+    // itemId별 아이템 이름(요청 언어). 같은 아이템은 같은 items 행에서 읽어 이름도 같다
+    private fun pickItemNames(mailItems: List<MailItemResult>, language: Language): Map<Long, String> =
+        mailItems.associate { it.itemId to it.nameTranslations.pickTranslation(language, it.name) }
 
     /**
      * 받은 우편을 소프트 삭제한다. 삭제 직후 앱의 되돌리기로 복구할 수 있도록 행은 남긴다.

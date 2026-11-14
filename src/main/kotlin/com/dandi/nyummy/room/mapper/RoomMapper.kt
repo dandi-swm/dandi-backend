@@ -7,9 +7,10 @@ import com.dandi.nyummy.room.dto.OwnedRoomItemResponse
 import com.dandi.nyummy.room.dto.OwnedRoomItemResult
 import com.dandi.nyummy.room.entity.OwnedRoomItem
 
-fun OwnedRoomItemResult.toOwnedRoomItemResponse(): OwnedRoomItemResponse = OwnedRoomItemResponse(
+/** @param name 요청 언어로 고른 아이템 이름 */
+fun OwnedRoomItemResult.toOwnedRoomItemResponse(name: String): OwnedRoomItemResponse = OwnedRoomItemResponse(
     ownedRoomItemId = this.ownedRoomItemId,
-    name = this.name,
+    name = name,
     itemId = this.itemId,
     isEquipped = this.isEquipped,
 )

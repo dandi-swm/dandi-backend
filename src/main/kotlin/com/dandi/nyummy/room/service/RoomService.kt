@@ -7,6 +7,7 @@ import com.dandi.nyummy.exception.errorcode.CommonErrorCode
 import com.dandi.nyummy.exception.errorcode.RoomErrorCode
 import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.language.getMessage
+import com.dandi.nyummy.language.pickTranslation
 import com.dandi.nyummy.room.config.RoomProperties
 import com.dandi.nyummy.room.dto.EquippedRoomItemResponse
 import com.dandi.nyummy.room.dto.GrantedRoomItem
@@ -69,12 +70,12 @@ class RoomService(
      * 카테고리는 보유 아이템이 없어도 enum 순서대로 모두 내려간다. 카테고리마다 [getOwnedRoomItems]와 같은 쿼리를
      * 따로 날린다. 앱이 카테고리를 오가며 다음 묶음을 받을 때도 같은 쿼리를 쓰므로, 전체를 한 번에 읽어 나누지 않는다.
      *
-     * @param language 요청의 `X-Language`로 정한 앱 언어. 카테고리 이름을 이 언어로 꺼낸다
+     * @param language 요청의 `X-Language`로 정한 앱 언어. 카테고리 이름과 아이템 이름을 이 언어로 꺼낸다
      */
     @Transactional(readOnly = true)
     fun getRoom(userId: Long, size: Int, language: Language): RoomResponse = RoomResponse(
         categories = RoomItemCategory.entries.map { category ->
-            val ownedRoomItems = getOwnedRoomItems(userId, category, null, size)
+            val ownedRoomItems = getOwnedRoomItems(userId, category, null, size, language)
             RoomItemCategoryResponse(
                 category = category,
                 categoryName = messageSource.getMessage("roomItemCategory.${category.name}", language),
@@ -98,7 +99,13 @@ class RoomService(
      * @throws BusinessException [CommonErrorCode.INVALID_INPUT_VALUE] 커서 아이템이 없거나 다른 사용자의 것인 경우
      */
     @Transactional(readOnly = true)
-    fun getOwnedRoomItems(userId: Long, category: RoomItemCategory, cursor: Long?, size: Int): OwnedRoomItemsResponse {
+    fun getOwnedRoomItems(
+        userId: Long,
+        category: RoomItemCategory,
+        cursor: Long?,
+        size: Int,
+        language: Language,
+    ): OwnedRoomItemsResponse {
         val cursorItem = cursor?.let {
             ownedRoomItemRepository.findOwnedRoomItemByIdAndUserId(it, userId)
                 ?: throw BusinessException(CommonErrorCode.INVALID_INPUT_VALUE)
@@ -113,7 +120,9 @@ class RoomService(
         )
 
         return OwnedRoomItemsResponse(
-            ownedRoomItems = ownedRoomItems.content.map { it.toOwnedRoomItemResponse() },
+            ownedRoomItems = ownedRoomItems.content.map {
+                it.toOwnedRoomItemResponse(name = it.nameTranslations.pickTranslation(language, it.name))
+            },
             nextCursor = if (ownedRoomItems.hasNext()) ownedRoomItems.content.last().ownedRoomItemId else null,
             hasNext = ownedRoomItems.hasNext(),
         )
