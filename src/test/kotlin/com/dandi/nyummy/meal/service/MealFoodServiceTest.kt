@@ -10,6 +10,7 @@ import com.dandi.nyummy.meal.dto.MealFoodRequest
 import com.dandi.nyummy.meal.dto.MealRecognitionResult
 import com.dandi.nyummy.meal.dto.ServingNutrition
 import com.dandi.nyummy.meal.dto.ServingNutritionResult
+import com.dandi.nyummy.meal.dto.UpdateMealFoodRequest
 import com.dandi.nyummy.meal.entity.Icon
 import com.dandi.nyummy.meal.entity.MealFood
 import com.dandi.nyummy.meal.entity.MealFoodSnapshot
@@ -441,6 +442,154 @@ class MealFoodServiceTest {
         }
 
         verify(exactly = 0) { mealFoodRepository.findAllByMealIdOrderByDisplayOrderAsc(any()) }
+    }
+
+    // updateMealFood
+
+    @Test
+    fun `한 줄의 인분만 고치면 그 줄의 인분만 바뀌고 1인분과 아이콘과 다른 줄은 그대로다`() {
+        val bulgogi =
+            createMealFood(displayOrder = 1, name = "불고기", servingNutrition = oldServingNutrition, iconId = 12L)
+        val rice =
+            createMealFood(displayOrder = 2, name = "잡곡밥", servingNutrition = newServingNutrition, iconId = 5L)
+        givenMealFoods(bulgogi, rice)
+
+        val mealFoods = mealFoodService.updateMealFood(mealId, 1L, UpdateMealFoodRequest(portion = BigDecimal("2.0")))
+
+        assertEquals(BigDecimal("2.0"), bulgogi.portion)
+        assertEquals("불고기", bulgogi.name)
+        assertEquals(oldServingNutrition, bulgogi.servingNutrition)
+        assertEquals(12L, bulgogi.iconId)
+        assertFalse(bulgogi.isNutritionFixed)
+        assertEquals(BigDecimal("1.0"), rice.portion)
+        // 식사의 합계를 다시 계산할 수 있게 식사의 줄 전체를 순서대로 돌려준다.
+        assertEquals(listOf("불고기", "잡곡밥"), mealFoods.map { it.name })
+    }
+
+    @Test
+    fun `한 줄의 이름을 고치면 고정하지 않은 1인분과 아이콘을 비워 다시 구하게 하고 인분은 그대로 둔다`() {
+        val bulgogi =
+            createMealFood(displayOrder = 1, name = "불고기", servingNutrition = oldServingNutrition, iconId = 12L)
+        givenMealFoods(bulgogi)
+
+        mealFoodService.updateMealFood(mealId, 1L, UpdateMealFoodRequest(name = "제육볶음"))
+
+        assertEquals("제육볶음", bulgogi.name)
+        assertNull(bulgogi.servingNutrition)
+        assertNull(bulgogi.iconId)
+        assertEquals(BigDecimal("1.0"), bulgogi.portion)
+    }
+
+    @Test
+    fun `한 줄의 영양을 고치면 지금 인분으로 나눈 1인분을 저장하고 고정한다`() {
+        val bulgogi =
+            createMealFood(displayOrder = 1, name = "불고기", servingNutrition = oldServingNutrition, iconId = 12L)
+                .apply { updatePortion(BigDecimal("1.5")) }
+        givenMealFoods(bulgogi)
+
+        mealFoodService.updateMealFood(
+            mealId,
+            1L,
+            UpdateMealFoodRequest(
+                nutrition = MealFoodNutritionRequest(calory = 415, carbs = 30, protein = 27, fat = 21),
+            ),
+        )
+
+        // 415 ÷ 1.5 = 276.67, 30 ÷ 1.5 = 20.00, 27 ÷ 1.5 = 18.00, 21 ÷ 1.5 = 14.00
+        assertEquals(
+            ServingNutrition(BigDecimal("276.67"), BigDecimal("20.00"), BigDecimal("18.00"), BigDecimal("14.00")),
+            bulgogi.servingNutrition,
+        )
+        assertTrue(bulgogi.isNutritionFixed)
+        // 아이콘은 고치지 않았으므로 그대로이고 고정되지 않는다.
+        assertEquals(12L, bulgogi.iconId)
+        assertFalse(bulgogi.isIconFixed)
+    }
+
+    @Test
+    fun `한 줄의 인분과 영양을 함께 고치면 고친 뒤의 인분으로 나눈 1인분을 저장한다`() {
+        val bulgogi =
+            createMealFood(displayOrder = 1, name = "불고기", servingNutrition = oldServingNutrition, iconId = 12L)
+        givenMealFoods(bulgogi)
+
+        mealFoodService.updateMealFood(
+            mealId,
+            1L,
+            UpdateMealFoodRequest(
+                portion = BigDecimal("2.0"),
+                nutrition = MealFoodNutritionRequest(calory = 700, carbs = 30, protein = 50, fat = 40),
+            ),
+        )
+
+        // 700 ÷ 2.0 = 350.00. 고치기 전 인분(1.0)으로 나누면 700이 된다.
+        assertEquals(BigDecimal("2.0"), bulgogi.portion)
+        assertEquals(BigDecimal("350.00"), bulgogi.servingNutrition?.calory)
+    }
+
+    @Test
+    fun `한 줄의 이름과 영양을 함께 고치면 보낸 영양으로 고정되고 아이콘만 다시 구한다`() {
+        val bulgogi =
+            createMealFood(displayOrder = 1, name = "불고기", servingNutrition = oldServingNutrition, iconId = 12L)
+        givenMealFoods(bulgogi)
+
+        mealFoodService.updateMealFood(
+            mealId,
+            1L,
+            UpdateMealFoodRequest(
+                name = "제육볶음",
+                nutrition = MealFoodNutritionRequest(calory = 400, carbs = 20, protein = 30, fat = 22),
+            ),
+        )
+
+        assertEquals("제육볶음", bulgogi.name)
+        assertEquals(BigDecimal("400.00"), bulgogi.servingNutrition?.calory)
+        assertTrue(bulgogi.isNutritionFixed)
+        assertNull(bulgogi.iconId)
+    }
+
+    @Test
+    fun `한 줄의 아이콘을 고치면 그 아이콘으로 고정하고 영양은 그대로 둔다`() {
+        val bulgogi =
+            createMealFood(displayOrder = 1, name = "불고기", servingNutrition = oldServingNutrition, iconId = 12L)
+        givenMealFoods(bulgogi)
+        every { iconRepository.findAllById(setOf(7L)) } returns listOf(mockk<Icon>())
+
+        mealFoodService.updateMealFood(mealId, 1L, UpdateMealFoodRequest(iconId = 7L))
+
+        assertEquals(7L, bulgogi.iconId)
+        assertTrue(bulgogi.isIconFixed)
+        assertEquals(oldServingNutrition, bulgogi.servingNutrition)
+        assertFalse(bulgogi.isNutritionFixed)
+    }
+
+    @Test
+    fun `이 식사의 줄이 아닌 mealFoodId를 고치려 하면 MEAL_FOOD_NOT_FOUND이고 아무 줄도 바꾸지 않는다`() {
+        val bulgogi =
+            createMealFood(displayOrder = 1, name = "불고기", servingNutrition = oldServingNutrition, iconId = 12L)
+        givenMealFoods(bulgogi)
+
+        assertBusinessException(MealErrorCode.MEAL_FOOD_NOT_FOUND) {
+            mealFoodService.updateMealFood(mealId, 999L, UpdateMealFoodRequest(name = "제육볶음"))
+        }
+
+        assertEquals("불고기", bulgogi.name)
+        assertEquals(oldServingNutrition, bulgogi.servingNutrition)
+    }
+
+    @Test
+    fun `한 줄에 없는 아이콘 id를 보내면 INVALID_INPUT_VALUE이고 함께 보낸 이름도 바꾸지 않는다`() {
+        val bulgogi =
+            createMealFood(displayOrder = 1, name = "불고기", servingNutrition = oldServingNutrition, iconId = 12L)
+        givenMealFoods(bulgogi)
+        every { iconRepository.findAllById(setOf(999L)) } returns emptyList()
+
+        assertBusinessException(CommonErrorCode.INVALID_INPUT_VALUE) {
+            mealFoodService.updateMealFood(mealId, 1L, UpdateMealFoodRequest(name = "제육볶음", iconId = 999L))
+        }
+
+        assertEquals("불고기", bulgogi.name)
+        assertEquals(12L, bulgogi.iconId)
+        assertFalse(bulgogi.isIconFixed)
     }
 
     // deleteMealFoods

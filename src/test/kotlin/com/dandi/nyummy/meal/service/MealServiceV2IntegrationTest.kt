@@ -10,6 +10,7 @@ import com.dandi.nyummy.meal.dto.MealFoodRequest
 import com.dandi.nyummy.meal.dto.MealRecognitionResult
 import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.dto.ServingNutrition
+import com.dandi.nyummy.meal.dto.UpdateMealFoodRequest
 import com.dandi.nyummy.meal.dto.UpdateMealFoodsRequest
 import com.dandi.nyummy.meal.entity.Icon
 import com.dandi.nyummy.meal.entity.Meal
@@ -482,6 +483,113 @@ class MealServiceV2IntegrationTest @Autowired constructor(
         assertEquals(1, failures.size, "실패: $failures")
         assertEquals(MealErrorCode.ANALYSIS_NOT_RETRYABLE, (failures.single() as BusinessException).errorCode)
         assertEquals(1, mealAnalysisJobRepository.findAll().count { it.mealId == meal.id })
+    }
+
+    // 음식 줄 개별 수정 (updateMealFoodV2)
+
+    @Test
+    fun `완료된 식사의 한 줄 인분을 고치면 작업 없이 그 자리에서 합계를 다시 계산해 COMPLETED로 남는다`() {
+        val (meal, mealFoods) = createCompletedMeal("patch-portion@nyummy.co.kr")
+
+        mealService.updateMealFoodV2(
+            meal.userId,
+            meal.id,
+            mealFoods[0].id,
+            UpdateMealFoodRequest(portion = BigDecimal("2.0")),
+            Language.KO,
+        )
+
+        val savedMeal = mealRepository.findById(meal.id).orElseThrow()
+        assertEquals(MealStatus.COMPLETED, savedMeal.status)
+        // 불고기 350 × 2 + 잡곡밥 300 = 1000, 탄수화물 15.5 × 2 + 65 = 96, 지방 20 × 2 + 1 = 41
+        assertEquals(1000, savedMeal.calory)
+        assertEquals(96, savedMeal.carbs)
+        assertEquals(41, savedMeal.fat)
+        assertEquals(mealFoods[0].iconId, savedMeal.iconId)
+        assertEquals("든든하게 먹었다냥", savedMeal.catComment)
+        assertNull(findJob(meal.id))
+        // 줄은 저장을 따로 부르지 않고 변경 감지로 남는다. 고친 줄의 인분만 바뀌고 1인분은 그대로다.
+        val savedMealFoods = mealFoodRepository.findAllByMealIdOrderByDisplayOrderAsc(meal.id)
+        assertEquals(0, BigDecimal("2.0").compareTo(savedMealFoods[0].portion))
+        assertEquals(0, BigDecimal("350").compareTo(savedMealFoods[0].servingNutrition?.calory))
+        assertEquals(0, BigDecimal("1.0").compareTo(savedMealFoods[1].portion))
+    }
+
+    @Test
+    fun `완료된 식사의 한 줄 이름을 고치면 그 줄의 1인분과 아이콘이 비고 바로 가져갈 영양 작업이 생기며 식사는 값 없는 WAITING이 된다`() {
+        val (meal, mealFoods) = createCompletedMeal("patch-name@nyummy.co.kr")
+
+        mealService.updateMealFoodV2(
+            meal.userId,
+            meal.id,
+            mealFoods[1].id,
+            UpdateMealFoodRequest(name = "현미밥"),
+            Language.JA,
+        )
+
+        val savedMeal = mealRepository.findById(meal.id).orElseThrow()
+        assertEquals(MealStatus.WAITING, savedMeal.status)
+        assertNull(savedMeal.calory)
+        assertNull(savedMeal.iconId)
+        assertEquals("든든하게 먹었다냥", savedMeal.catComment)
+        val job = assertNotNull(findJob(meal.id))
+        assertEquals(MealAnalysisJobCategory.NUTRITION, job.category)
+        assertEquals(Language.JA, job.language)
+        assertNull(job.leaseExpiresAt)
+        assertNull(job.availableAt)
+        val savedMealFoods = mealFoodRepository.findAllByMealIdOrderByDisplayOrderAsc(meal.id)
+        assertEquals(listOf("불고기", "현미밥"), savedMealFoods.map { it.name })
+        // 고치지 않은 줄의 값은 그대로이고, 이름을 고친 줄만 다시 구한다.
+        assertNotNull(savedMealFoods[0].servingNutrition)
+        assertNotNull(savedMealFoods[0].iconId)
+        assertNull(savedMealFoods[1].servingNutrition)
+        assertNull(savedMealFoods[1].iconId)
+    }
+
+    @Test
+    fun `같은 식사의 줄 이름을 동시에 두 번 고치면 하나만 받고 작업은 하나다`() {
+        val (meal, mealFoods) = createCompletedMeal("patch-twice@nyummy.co.kr")
+
+        val failures = runConcurrently(2) { index ->
+            mealService.updateMealFoodV2(
+                meal.userId,
+                meal.id,
+                mealFoods[index].id,
+                UpdateMealFoodRequest(name = "새 이름 $index"),
+                Language.KO,
+            )
+        }
+
+        // 프로필 행 잠금이 두 요청을 줄 세운다. 먼저 들어온 요청이 식사를 WAITING으로 바꾸므로 뒤 요청은 거절된다.
+        assertEquals(1, failures.size, "실패: $failures")
+        assertEquals(MealErrorCode.MEAL_FOODS_NOT_UPDATABLE, (failures.single() as BusinessException).errorCode)
+        assertNotNull(findJob(meal.id))
+        // 받은 요청의 줄만 이름이 바뀌었다.
+        val savedMealFoods = mealFoodRepository.findAllByMealIdOrderByDisplayOrderAsc(meal.id)
+        assertEquals(1, savedMealFoods.count { it.name.startsWith("새 이름") })
+    }
+
+    @Test
+    fun `확인을 기다리는 식사의 줄을 고치려 하면 거절하고 5분을 기다리던 작업과 음식 줄은 그대로다`() {
+        val (meal, mealFoods) = createConfirmingMeal("patch-confirming@nyummy.co.kr")
+        val delayedJob = assertNotNull(findJob(meal.id))
+
+        assertBusinessException(MealErrorCode.MEAL_FOODS_NOT_UPDATABLE) {
+            mealService.updateMealFoodV2(
+                meal.userId,
+                meal.id,
+                mealFoods[0].id,
+                UpdateMealFoodRequest(name = "소불고기"),
+                Language.KO,
+            )
+        }
+
+        // 상태를 보기 전에 지운 작업 행도 트랜잭션과 함께 되돌아와, 5분 뒤의 계산이 그대로 일어난다.
+        val job = assertNotNull(findJob(meal.id))
+        assertEquals(delayedJob.id, job.id)
+        assertNotNull(job.availableAt)
+        assertEquals(MealStatus.CONFIRMING, mealRepository.findById(meal.id).orElseThrow().status)
+        assertEquals("불고기", mealFoodRepository.findAllByMealIdOrderByDisplayOrderAsc(meal.id)[0].name)
     }
 
     // 끼니 알림이 보는 최근 식사 (MealRepository.existsMealAfter)

@@ -28,6 +28,7 @@ import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.dto.NutritionAnalysisResult
 import com.dandi.nyummy.meal.dto.RewardBoxResult
 import com.dandi.nyummy.meal.dto.ServingNutrition
+import com.dandi.nyummy.meal.dto.UpdateMealFoodRequest
 import com.dandi.nyummy.meal.dto.UpdateMealFoodsRequest
 import com.dandi.nyummy.meal.dto.UpdateMealNameRequest
 import com.dandi.nyummy.meal.dto.UpdateMealNutritionRequest
@@ -1034,6 +1035,7 @@ class MealServiceTest {
         every { mealAnalysisJobRepository.deleteMealAnalysisJobById(any()) } returns 1
         every { mealRepository.findMealWithLockById(mealId) } returns meal
         every { mealFoodService.updateMealFoods(any(), any()) } returns mealFoods
+        every { mealFoodService.updateMealFood(any(), any(), any()) } returns mealFoods
     }
 
     private fun createCompletedMealV2(ownerId: Long = userId) = createMealV2(MealStatus.COMPLETED, ownerId).apply {
@@ -1269,6 +1271,179 @@ class MealServiceTest {
 
         verify(exactly = 0) { mealAnalysisJobRepository.findIdByMealId(any()) }
         verify(exactly = 0) { mealRepository.findMealWithLockById(any()) }
+    }
+
+    // updateMealFoodV2
+
+    private val mealFoodId = 1L
+    private val foodRequest = UpdateMealFoodRequest(portion = BigDecimal("2.0"))
+
+    @Test
+    fun `음식 줄을 고치면 프로필, 작업, 식사 순서로 잠근 뒤 받은 항목으로 그 줄을 고치게 한다`() {
+        val meal = createCompletedMealV2()
+        givenMealToUpdate(
+            meal,
+            mealFoods = listOf(createFilledMealFood("불고기", portion = "2.0", calory = "350", iconId = 12L)),
+        )
+
+        mealService.updateMealFoodV2(userId, mealId, mealFoodId, foodRequest, Language.KO)
+
+        verifyOrder {
+            profileRepository.findProfileWithLockByUserId(userId)
+            mealAnalysisJobRepository.findIdByMealId(mealId)
+            mealRepository.findMealWithLockById(mealId)
+            mealFoodService.updateMealFood(meal.id, mealFoodId, foodRequest)
+        }
+    }
+
+    @Test
+    fun `음식 줄을 고친 뒤 새로 구할 값이 없으면 요청 안에서 합계와 아이콘을 다시 계산해 COMPLETED로 남고 작업을 만들지 않는다`() {
+        // 불고기를 2인분으로 고쳤다.
+        val meal = createCompletedMealV2()
+        givenMealToUpdate(
+            meal,
+            mealFoods = listOf(
+                createFilledMealFood("불고기", portion = "2.0", calory = "350", iconId = 12L),
+                createFilledMealFood("잡곡밥", portion = "1.0", calory = "300", iconId = 5L),
+            ),
+        )
+
+        mealService.updateMealFoodV2(userId, mealId, mealFoodId, foodRequest, Language.KO)
+
+        assertEquals(MealStatus.COMPLETED, meal.status)
+        // 350 × 2 + 300 = 1000, 탄수화물 10 × 2 + 10 = 30, 단백질 20 × 2 + 20 = 60, 지방 4 × 2 + 4 = 12
+        assertEquals(1000, meal.calory)
+        assertEquals(30, meal.carbs)
+        assertEquals(60, meal.protein)
+        assertEquals(12, meal.fat)
+        assertEquals(12L, meal.iconId)
+        assertEquals("든든하게 먹었다냥", meal.catComment)
+        verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
+    }
+
+    @Test
+    fun `음식 줄의 이름을 고쳐 값을 새로 구해야 하면 요청 언어의 영양 작업을 미루지 않고 만들고 식사의 합계를 비워 WAITING으로 둔다`() {
+        // 고친 뒤의 줄에 1인분과 아이콘이 없다.
+        val meal = createCompletedMealV2()
+        givenMealToUpdate(meal)
+        val job = slot<MealAnalysisJob>()
+        every { mealAnalysisJobRepository.save(capture(job)) } answers { firstArg() }
+
+        mealService.updateMealFoodV2(
+            userId,
+            mealId,
+            mealFoodId,
+            UpdateMealFoodRequest(name = "제육볶음"),
+            Language.JA,
+        )
+
+        assertEquals(MealStatus.WAITING, meal.status)
+        assertNull(meal.calory)
+        assertNull(meal.iconId)
+        assertEquals("불고기 백반", meal.name)
+        assertEquals("든든하게 먹었다냥", meal.catComment)
+        assertEquals(meal.id, job.captured.mealId)
+        assertEquals(MealAnalysisJobCategory.NUTRITION, job.captured.category)
+        assertEquals(Language.JA, job.captured.language)
+        verify(exactly = 0) { mealAnalysisJobRepository.updateAvailableAt(any(), any()) }
+    }
+
+    @Test
+    fun `계산이 끝난 식사가 아니면 음식 줄 수정은 MEAL_FOODS_NOT_UPDATABLE이고 줄도 작업도 건드리지 않는다`() {
+        // 사용자의 확인을 기다리는 식사(CONFIRMING)는 음식 목록 보내기로 한 번에 고친다.
+        listOf(
+            MealStatus.RECOGNIZING,
+            MealStatus.CONFIRMING,
+            MealStatus.WAITING,
+            MealStatus.ANALYZING,
+            MealStatus.FAILED,
+        ).forEach { status ->
+            val meal = createMealV2(status)
+            givenMealToUpdate(meal)
+
+            assertBusinessException(MealErrorCode.MEAL_FOODS_NOT_UPDATABLE) {
+                mealService.updateMealFoodV2(userId, mealId, mealFoodId, foodRequest, Language.KO)
+            }
+
+            assertEquals(status, meal.status)
+        }
+        verify(exactly = 0) { mealFoodService.updateMealFood(any(), any(), any()) }
+        verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
+    }
+
+    @Test
+    fun `V1 식사는 음식 줄이 없으므로 음식 줄 수정이 MEAL_FOODS_NOT_UPDATABLE이다`() {
+        val meal = givenAnalyzedMeal()
+        givenMealToUpdate(meal)
+
+        assertBusinessException(MealErrorCode.MEAL_FOODS_NOT_UPDATABLE) {
+            mealService.updateMealFoodV2(userId, mealId, mealFoodId, foodRequest, Language.KO)
+        }
+
+        assertEquals(analyzedNutrition.calory, meal.calory)
+        verify(exactly = 0) { mealFoodService.updateMealFood(any(), any(), any()) }
+    }
+
+    @Test
+    fun `바꾸려는 항목이 없거나 이름이 비었거나 인분이 0_5 단위가 아니면 아무것도 잠그기 전에 INVALID_INPUT_VALUE로 거절한다`() {
+        listOf(
+            UpdateMealFoodRequest(),
+            UpdateMealFoodRequest(name = " "),
+            UpdateMealFoodRequest(portion = BigDecimal("1.3")),
+        ).forEach { request ->
+            assertBusinessException(CommonErrorCode.INVALID_INPUT_VALUE) {
+                mealService.updateMealFoodV2(userId, mealId, mealFoodId, request, Language.KO)
+            }
+        }
+
+        verify(exactly = 0) { profileRepository.findProfileWithLockByUserId(any()) }
+        verify(exactly = 0) { mealAnalysisJobRepository.findIdByMealId(any()) }
+    }
+
+    @Test
+    fun `음식 줄을 고칠 식사가 없거나 삭제됐으면 MEAL_NOT_FOUND 예외를 던진다`() {
+        givenMealToUpdate(null)
+        assertBusinessException(MealErrorCode.MEAL_NOT_FOUND) {
+            mealService.updateMealFoodV2(userId, mealId, mealFoodId, foodRequest, Language.KO)
+        }
+
+        givenMealToUpdate(createCompletedMealV2().apply { updateDeletedAt(now) })
+        assertBusinessException(MealErrorCode.MEAL_NOT_FOUND) {
+            mealService.updateMealFoodV2(userId, mealId, mealFoodId, foodRequest, Language.KO)
+        }
+
+        verify(exactly = 0) { mealFoodService.updateMealFood(any(), any(), any()) }
+    }
+
+    @Test
+    fun `다른 사용자의 식사면 음식 줄을 고치지 않고 FORBIDDEN 예외를 던진다`() {
+        val meal = createCompletedMealV2(ownerId = 2L)
+        givenMealToUpdate(meal)
+
+        assertBusinessException(AuthErrorCode.FORBIDDEN) {
+            mealService.updateMealFoodV2(userId, mealId, mealFoodId, foodRequest, Language.KO)
+        }
+
+        assertEquals(MealStatus.COMPLETED, meal.status)
+        verify(exactly = 0) { mealFoodService.updateMealFood(any(), any(), any()) }
+        verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
+    }
+
+    @Test
+    fun `이 식사의 줄이 아니면 MEAL_FOOD_NOT_FOUND가 그대로 나가고 식사의 합계와 상태는 그대로다`() {
+        val meal = createCompletedMealV2()
+        givenMealToUpdate(meal)
+        every {
+            mealFoodService.updateMealFood(any(), any(), any())
+        } throws BusinessException(MealErrorCode.MEAL_FOOD_NOT_FOUND)
+
+        assertBusinessException(MealErrorCode.MEAL_FOOD_NOT_FOUND) {
+            mealService.updateMealFoodV2(userId, mealId, 999L, foodRequest, Language.KO)
+        }
+
+        assertEquals(MealStatus.COMPLETED, meal.status)
+        assertEquals(825, meal.calory)
+        verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
     }
 
     // deleteMealV2·cancelMealV2
