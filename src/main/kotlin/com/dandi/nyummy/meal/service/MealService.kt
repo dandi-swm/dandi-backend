@@ -749,36 +749,23 @@ class MealService(
     }
 
     /**
-     * FAILED 상태의 식사에 대해 영양 분석을 다시 요청한다. 작업을 다시 쌓고 식사를 WAITING으로 둔다.
+     * FAILED 상태의 식사에 대해 영양 분석을 다시 요청한다(v1 재분석 API).
      *
-     * 식사를 잠가 확인하므로, 같은 식사의 재시도가 동시에 들어와도 하나만 작업을 쌓고 나머지는
-     * WAITING을 보고 [MealErrorCode.ANALYSIS_NOT_RETRYABLE]로 거부된다.
+     * 어느 API로 들어왔든 식사를 만든 분석에 맞게 다시 분석해야 하므로 [retryNutritionAnalysisV2]에 맡긴다.
+     * - V1 식사는 v1 분석 작업을 쌓고 WAITING으로 둔다.
+     * - V2 식사는 처음부터 다시 인식한다(RECOGNIZING). v1 분석으로 돌리면 식사의 이름과 합계만 덮이고 음식 줄은
+     *   옛 목록(또는 없음)으로 남아 식사와 음식 줄이 어긋난다. 업데이트하지 않은 기기의 v1 하루 목록에도 V2 식사가
+     *   나오므로 이 경로로 들어올 수 있다.
      *
      * @param userId 재시도를 요청한 사용자 ID (소유권 검증에 사용)
      * @param mealId 재시도할 [Meal]의 ID
-     * @return 다시 요청한 뒤의 분석 상태(WAITING)를 담은 [MealStatusResponse]
-     * @throws BusinessException [MealErrorCode.MEAL_NOT_FOUND] mealId에 해당하는 식사가 없거나, 삭제된 경우
-     * @throws BusinessException [AuthErrorCode.FORBIDDEN] userId가 소유자가 아닌 경우
-     * @param language 재시도 요청의 앱 언어. 새 분석 결과와 완료 푸시를 이 언어로 만든다
-     * @throws BusinessException [MealErrorCode.ANALYSIS_NOT_RETRYABLE] 식사가 FAILED 상태가 아닌 경우
+     * @param language 재시도 요청의 앱 언어. 새 분석 결과와 푸시를 이 언어로 만든다
+     * @return 다시 요청한 뒤의 분석 상태를 담은 [MealStatusResponse]. V1 식사는 WAITING, V2 식사는 RECOGNIZING이다
+     * @throws BusinessException [retryNutritionAnalysisV2]와 같다
      */
     @Transactional
-    fun retryNutritionAnalysis(userId: Long, mealId: Long, language: Language): MealStatusResponse {
-        val meal = mealRepository.findMealWithLockById(mealId)
-            ?.takeIf { it.deletedAt == null }
-            ?: throw BusinessException(MealErrorCode.MEAL_NOT_FOUND)
-
-        meal.validateOwnership(userId)
-
-        if (meal.status != MealStatus.FAILED) {
-            throw BusinessException(MealErrorCode.ANALYSIS_NOT_RETRYABLE)
-        }
-
-        mealAnalysisJobRepository.save(MealAnalysisJob(mealId = meal.id, language = language))
-        meal.updateStatus(MealStatus.WAITING)
-
-        return meal.toMealStatusResponse()
-    }
+    fun retryNutritionAnalysis(userId: Long, mealId: Long, language: Language): MealStatusResponse =
+        retryNutritionAnalysisV2(userId, mealId, language)
 
     /**
      * FAILED 상태의 식사를 v2 경로로 다시 분석한다. V2 식사는 어느 단계에서 실패했든 처음부터, 음식 인식부터 다시 한다.
@@ -787,8 +774,9 @@ class MealService(
      * 재분석도 하나로 한다. 음식 줄과 스냅샷을 지우고(사용자가 고친 목록도 사라진다) 인식 작업을 만들어 RECOGNIZING으로 둔다.
      * 대표 이름과 합계·아이콘도 비운다. 고양이 코멘트가 이미 있으면 그대로 둔다(식사당 한 번만 만든다).
      *
-     * V1 식사는 분석 버전을 바꿀 수 없으므로 [retryNutritionAnalysis]와 같이 v1 분석 작업을 쌓고 WAITING으로 둔다.
-     * 새 앱의 하루 목록에는 V1 식사도 나오므로 이 경로로 들어올 수 있다.
+     * V1 식사는 분석 버전을 바꿀 수 없으므로 v1 분석 작업(종류 없는 작업)을 쌓고 WAITING으로 둔다.
+     * 새 앱의 하루 목록에는 V1 식사도 나오므로 이 경로로 들어올 수 있다. v1 재분석 API([retryNutritionAnalysis])도
+     * 이 메서드를 부른다.
      *
      * 작업 행을 만드는 요청이라 [deleteMealAnalysisJobAndGetMealWithLock]으로 시작한다. FAILED 식사에는 지울 작업이 없지만
      * 같은 사용자의 요청을 줄 세워, 재분석을 두 번 눌러도 하나만 작업을 만들고 나머지는 거절된다.

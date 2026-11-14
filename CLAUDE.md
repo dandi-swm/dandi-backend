@@ -151,6 +151,7 @@
 - AI가 처음 인식한 결과 `MealSnapshot`·`MealFoodSnapshot`(History·Original 금지) — 사용자가 고치는 지금 값 `Meal.name`·`MealFood`와 다른 것
 - 식사를 만든 분석의 버전 `MealAnalysisVersion`(`analysisVersion`), 인식이 판정한 입력 유형 `MealInputCategory`(`inputCategory`), 인식한 곳 `MealRecognitionCategory`
 - 식사 기록 요청 안에서 한 인식 시도의 결과 `MealRecognitionOutcome`, 요청 안에서 끝내지 못해 Worker로 넘긴 것 `Deferred`(`MealRecognitionDeferralCategory`, Delayed·Postponed 금지 — 지표의 `delayed`는 설정 오류로 미룬 작업)
+- 인식이 끝나 사용자가 음식 목록을 확인하기를 기다리는 식사 상태 `CONFIRMING`(Pending·Reviewing 금지) — 영양 계산을 기다리는 `WAITING`과 다른 것
 - 음식 목록을 고쳐 보낼 수 있는 식사 상태 묶음 `MEAL_FOOD_UPDATABLE_STATUSES` — `IN_PROGRESS_STATUSES`·`ANALYZABLE_STATUSES`와 다른 것
 - 고양이 코멘트 `CatComment`(`catComment`, `CatCommentClient`, Feedback·Message 금지 — Feedback은 분석 평가)
 - 탄단지가 칼로리에서 차지하는 비율 `CaloryShare`(Ratio·Rate 금지 — Rate는 0~100 정수 퍼센트), 목표 구성비보다 많은·부족한 영양소 `Excess`·`Lacking`(`CaloryShareBalanceResult`, Over·Under 금지)

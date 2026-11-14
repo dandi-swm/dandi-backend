@@ -43,6 +43,7 @@ GET {{url}}/api/v1/meals/{{analysisMealId}}/analysis
 Authorization: Bearer {{accessToken}}
 
 ### 재분석 요청 API
+# FAILED 식사만 다시 분석한다. v2 API로 기록한 식사는 처음부터 다시 인식해 RECOGNIZING으로 응답한다.
 POST {{url}}/api/v1/meals/{{analysisMealId}}/analysis
 Authorization: Bearer {{accessToken}}
 
