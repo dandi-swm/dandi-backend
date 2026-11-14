@@ -471,7 +471,7 @@ class MealAnalysisJobTransactionServiceTest {
     }
 
     @Test
-    fun `인식을 확정하면 대표 이름과 입력 유형을 저장하고 식사를 WAITING으로 바꾼다`() {
+    fun `인식을 확정하면 대표 이름과 입력 유형을 저장하고 식사를 CONFIRMING으로 바꾼다`() {
         val meal = createRecognizingMeal()
         givenOwnedRecognitionJob(meal)
 
@@ -481,7 +481,7 @@ class MealAnalysisJobTransactionServiceTest {
         assertTrue(isConfirmed)
         assertEquals("불고기 백반", meal.name)
         assertEquals(MealInputCategory.PACKAGE, meal.inputCategory)
-        assertEquals(MealStatus.WAITING, meal.status)
+        assertEquals(MealStatus.CONFIRMING, meal.status)
     }
 
     @Test

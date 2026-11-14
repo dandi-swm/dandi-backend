@@ -47,6 +47,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
@@ -146,16 +147,17 @@ class MealServiceV2IntegrationTest @Autowired constructor(
     }
 
     /**
-     * 인식은 끝났고 영양 계산은 아직인 V2 식사(불고기 1.5인분, 잡곡밥 1인분). 1인분·아이콘·코멘트가 없고 작업 행도 없다.
+     * 인식이 끝나 사용자의 확인을 기다리는 V2 식사(불고기 1.5인분, 잡곡밥 1인분). 1인분·아이콘·코멘트가 없고,
+     * 5분 뒤부터 가져갈 영양 작업이 있다.
      *
      * @return 식사와 그 음식 줄(순서대로)
      */
-    private fun createWaitingMeal(email: String): Pair<Meal, List<MealFood>> {
+    private fun createConfirmingMeal(email: String): Pair<Meal, List<MealFood>> {
         val userId = userRepository.save(User(provider = AuthProvider.EMAIL, email = email)).id
         profileRepository.save(Profile(userId = userId))
         val meal = mealRepository.save(
             Meal(
-                status = MealStatus.WAITING,
+                status = MealStatus.CONFIRMING,
                 imageKey = "meals/$userId/2026/11/14/$email.jpg",
                 mealAt = Instant.now(clock),
                 userId = userId,
@@ -168,8 +170,19 @@ class MealServiceV2IntegrationTest @Autowired constructor(
                 MealFood(meal.id, null, 2, "잡곡밥", BigDecimal("1.0")),
             ),
         )
+        transactionTemplate.execute {
+            val job = mealAnalysisJobRepository.save(
+                MealAnalysisJob(mealId = meal.id, language = Language.KO, category = MealAnalysisJobCategory.NUTRITION),
+            )
+            mealAnalysisJobRepository.updateAvailableAt(job.id, NUTRITION_DELAY_SECONDS)
+        }
 
         return meal to mealFoods
+    }
+
+    private fun assertBusinessException(errorCode: MealErrorCode, block: () -> Unit) {
+        val exception = assertFailsWith<BusinessException> { block() }
+        assertEquals(errorCode, exception.errorCode)
     }
 
     private fun findJob(mealId: Long): MealAnalysisJob? =
@@ -268,50 +281,82 @@ class MealServiceV2IntegrationTest @Autowired constructor(
     }
 
     @Test
-    fun `5분을 기다리던 작업이 있으면 지우고 바로 가져갈 새 작업으로 바꾼다`() {
-        val (meal, mealFoods) = createWaitingMeal("replace-job@nyummy.co.kr")
-        val waitingJob = transactionTemplate.execute {
-            val job = mealAnalysisJobRepository.save(
-                MealAnalysisJob(mealId = meal.id, language = Language.KO, category = MealAnalysisJobCategory.NUTRITION),
-            )
-            mealAnalysisJobRepository.updateAvailableAt(job.id, NUTRITION_DELAY_SECONDS)
-            job
-        }!!
+    fun `확인을 기다리던 식사의 목록을 보내면 5분을 기다리던 작업을 지우고 바로 가져갈 새 작업을 만들며 식사는 WAITING이 된다`() {
+        val (meal, mealFoods) = createConfirmingMeal("replace-job@nyummy.co.kr")
+        val delayedJob = assertNotNull(findJob(meal.id))
+        assertNotNull(delayedJob.availableAt)
 
-        mealService.updateMealFoodsV2(meal.userId, meal.id, createSameFoodsRequest(mealFoods), Language.KO)
+        val response =
+            mealService.updateMealFoodsV2(meal.userId, meal.id, createSameFoodsRequest(mealFoods), Language.KO)
 
+        assertEquals(MealStatus.WAITING, response.status)
+        assertEquals(MealStatus.WAITING, mealRepository.findById(meal.id).orElseThrow().status)
         // 같은 식사의 작업은 여전히 하나이고, 기다리던 작업과 다른 새 행이다.
         val job = assertNotNull(findJob(meal.id))
-        assertNotEquals(waitingJob.id, job.id)
+        assertNotEquals(delayedJob.id, job.id)
         assertNull(job.leaseExpiresAt)
         assertNull(job.availableAt)
     }
 
     @Test
-    fun `같은 식사에 동시에 두 번 보내도 둘 다 받고 작업은 하나다`() {
-        val (meal, mealFoods) = createWaitingMeal("double-submit@nyummy.co.kr")
-        val request = createSameFoodsRequest(mealFoods)
+    fun `계산을 기다리거나 계산 중인 식사에 목록을 보내면 거절하고 작업 행과 음식 줄과 상태는 그대로다`() {
+        listOf(MealStatus.WAITING, MealStatus.ANALYZING).forEach { status ->
+            val (meal, mealFoods) = createConfirmingMeal("reject-$status@nyummy.co.kr")
+            transactionTemplate.execute {
+                mealRepository.updateMealStatuses(listOf(meal.id), status, Instant.now(clock))
+            }
+            val job = assertNotNull(findJob(meal.id))
+            val request = UpdateMealFoodsRequest(
+                foods = listOf(
+                    MealFoodRequest(mealFoodId = mealFoods[0].id, name = "소불고기", portion = BigDecimal("2.0")),
+                ),
+            )
 
-        // 첫 회는 작업 행이 없는 식사에, 다음 회부터는 앞 회가 만든 작업 행이 있는 식사에 겹쳐 보낸다.
+            assertBusinessException(MealErrorCode.MEAL_FOODS_NOT_UPDATABLE) {
+                mealService.updateMealFoodsV2(meal.userId, meal.id, request, Language.KO)
+            }
+
+            // 상태를 보기 전에 지운 작업 행도 트랜잭션과 함께 되돌아간다. 계산하던 Worker는 자기 작업을 그대로 끝낼 수 있다.
+            assertEquals(job.id, findJob(meal.id)?.id)
+            assertEquals(status, mealRepository.findById(meal.id).orElseThrow().status)
+            val savedMealFoods = mealFoodRepository.findAllByMealIdOrderByDisplayOrderAsc(meal.id)
+            assertEquals(listOf("불고기", "잡곡밥"), savedMealFoods.map { it.name })
+            assertEquals(0, BigDecimal("1.5").compareTo(savedMealFoods[0].portion))
+        }
+    }
+
+    @Test
+    fun `확인을 기다리던 식사에 동시에 두 번 보내면 하나만 받고 작업은 하나다`() {
         repeat(5) { round ->
+            val (meal, mealFoods) = createConfirmingMeal("double-submit-$round@nyummy.co.kr")
+            val request = createSameFoodsRequest(mealFoods)
+
             val failures =
                 runConcurrently(2) { mealService.updateMealFoodsV2(meal.userId, meal.id, request, Language.KO) }
 
-            assertTrue(failures.isEmpty(), "$round 회 실패: $failures")
-            assertEquals(1, mealAnalysisJobRepository.findAll().count { it.mealId == meal.id })
+            // 프로필 행 잠금이 두 요청을 줄 세운다. 먼저 들어온 요청이 식사를 WAITING으로 바꾸므로 뒤 요청은 거절된다.
+            assertEquals(1, failures.size, "$round 회 실패: $failures")
+            assertEquals(MealErrorCode.MEAL_FOODS_NOT_UPDATABLE, (failures.single() as BusinessException).errorCode)
+            // 남은 작업은 하나이고, 5분을 기다리던 작업이 아니라 바로 가져갈 새 작업이다.
+            assertNull(assertNotNull(findJob(meal.id)).availableAt)
+            assertEquals(2, mealFoodRepository.findAllByMealIdOrderByDisplayOrderAsc(meal.id).size)
         }
-        assertEquals(2, mealFoodRepository.findAllByMealIdOrderByDisplayOrderAsc(meal.id).size)
     }
 
     @Test
     fun `서로 다른 사용자가 작업 행이 없는 식사에 동시에 보내도 데드락 없이 모두 받는다`() {
         // 작업 행을 meal_id로 바로 지우면 없는 행에 구간 잠금이 걸려, 이 요청들이 서로의 INSERT를 막아 데드락이 난다.
-        val meals = (1..8).map { createWaitingMeal("gap-$it@nyummy.co.kr") }
-        val requests = meals.map { (meal, mealFoods) -> meal to createSameFoodsRequest(mealFoods) }
-
-        repeat(3) { round ->
-            // 앞 회가 만든 작업 행을 지워 다시 "작업 행 없음"에서 시작한다.
-            transactionTemplate.execute { mealAnalysisJobRepository.deleteAllInBatch() }
+        // 완료된 식사는 작업 행이 없다. 줄의 이름을 바꿔 보내면 값을 새로 구해야 해서 작업 행을 만든다.
+        repeat(5) { round ->
+            // 회마다 작업 행이 한 번도 없던 새 식사로 한다. 앞 회의 작업 행을 지워 되돌리고 곧바로 같은 식사의 작업을 다시 넣으면
+            // 이 테스트가 보려는 것과 다른 이유로 데드락이 난다(지운 직후에만 나고, 0.5초 기다렸다 넣으면 나지 않는다).
+            val requests = (1..8).map { createCompletedMeal("gap-$round-$it@nyummy.co.kr") }.map { (meal, mealFoods) ->
+                meal to UpdateMealFoodsRequest(
+                    foods = mealFoods.map {
+                        MealFoodRequest(mealFoodId = it.id, name = "${it.name} 큰 것", portion = it.portion)
+                    },
+                )
+            }
 
             val failures = runConcurrently(requests.size) { index ->
                 val (meal, request) = requests[index]
@@ -319,34 +364,45 @@ class MealServiceV2IntegrationTest @Autowired constructor(
             }
 
             assertTrue(failures.isEmpty(), "$round 회 실패: $failures")
-            assertEquals(
-                meals.size,
-                mealAnalysisJobRepository.findAll().count { job ->
-                    meals.any {
-                        it.first.id ==
-                            job.mealId
-                    }
-                },
-            )
+            requests.forEach { (meal, _) -> assertNotNull(findJob(meal.id), "작업이 없습니다: mealId=${meal.id}") }
+        }
+    }
+
+    @Test
+    fun `서로 다른 사용자가 확인을 기다리던 식사에 동시에 보내도 데드락 없이 모두 받는다`() {
+        // 기록한 지 얼마 안 된 식사들은 id가 붙어 있고 저마다 5분을 기다리는 작업이 있다.
+        // 여러 사용자가 같은 때에 확인을 누르면 붙어 있는 작업 행을 지우고 새로 넣는 요청이 겹친다.
+        repeat(5) { round ->
+            val requests = (1..8).map { createConfirmingMeal("confirm-$round-$it@nyummy.co.kr") }
+                .map { (meal, mealFoods) ->
+                    Triple(meal, assertNotNull(findJob(meal.id)).id, createSameFoodsRequest(mealFoods))
+                }
+
+            val failures = runConcurrently(requests.size) { index ->
+                val (meal, _, request) = requests[index]
+                mealService.updateMealFoodsV2(meal.userId, meal.id, request, Language.KO)
+            }
+
+            assertTrue(failures.isEmpty(), "$round 회 실패: $failures")
+            requests.forEach { (meal, delayedJobId, _) ->
+                val job = assertNotNull(findJob(meal.id), "작업이 없습니다: mealId=${meal.id}")
+                assertNotEquals(delayedJobId, job.id)
+                assertNull(job.availableAt)
+            }
         }
     }
 
     @Test
     fun `5분을 기다리던 식사를 지우면 작업 행이 사라지고 식사는 삭제 시각만 남으며 음식 줄은 그대로다`() {
-        val (meal, _) = createWaitingMeal("delete@nyummy.co.kr")
-        transactionTemplate.execute {
-            val job = mealAnalysisJobRepository.save(
-                MealAnalysisJob(mealId = meal.id, language = Language.KO, category = MealAnalysisJobCategory.NUTRITION),
-            )
-            mealAnalysisJobRepository.updateAvailableAt(job.id, NUTRITION_DELAY_SECONDS)
-        }
+        val (meal, _) = createConfirmingMeal("delete@nyummy.co.kr")
+        assertNotNull(findJob(meal.id))
 
         mealService.deleteMealV2(meal.userId, meal.id)
 
         assertNull(findJob(meal.id))
         val savedMeal = mealRepository.findById(meal.id).orElseThrow()
         assertNotNull(savedMeal.deletedAt)
-        assertEquals(MealStatus.WAITING, savedMeal.status)
+        assertEquals(MealStatus.CONFIRMING, savedMeal.status)
         assertEquals(2, mealFoodRepository.findAllByMealIdOrderByDisplayOrderAsc(meal.id).size)
     }
 
@@ -447,6 +503,7 @@ class MealServiceV2IntegrationTest @Autowired constructor(
         val recently = now.minusSeconds(600)
 
         assertTrue(existsRecentMeal("recent-recognizing@nyummy.co.kr", MealStatus.RECOGNIZING, recently))
+        assertTrue(existsRecentMeal("recent-confirming@nyummy.co.kr", MealStatus.CONFIRMING, recently))
         assertTrue(existsRecentMeal("recent-waiting@nyummy.co.kr", MealStatus.WAITING, recently))
         assertTrue(existsRecentMeal("recent-analyzing@nyummy.co.kr", MealStatus.ANALYZING, recently))
         assertTrue(existsRecentMeal("recent-completed@nyummy.co.kr", MealStatus.COMPLETED, recently))

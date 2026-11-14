@@ -162,7 +162,7 @@ class MealAnalysisJobTransactionServiceIntegrationTest @Autowired constructor(
         assertTrue(confirmMealRecognition(recognitionJob))
 
         val savedMeal = mealRepository.findById(meal.id).orElseThrow()
-        assertEquals(MealStatus.WAITING, savedMeal.status)
+        assertEquals(MealStatus.CONFIRMING, savedMeal.status)
         assertEquals("불고기 백반", savedMeal.name)
         assertEquals(MealInputCategory.FOOD_PHOTO, savedMeal.inputCategory)
 
@@ -191,7 +191,7 @@ class MealAnalysisJobTransactionServiceIntegrationTest @Autowired constructor(
         confirmMealRecognition(assertNotNull(leaseJob(meal.id)))
 
         assertNull(leaseJob(meal.id))
-        assertEquals(MealStatus.WAITING, mealRepository.findById(meal.id).orElseThrow().status)
+        assertEquals(MealStatus.CONFIRMING, mealRepository.findById(meal.id).orElseThrow().status)
     }
 
     @Test
@@ -209,7 +209,7 @@ class MealAnalysisJobTransactionServiceIntegrationTest @Autowired constructor(
 
         assertNull(pushResult)
         assertEquals(nutritionJob.id, findJob(meal.id)?.id)
-        assertEquals(MealStatus.WAITING, mealRepository.findById(meal.id).orElseThrow().status)
+        assertEquals(MealStatus.CONFIRMING, mealRepository.findById(meal.id).orElseThrow().status)
         assertEquals(1, mealSnapshotRepository.findAll().count { it.mealId == meal.id })
         assertEquals(2, mealFoodRepository.findAll().count { it.mealId == meal.id })
     }
@@ -294,7 +294,7 @@ class MealAnalysisJobTransactionServiceIntegrationTest @Autowired constructor(
         val analysisMeal = assertNotNull(
             transactionTemplate.execute { mealAnalysisJobTransactionService.getAnalysisMeal(staleJob) },
         )
-        // 사용자가 음식 목록을 다시 보내면 기다리던 작업을 지우고 새 작업을 만든다.
+        // lease가 만료된 사이 다른 Worker가 계산을 끝냈고, 사용자가 완료된 식사를 고쳐 새 작업이 생긴 상황이다.
         transactionTemplate.execute {
             mealAnalysisJobRepository.deleteById(staleJob.jobId)
             mealAnalysisJobRepository.flush()

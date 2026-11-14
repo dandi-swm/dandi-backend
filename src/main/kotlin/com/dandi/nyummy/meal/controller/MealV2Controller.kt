@@ -47,11 +47,11 @@ class MealV2Controller(
     @Operation(
         summary = "식사 생성 v2",
         description = "업로드된 이미지 키로 식사를 생성하고, 응답 전에 사진의 음식을 인식한다. 서버는 요청을 받고 4.5초 안에 응답한다. " +
-            "음식으로 인식하면 status는 WAITING이고 대표 이름(20자 이내)과 음식 줄을 준다. 맨 위 줄이 대표 음식이고, " +
+            "음식으로 인식하면 status는 CONFIRMING이고 대표 이름(20자 이내)과 음식 줄을 준다. 맨 위 줄이 대표 음식이고, " +
             "음식 줄의 nutrition과 iconId는 영양 계산 전이라 null이다. 영양은 5분 뒤에, 또는 음식 목록을 보내면 바로 계산한다. " +
             "음식이 아니면 status는 FAILED이고 name은 빈 문자열, foods는 null이다. " +
             "기한 안에 인식을 끝내지 못하면 status는 RECOGNIZING이고 name과 foods는 null이다. 서버가 이어서 인식하므로 " +
-            "영양 분석 상태 조회 API로 WAITING이 되는지 확인한다. " +
+            "영양 분석 상태 조회 API로 CONFIRMING이 되는지 확인한다. " +
             "어느 경우든 기록 횟수에 들어가고 보상 상자 우편이 하나 생기며, 응답의 rewardBoxCategory에 그 상자의 등급을 담는다.",
     )
     @ApiErrorCodes(
@@ -73,7 +73,9 @@ class MealV2Controller(
     @Operation(
         summary = "영양 분석 상태 조회 v2",
         description = "대기 화면과 계산 중 화면에서 폴링한다. 5초 안에 인식하지 못한 식사는 RECOGNIZING으로 시작해 " +
-            "인식이 끝나면 WAITING(음식 목록 있음)이 되고, 영양 계산이 끝나면 COMPLETED가 된다.",
+            "인식이 끝나면 CONFIRMING(음식 목록 있음, 사용자의 확인을 기다림)이 된다. " +
+            "음식 목록을 보내면 WAITING, Worker가 계산을 시작하면 ANALYZING이 되고, 영양 계산이 끝나면 COMPLETED가 된다. " +
+            "목록을 보내지 않아도 5분이 지나면 계산을 시작한다.",
     )
     @ApiErrorCodes(meal = [MealErrorCode.MEAL_NOT_FOUND], auth = [AuthErrorCode.FORBIDDEN])
     @GetMapping("/{mealId}/analysis")
@@ -116,11 +118,13 @@ class MealV2Controller(
             "이름은 1~30자, 인분은 0.5~5.0, 0.5 단위다. " +
             "nutrition(칼로리 0~9999, 탄수화물·단백질·지방 0~999)과 iconId는 이번에 직접 고친 줄만 채운다. " +
             "채운 줄은 그 값으로 고정돼 이름을 바꿔도 다시 구하지 않는다. " +
-            "기다리던 계산은 버리고 받은 목록으로 다시 계산한다. 응답의 status가 WAITING이면 분석 상태를 폴링하고, " +
+            "사용자의 확인을 기다리는 식사(CONFIRMING)와 계산이 끝난 식사(COMPLETED)만 받는다. " +
+            "CONFIRMING이면 5분을 기다리지 않고 받은 목록으로 바로 계산한다. 응답의 status가 WAITING이면 분석 상태를 폴링하고, " +
             "COMPLETED면 이미 계산이 끝난 것이므로 바로 단건을 다시 조회한다. " +
             "COMPLETED는 값을 새로 구할 것이 없을 때다(인분·순서만 바꿈, 줄을 지움, 영양·아이콘을 직접 적음. " +
             "한 번 계산이 끝난 식사만). " +
-            "아직 인식 중(RECOGNIZING)이거나 실패(FAILED)한 식사, V1 식사는 받지 않는다.",
+            "아직 인식 중(RECOGNIZING)이거나 계산을 기다리는 중·계산 중(WAITING·ANALYZING)이거나 실패(FAILED)한 식사, " +
+            "V1 식사는 받지 않는다.",
     )
     @ApiErrorCodes(
         meal = [
@@ -203,7 +207,7 @@ class MealV2Controller(
     @Operation(
         summary = "영양 분석 재시도 v2",
         description = "FAILED 식사만 다시 분석한다. V2 식사는 어느 단계에서 실패했든 처음부터 다시 인식한다. " +
-            "음식 줄을 지우고(고친 목록도 사라진다) RECOGNIZING으로 응답하며, 인식이 끝나면 WAITING이 된다. " +
+            "음식 줄을 지우고(고친 목록도 사라진다) RECOGNIZING으로 응답하며, 인식이 끝나면 CONFIRMING이 된다. " +
             "V1 식사는 v1과 같이 WAITING으로 응답한다.",
     )
     @ApiErrorCodes(

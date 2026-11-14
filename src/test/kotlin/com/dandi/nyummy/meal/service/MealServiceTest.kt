@@ -290,12 +290,12 @@ class MealServiceTest {
     }
 
     @Test
-    fun `음식으로 인식하면 WAITING과 대표 이름과 계산 전 음식 줄을 응답한다`() {
+    fun `음식으로 인식하면 CONFIRMING과 대표 이름과 계산 전 음식 줄을 응답한다`() {
         givenMealV2(MealRecognitionOutcome.Recognized(recognition))
 
         val response = mealService.createMealV2(userId, request, Language.KO)
 
-        assertEquals(MealStatus.WAITING, response.status)
+        assertEquals(MealStatus.CONFIRMING, response.status)
         assertEquals("불고기 백반", response.name)
         assertEquals(RewardBoxCategory.GOLD, response.rewardBoxCategory)
         val foods = assertNotNull(response.foods)
@@ -312,7 +312,7 @@ class MealServiceTest {
         mealService.createMealV2(userId, request, Language.KO)
 
         assertEquals(MealAnalysisVersion.V2, savedMeal.captured.analysisVersion)
-        assertEquals(MealStatus.WAITING, savedMeal.captured.status)
+        assertEquals(MealStatus.CONFIRMING, savedMeal.captured.status)
         assertEquals("불고기 백반", savedMeal.captured.name)
         assertEquals(MealInputCategory.FOOD_PHOTO, savedMeal.captured.inputCategory)
         assertEquals(now, savedMeal.captured.mealAt)
@@ -885,8 +885,8 @@ class MealServiceTest {
     }
 
     @Test
-    fun `v2 단건은 영양 계산을 기다리는 식사의 음식 줄을 영양과 아이콘 없이 준다`() {
-        val meal = createMealV2(MealStatus.WAITING).apply { updateName("불고기 백반") }
+    fun `v2 단건은 사용자의 확인을 기다리는 식사의 음식 줄을 영양과 아이콘 없이 준다`() {
+        val meal = createMealV2(MealStatus.CONFIRMING).apply { updateName("불고기 백반") }
         givenMeal(meal)
         every { mealFoodService.getMealFoods(meal.id) } returns recognizedMealFoods
 
@@ -1045,7 +1045,7 @@ class MealServiceTest {
 
     @Test
     fun `음식 목록을 보내면 프로필, 작업, 식사 순서로 잠그고 기다리던 작업을 id로 지운다`() {
-        givenMealToUpdate(createMealV2(MealStatus.WAITING), jobId = 77L)
+        givenMealToUpdate(createMealV2(MealStatus.CONFIRMING), jobId = 77L)
 
         mealService.updateMealFoodsV2(userId, mealId, foodsRequest, Language.KO)
 
@@ -1114,7 +1114,7 @@ class MealServiceTest {
 
     @Test
     fun `새로 구할 값이 없어도 아직 계산이 끝난 적 없는 식사면 코멘트를 만들어야 하므로 작업을 만든다`() {
-        val meal = createMealV2(MealStatus.WAITING).apply { updateName("불고기 백반") }
+        val meal = createMealV2(MealStatus.CONFIRMING).apply { updateName("불고기 백반") }
         givenMealToUpdate(
             meal,
             mealFoods = listOf(createFilledMealFood("불고기", portion = "1.5", calory = "350", iconId = 12L)),
@@ -1169,8 +1169,8 @@ class MealServiceTest {
     }
 
     @Test
-    fun `계산을 기다리거나 계산 중이거나 끝난 식사는 음식 목록을 받는다`() {
-        listOf(MealStatus.WAITING, MealStatus.ANALYZING, MealStatus.COMPLETED).forEach { status ->
+    fun `사용자의 확인을 기다리거나 계산이 끝난 식사는 음식 목록을 받는다`() {
+        listOf(MealStatus.CONFIRMING, MealStatus.COMPLETED).forEach { status ->
             givenMealToUpdate(createMealV2(status))
 
             val response = mealService.updateMealFoodsV2(userId, mealId, foodsRequest, Language.KO)
@@ -1180,8 +1180,14 @@ class MealServiceTest {
     }
 
     @Test
-    fun `인식 중이거나 실패한 식사는 MEAL_FOODS_NOT_UPDATABLE이고 음식 줄과 새 작업을 만들지 않는다`() {
-        listOf(MealStatus.RECOGNIZING, MealStatus.FAILED).forEach { status ->
+    fun `인식 중이거나 계산을 시작했거나 실패한 식사는 MEAL_FOODS_NOT_UPDATABLE이고 음식 줄과 새 작업을 만들지 않는다`() {
+        // 계산을 기다리는 식사(WAITING)와 계산 중인 식사(ANALYZING)는 계산이 끝날 때까지 고칠 수 없다.
+        listOf(
+            MealStatus.RECOGNIZING,
+            MealStatus.WAITING,
+            MealStatus.ANALYZING,
+            MealStatus.FAILED,
+        ).forEach { status ->
             val meal = createMealV2(status)
             givenMealToUpdate(meal)
 
@@ -1269,7 +1275,7 @@ class MealServiceTest {
 
     @Test
     fun `v2 식사를 지우면 프로필, 작업, 식사 순서로 잠그고 기다리던 작업을 지운 뒤 삭제 시각을 남긴다`() {
-        val meal = createMealV2(MealStatus.WAITING)
+        val meal = createMealV2(MealStatus.CONFIRMING)
         givenMealToUpdate(meal, jobId = 77L)
 
         mealService.deleteMealV2(userId, mealId)
@@ -1332,7 +1338,7 @@ class MealServiceTest {
 
     @Test
     fun `기록을 취소하면 삭제와 같이 기다리던 작업을 지우고 삭제 시각을 남긴다`() {
-        val meal = createMealV2(MealStatus.WAITING)
+        val meal = createMealV2(MealStatus.CONFIRMING)
         givenMealToUpdate(meal, jobId = 77L)
 
         mealService.cancelMealV2(userId, mealId)
@@ -1418,6 +1424,7 @@ class MealServiceTest {
     fun `FAILED가 아닌 식사는 ANALYSIS_NOT_RETRYABLE이고 음식 줄과 작업을 건드리지 않는다`() {
         listOf(
             MealStatus.RECOGNIZING,
+            MealStatus.CONFIRMING,
             MealStatus.WAITING,
             MealStatus.ANALYZING,
             MealStatus.COMPLETED,

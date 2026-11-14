@@ -32,13 +32,13 @@ fun CreateMealRequest.toEntity(userId: Long, mealAt: Instant, imageKey: String) 
 
 /**
  * v2 식사. 상태·대표 이름·입력 유형을 식사 기록 요청 안에서 음식 인식을 시도한 결과에 맞춘다.
- * - 음식으로 인식했으면 영양 계산을 기다리는 WAITING이고, AI가 추천한 대표 이름과 입력 유형을 채운다.
+ * - 음식으로 인식했으면 사용자의 확인을 기다리는 CONFIRMING이고, AI가 추천한 대표 이름과 입력 유형을 채운다.
  * - 음식이 아니면 FAILED다.
  * - 요청 안에서 인식을 끝내지 못했으면 Worker의 인식을 기다리는 RECOGNIZING이고, 이름과 입력 유형은 인식한 뒤에 채운다.
  */
 fun CreateMealRequest.toEntity(userId: Long, mealAt: Instant, imageKey: String, outcome: MealRecognitionOutcome) = Meal(
     status = when (outcome) {
-        is MealRecognitionOutcome.Recognized -> MealStatus.WAITING
+        is MealRecognitionOutcome.Recognized -> MealStatus.CONFIRMING
         MealRecognitionOutcome.NotFood -> MealStatus.FAILED
         is MealRecognitionOutcome.Deferred -> MealStatus.RECOGNIZING
     },

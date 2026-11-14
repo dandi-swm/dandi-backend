@@ -43,9 +43,9 @@ class MealV2E2eTest {
         } Then {
             statusCode(200)
             body("keySet()", hasItems("id", "status", "rewardBoxCategory", "name", "foods"))
-            // 서버는 응답 기한 안에 인식하면 WAITING, 못 끝내면 RECOGNIZING으로 응답한다. 어느 쪽이 될지는 그때의 Gemini 응답 시간에 달렸다.
+            // 서버는 응답 기한 안에 인식하면 CONFIRMING, 못 끝내면 RECOGNIZING으로 응답한다. 어느 쪽이 될지는 그때의 Gemini 응답 시간에 달렸다.
             // FAILED면 테스트 사진을 음식이 아니라고 본 것이다.
-            body("status", oneOf("WAITING", "RECOGNIZING"))
+            body("status", oneOf("CONFIRMING", "RECOGNIZING"))
             body("rewardBoxCategory", oneOf("BRONZE", "SILVER", "GOLD"))
         } Extract {
             jsonPath()
@@ -55,7 +55,7 @@ class MealV2E2eTest {
 
         try {
             // 1. 기록 응답의 대표 이름과 음식 줄
-            if (created.getString("status") == "WAITING") {
+            if (created.getString("status") == "CONFIRMING") {
                 assertRecognizedFoods(created.getString("name"), created.getList("foods"))
             } else {
                 // 인식 전이라 이름과 음식 줄이 없다.
@@ -94,19 +94,19 @@ class MealV2E2eTest {
             assertEquals(rewardBoxMailId, getLatestMailId(), "거부된 기록에 보상 상자 우편이 생겼습니다")
 
             // 4. 인식이 끝나 음식 목록이 준비된다. 기한 안에 인식하지 못했으면 Worker가 인식할 때까지 기다린다.
-            // 영양 계산은 음식 목록을 보내거나 5분이 지나야 시작하므로 여기서는 WAITING에 머문다.
+            // 영양 계산은 음식 목록을 보내거나 5분이 지나야 시작하므로 여기서는 사용자의 확인을 기다리는 CONFIRMING에 머문다.
             assertEquals(
-                "WAITING",
-                waitForStatus(mealId, setOf("WAITING", "FAILED")),
+                "CONFIRMING",
+                waitForStatus(mealId, setOf("CONFIRMING", "FAILED")),
                 "음식 인식이 끝나지 않았거나 실패했습니다(mealId=$mealId). dev Worker 로그를 확인하세요.",
             )
-            val waitingMeal = getMeal(mealId)
-            assertEquals("V2", waitingMeal.getString("analysisVersion"))
-            assertEquals(0, waitingMeal.getInt("nutrition.calory"), "계산 전 식사에 칼로리가 있습니다")
-            assertNull(waitingMeal.get<Any?>("iconId"), "계산 전 식사에 아이콘이 있습니다")
-            assertNull(waitingMeal.getString("catComment"), "계산 전 식사에 코멘트가 있습니다")
-            val recognizedFoods = waitingMeal.getList<Map<String, Any?>>("foods")
-            assertRecognizedFoods(waitingMeal.getString("name"), recognizedFoods)
+            val confirmingMeal = getMeal(mealId)
+            assertEquals("V2", confirmingMeal.getString("analysisVersion"))
+            assertEquals(0, confirmingMeal.getInt("nutrition.calory"), "계산 전 식사에 칼로리가 있습니다")
+            assertNull(confirmingMeal.get<Any?>("iconId"), "계산 전 식사에 아이콘이 있습니다")
+            assertNull(confirmingMeal.getString("catComment"), "계산 전 식사에 코멘트가 있습니다")
+            val recognizedFoods = confirmingMeal.getList<Map<String, Any?>>("foods")
+            assertRecognizedFoods(confirmingMeal.getString("name"), recognizedFoods)
 
             // 5. 남의 식사는 볼 수도, 음식 목록을 보낼 수도 없다.
             val otherSpec = RequestSpecs.createAuthorizedSpec(AuthFixture.otherAccessToken)
@@ -158,7 +158,7 @@ class MealV2E2eTest {
 
             // 거부된 요청들이 음식 줄과 상태를 바꾸지 않았는지 본다. 4xx가 와도 저장이 먼저 일어났을 수 있다.
             val untouchedMeal = getMeal(mealId)
-            assertEquals("WAITING", untouchedMeal.getString("status"))
+            assertEquals("CONFIRMING", untouchedMeal.getString("status"))
             assertEquals(
                 recognizedFoods.map { it["mealFoodId"] to it["name"] },
                 untouchedMeal.getList<Map<String, Any?>>("foods").map { it["mealFoodId"] to it["name"] },
@@ -166,7 +166,7 @@ class MealV2E2eTest {
             )
 
             // 8. 음식 목록을 보낸다. 맨 위 줄의 인분을 바꾸고 김치 반 인분을 더한다.
-            // 처음 계산이라 Worker가 1인분 영양과 아이콘을 구하고 코멘트를 만든다. 응답은 WAITING이다.
+            // 5분을 기다리던 계산 대신 바로 계산한다. 처음 계산이라 Worker가 1인분 영양과 아이콘을 구하고 코멘트를 만든다. 응답은 WAITING이다.
             val firstPortion = if (convertPortion(firstFood) == 1.0) 1.5 else 1.0
             val sentFoods = listOf(convertFoodBody(firstFood) + mapOf("portion" to firstPortion)) +
                 recognizedFoods.drop(1).map { convertFoodBody(it) } +

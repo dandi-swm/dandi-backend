@@ -108,7 +108,11 @@ class MealTransactionServiceV2IntegrationTest @Autowired constructor(
     @Test
     fun `음식으로 인식한 식사는 스냅샷과 음식 줄이 남고 영양 작업은 지연 시간 뒤에야 가져갈 수 있다`() {
         val meal =
-            createMealV2("recognized@nyummy.co.kr", MealStatus.WAITING, MealRecognitionOutcome.Recognized(recognition))
+            createMealV2(
+                "recognized@nyummy.co.kr",
+                MealStatus.CONFIRMING,
+                MealRecognitionOutcome.Recognized(recognition),
+            )
 
         val savedMeal = mealRepository.findById(meal.id).orElseThrow()
         assertEquals(MealAnalysisVersion.V2, savedMeal.analysisVersion)
@@ -159,7 +163,7 @@ class MealTransactionServiceV2IntegrationTest @Autowired constructor(
     @Test
     fun `식사 행을 지우면 스냅샷과 음식 줄과 작업이 함께 지워진다`() {
         val meal =
-            createMealV2("cascade@nyummy.co.kr", MealStatus.WAITING, MealRecognitionOutcome.Recognized(recognition))
+            createMealV2("cascade@nyummy.co.kr", MealStatus.CONFIRMING, MealRecognitionOutcome.Recognized(recognition))
 
         mealRepository.deleteById(meal.id)
 
