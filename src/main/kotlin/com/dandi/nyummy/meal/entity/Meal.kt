@@ -4,6 +4,8 @@ import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.AuthErrorCode
 import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.dto.NutritionAnalysisResult
+import com.dandi.nyummy.meal.enum.MealAnalysisVersion
+import com.dandi.nyummy.meal.enum.MealInputCategory
 import com.dandi.nyummy.meal.enum.MealStatus
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
@@ -36,6 +38,11 @@ class Meal(
 
     @Column(name = "user_id", nullable = false)
     val userId: Long,
+
+    // 어느 분석으로 만든 식사인지. null은 V1이다(v1 API로 만든 식사와 V0.55 전에 만든 식사).
+    @Enumerated(EnumType.STRING)
+    @Column(name = "analysis_version", length = 10)
+    val analysisVersion: MealAnalysisVersion? = null,
 ) {
 
     @Id
@@ -67,6 +74,11 @@ class Meal(
     // 분석이 완료되어야 정해진다. 분석 전이거나 실패한 식사는 null.
     @Column(name = "icon_id")
     var iconId: Long? = null
+
+    // 인식이 판정한 입력 유형. 다시 인식하면 바뀐다. v1 식사와 아직 인식하지 않은 식사는 null.
+    @Enumerated(EnumType.STRING)
+    @Column(name = "input_category", length = 30)
+    var inputCategory: MealInputCategory? = null
 
     @CreatedDate
     @Column(name = "created_at", nullable = false)
