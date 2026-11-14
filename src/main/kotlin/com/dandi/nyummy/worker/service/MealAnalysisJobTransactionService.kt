@@ -153,7 +153,7 @@ class MealAnalysisJobTransactionService(
     }
 
     /**
-     * 인식 결과를 저장하고 식사를 WAITING으로 바꾼 뒤, 인식 작업을 지우고 [nutritionDelay] 뒤부터 가져갈 영양 작업을 만든다.
+     * 인식 결과를 저장하고 식사를 CONFIRMING으로 바꾼 뒤, 인식 작업을 지우고 [nutritionDelay] 뒤부터 가져갈 영양 작업을 만든다.
      * 그 시간 안에 사용자가 음식 목록을 보내면 그 작업을 지우고 바로 계산한다.
      *
      * 인식 작업 행을 영양 작업으로 바꿔 쓰지 않고 새 행을 만든다. 같은 행을 쓰면 영양 작업의 시도 횟수를 0부터 다시 세야 하는데,
@@ -179,7 +179,7 @@ class MealAnalysisJobTransactionService(
 
         meal.updateName(recognition.name)
         meal.updateInputCategory(recognition.inputCategory)
-        meal.updateStatus(MealStatus.WAITING)
+        meal.updateStatus(MealStatus.CONFIRMING)
         mealFoodService.createMealFoods(meal.id, recognition, MealRecognitionCategory.WORKER)
 
         val nutritionJob = mealAnalysisJobRepository.save(
@@ -199,8 +199,8 @@ class MealAnalysisJobTransactionService(
     /**
      * 영양 작업이 영양을 계산할 식사와 그 음식 줄을 읽는다. 1인분 조회와 코멘트는 이 값을 들고 트랜잭션 밖에서 한다.
      *
-     * 여기서 읽은 뒤 사용자가 음식 목록을 다시 보내면 작업 행이 새로 만들어지므로, 이 값으로 계산한 결과는
-     * [confirmMealNutrition]이 쓰지 않고 버린다.
+     * 계산 중인 식사는 사용자가 음식 줄을 고칠 수 없다. 다만 lease가 만료된 뒤 다른 Worker가 계산을 끝내면 사용자가 다시 고칠 수 있고,
+     * 그때는 작업 행이 새로 만들어진다. 늦게 끝난 계산의 결과는 [confirmMealNutrition]이 쓰지 않고 버린다.
      *
      * @return 식사 행이 없으면 null
      */

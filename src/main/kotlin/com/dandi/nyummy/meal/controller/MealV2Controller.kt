@@ -13,6 +13,7 @@ import com.dandi.nyummy.meal.dto.DailyMealsV2Response
 import com.dandi.nyummy.meal.dto.MealStatusResponse
 import com.dandi.nyummy.meal.dto.MealV2Response
 import com.dandi.nyummy.meal.dto.MonthlyMealsResponse
+import com.dandi.nyummy.meal.dto.UpdateMealFoodRequest
 import com.dandi.nyummy.meal.dto.UpdateMealFoodsRequest
 import com.dandi.nyummy.meal.dto.UpdateMealNameRequest
 import com.dandi.nyummy.meal.service.AnalysisFeedbackService
@@ -28,6 +29,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.PutMapping
@@ -47,11 +49,11 @@ class MealV2Controller(
     @Operation(
         summary = "식사 생성 v2",
         description = "업로드된 이미지 키로 식사를 생성하고, 응답 전에 사진의 음식을 인식한다. 서버는 요청을 받고 4.5초 안에 응답한다. " +
-            "음식으로 인식하면 status는 WAITING이고 대표 이름(20자 이내)과 음식 줄을 준다. 맨 위 줄이 대표 음식이고, " +
+            "음식으로 인식하면 status는 CONFIRMING이고 대표 이름(20자 이내)과 음식 줄을 준다. 맨 위 줄이 대표 음식이고, " +
             "음식 줄의 nutrition과 iconId는 영양 계산 전이라 null이다. 영양은 5분 뒤에, 또는 음식 목록을 보내면 바로 계산한다. " +
             "음식이 아니면 status는 FAILED이고 name은 빈 문자열, foods는 null이다. " +
             "기한 안에 인식을 끝내지 못하면 status는 RECOGNIZING이고 name과 foods는 null이다. 서버가 이어서 인식하므로 " +
-            "영양 분석 상태 조회 API로 WAITING이 되는지 확인한다. " +
+            "영양 분석 상태 조회 API로 CONFIRMING이 되는지 확인한다. " +
             "어느 경우든 기록 횟수에 들어가고 보상 상자 우편이 하나 생기며, 응답의 rewardBoxCategory에 그 상자의 등급을 담는다.",
     )
     @ApiErrorCodes(
@@ -73,7 +75,9 @@ class MealV2Controller(
     @Operation(
         summary = "영양 분석 상태 조회 v2",
         description = "대기 화면과 계산 중 화면에서 폴링한다. 5초 안에 인식하지 못한 식사는 RECOGNIZING으로 시작해 " +
-            "인식이 끝나면 WAITING(음식 목록 있음)이 되고, 영양 계산이 끝나면 COMPLETED가 된다.",
+            "인식이 끝나면 CONFIRMING(음식 목록 있음, 사용자의 확인을 기다림)이 된다. " +
+            "음식 목록을 보내면 WAITING, Worker가 계산을 시작하면 ANALYZING이 되고, 영양 계산이 끝나면 COMPLETED가 된다. " +
+            "목록을 보내지 않아도 5분이 지나면 계산을 시작한다.",
     )
     @ApiErrorCodes(meal = [MealErrorCode.MEAL_NOT_FOUND], auth = [AuthErrorCode.FORBIDDEN])
     @GetMapping("/{mealId}/analysis")
@@ -116,11 +120,13 @@ class MealV2Controller(
             "이름은 1~30자, 인분은 0.5~5.0, 0.5 단위다. " +
             "nutrition(칼로리 0~9999, 탄수화물·단백질·지방 0~999)과 iconId는 이번에 직접 고친 줄만 채운다. " +
             "채운 줄은 그 값으로 고정돼 이름을 바꿔도 다시 구하지 않는다. " +
-            "기다리던 계산은 버리고 받은 목록으로 다시 계산한다. 응답의 status가 WAITING이면 분석 상태를 폴링하고, " +
+            "사용자의 확인을 기다리는 식사(CONFIRMING)와 계산이 끝난 식사(COMPLETED)만 받는다. " +
+            "CONFIRMING이면 5분을 기다리지 않고 받은 목록으로 바로 계산한다. 응답의 status가 WAITING이면 분석 상태를 폴링하고, " +
             "COMPLETED면 이미 계산이 끝난 것이므로 바로 단건을 다시 조회한다. " +
             "COMPLETED는 값을 새로 구할 것이 없을 때다(인분·순서만 바꿈, 줄을 지움, 영양·아이콘을 직접 적음. " +
             "한 번 계산이 끝난 식사만). " +
-            "아직 인식 중(RECOGNIZING)이거나 실패(FAILED)한 식사, V1 식사는 받지 않는다.",
+            "아직 인식 중(RECOGNIZING)이거나 계산을 기다리는 중·계산 중(WAITING·ANALYZING)이거나 실패(FAILED)한 식사, " +
+            "V1 식사는 받지 않는다.",
     )
     @ApiErrorCodes(
         meal = [
@@ -137,6 +143,68 @@ class MealV2Controller(
         @Valid @RequestBody request: UpdateMealFoodsRequest,
         @CurrentLanguage language: Language,
     ): MealStatusResponse = mealService.updateMealFoodsV2(user.userId, mealId, request, language)
+
+    @Operation(
+        summary = "음식 줄 수정 v2",
+        description = "계산이 끝난(COMPLETED) 식사의 음식 한 줄을 고친다. 이름(1~30자), 인분(0.5~5.0, 0.5 단위), " +
+            "nutrition(칼로리 0~9999, 탄수화물·단백질·지방 0~999), iconId 중 바꾸려는 항목만 보낸다. " +
+            "하나도 보내지 않으면 받지 않는다. nutrition과 iconId를 보내면 그 줄은 그 값으로 고정된다. " +
+            "응답은 본문이 없으므로 단건을 다시 조회한다. 이름을 바꿔 값을 새로 구해야 하면 식사가 WAITING이 되고 " +
+            "(분석 상태를 폴링한다), 인분·영양·아이콘만 고쳤으면 COMPLETED로 남고 합계가 바로 바뀐다. " +
+            "사용자의 확인을 기다리는 식사(CONFIRMING)는 음식 목록 보내기로 고치고, " +
+            "인식 중·계산을 기다리는 중·계산 중·실패한 식사와 V1 식사는 받지 않는다.",
+    )
+    @ApiResponse(responseCode = "204", description = "수정 성공")
+    @ApiErrorCodes(
+        meal = [
+            MealErrorCode.MEAL_NOT_FOUND,
+            MealErrorCode.MEAL_FOODS_NOT_UPDATABLE,
+            MealErrorCode.MEAL_FOOD_NOT_FOUND,
+        ],
+        auth = [AuthErrorCode.FORBIDDEN],
+    )
+    @PatchMapping("/{mealId}/foods/{mealFoodId}")
+    fun updateMealFoodV2(
+        @CurrentUser user: AuthUser,
+        @Parameter(description = "식사 ID") @PathVariable("mealId") mealId: Long,
+        @Parameter(description = "음식 줄 ID") @PathVariable("mealFoodId") mealFoodId: Long,
+        @Valid @RequestBody request: UpdateMealFoodRequest,
+        @CurrentLanguage language: Language,
+    ): ResponseEntity<Void> {
+        mealService.updateMealFoodV2(user.userId, mealId, mealFoodId, request, language)
+
+        return ResponseEntity.noContent().build()
+    }
+
+    @Operation(
+        summary = "음식 줄 삭제 v2",
+        description = "계산이 끝난(COMPLETED) 식사의 음식 한 줄을 지운다. 남은 줄의 순서를 다시 매기고, " +
+            "맨 위 줄을 지우면 다음 줄이 대표 음식이 된다. 식사의 합계와 아이콘은 남은 줄로 바로 바뀐다. " +
+            "응답은 본문이 없으므로 단건을 다시 조회한다. 하나 남은 줄은 지울 수 없다. " +
+            "사용자의 확인을 기다리는 식사(CONFIRMING)는 줄을 뺀 목록을 음식 목록 보내기로 보내고, " +
+            "인식 중·계산을 기다리는 중·계산 중·실패한 식사와 V1 식사는 받지 않는다.",
+    )
+    @ApiResponse(responseCode = "204", description = "삭제 성공")
+    @ApiErrorCodes(
+        meal = [
+            MealErrorCode.MEAL_NOT_FOUND,
+            MealErrorCode.MEAL_FOODS_NOT_UPDATABLE,
+            MealErrorCode.MEAL_FOOD_NOT_FOUND,
+            MealErrorCode.LAST_MEAL_FOOD_NOT_DELETABLE,
+        ],
+        auth = [AuthErrorCode.FORBIDDEN],
+    )
+    @DeleteMapping("/{mealId}/foods/{mealFoodId}")
+    fun deleteMealFoodV2(
+        @CurrentUser user: AuthUser,
+        @Parameter(description = "식사 ID") @PathVariable("mealId") mealId: Long,
+        @Parameter(description = "음식 줄 ID") @PathVariable("mealFoodId") mealFoodId: Long,
+        @CurrentLanguage language: Language,
+    ): ResponseEntity<Void> {
+        mealService.deleteMealFoodV2(user.userId, mealId, mealFoodId, language)
+
+        return ResponseEntity.noContent().build()
+    }
 
     @Operation(
         summary = "식사 이름 수정 v2",
@@ -203,7 +271,7 @@ class MealV2Controller(
     @Operation(
         summary = "영양 분석 재시도 v2",
         description = "FAILED 식사만 다시 분석한다. V2 식사는 어느 단계에서 실패했든 처음부터 다시 인식한다. " +
-            "음식 줄을 지우고(고친 목록도 사라진다) RECOGNIZING으로 응답하며, 인식이 끝나면 WAITING이 된다. " +
+            "음식 줄을 지우고(고친 목록도 사라진다) RECOGNIZING으로 응답하며, 인식이 끝나면 CONFIRMING이 된다. " +
             "V1 식사는 v1과 같이 WAITING으로 응답한다.",
     )
     @ApiErrorCodes(

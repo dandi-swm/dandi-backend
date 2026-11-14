@@ -16,7 +16,12 @@ enum class MealErrorCode(override val status: HttpStatus, override val code: Str
     MEAL_FOODS_NOT_UPDATABLE(
         HttpStatus.CONFLICT,
         "api.meal.mealFoodsNotUpdatable",
-        "음식 목록을 고칠 수 없는 식사입니다. 아직 인식 중이거나 실패한 식사, 음식 목록이 없는 식사입니다.",
+        "음식 목록을 고칠 수 없는 식사입니다. 아직 인식 중이거나 계산 중인 식사, 실패한 식사, 음식 목록이 없는 식사입니다.",
     ),
-    MEAL_FOOD_NOT_FOUND(HttpStatus.BAD_REQUEST, "api.meal.mealFoodNotFound", "이 식사의 음식 줄이 아닌 mealFoodId입니다."),
+    MEAL_FOOD_NOT_FOUND(HttpStatus.NOT_FOUND, "api.meal.mealFoodNotFound", "이 식사의 음식 줄이 아닌 mealFoodId입니다."),
+    LAST_MEAL_FOOD_NOT_DELETABLE(
+        HttpStatus.CONFLICT,
+        "api.meal.lastMealFoodNotDeletable",
+        "식사에 하나 남은 음식 줄은 지울 수 없습니다.",
+    ),
 }

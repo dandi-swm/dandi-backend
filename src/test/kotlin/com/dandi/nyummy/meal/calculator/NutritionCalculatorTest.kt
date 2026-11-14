@@ -199,7 +199,13 @@ class NutritionCalculatorTest {
 
     @Test
     fun `영양 계산이 끝나지 않았거나 실패한 식사만 있으면 UNRECORDED다`() {
-        listOf(MealStatus.RECOGNIZING, MealStatus.WAITING, MealStatus.ANALYZING, MealStatus.FAILED).forEach { status ->
+        listOf(
+            MealStatus.RECOGNIZING,
+            MealStatus.CONFIRMING,
+            MealStatus.WAITING,
+            MealStatus.ANALYZING,
+            MealStatus.FAILED,
+        ).forEach { status ->
             assertEquals(DailyNutritionEvaluation.UNRECORDED, evaluate(listOf(createMeal(status = status))), "$status")
         }
     }

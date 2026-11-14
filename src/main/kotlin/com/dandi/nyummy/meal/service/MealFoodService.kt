@@ -7,6 +7,7 @@ import com.dandi.nyummy.meal.calculator.calculateServingNutrition
 import com.dandi.nyummy.meal.dto.MealFoodRequest
 import com.dandi.nyummy.meal.dto.MealRecognitionResult
 import com.dandi.nyummy.meal.dto.ServingNutritionResult
+import com.dandi.nyummy.meal.dto.UpdateMealFoodRequest
 import com.dandi.nyummy.meal.entity.MealFood
 import com.dandi.nyummy.meal.entity.MealFoodSnapshot
 import com.dandi.nyummy.meal.entity.MealSnapshot
@@ -85,7 +86,7 @@ class MealFoodService(
      */
     @Transactional
     fun updateMealFoods(mealId: Long, mealFoodRequests: List<MealFoodRequest>): List<MealFood> {
-        validateIconIds(mealFoodRequests)
+        validateIconIds(mealFoodRequests.mapNotNull { it.iconId }.toSet())
 
         val mealFoodsById = mealFoodRepository.findAllByMealIdOrderByDisplayOrderAsc(mealId).associateBy { it.id }
         val requestedMealFoodIds = mealFoodRequests.mapNotNull { it.mealFoodId }
@@ -121,9 +122,74 @@ class MealFoodService(
         return mealFoodRepository.saveAll(mealFoods)
     }
 
+    /**
+     * 식사의 음식 한 줄을 고친다. 요청에 담긴 항목만 바꾸고 나머지는 그대로 둔다. 줄을 바꾸는 규칙은 [updateMealFoods]와 같다.
+     *
+     * - 이름을 바꾸면 고정하지 않은 1인분 영양과 아이콘을 비운다([MealFood.updateName]). Worker가 새 이름으로 다시 구한다.
+     * - 인분만 바꾸면 1인분 영양을 그대로 둔다. 줄 영양은 1인분 × 새 인분이 된다.
+     * - [UpdateMealFoodRequest.nutrition]은 고친 뒤의 인분으로 나눠 1인분으로 저장하고 고정한다.
+     * - [UpdateMealFoodRequest.iconId]는 그 아이콘으로 고정한다.
+     *
+     * 식사의 합계를 다시 계산하는 일과 함께 커밋돼야 하므로 호출하는 쪽 트랜잭션에 합류한다.
+     *
+     * @param mealId 음식 줄이 있는 식사 ID
+     * @param mealFoodId 고칠 음식 줄 ID
+     * @param request 바꾸려는 항목만 담은 [UpdateMealFoodRequest]
+     * @return 고친 뒤의 식사 음식 줄 전체(순서대로). 식사의 합계를 다시 계산하는 데 쓴다
+     * @throws BusinessException [MealErrorCode.MEAL_FOOD_NOT_FOUND] 이 식사의 줄이 아닌 mealFoodId인 경우
+     * @throws BusinessException [CommonErrorCode.INVALID_INPUT_VALUE] 없는 아이콘 id인 경우
+     */
+    @Transactional
+    fun updateMealFood(mealId: Long, mealFoodId: Long, request: UpdateMealFoodRequest): List<MealFood> {
+        val mealFoods = mealFoodRepository.findAllByMealIdOrderByDisplayOrderAsc(mealId)
+        val mealFood = mealFoods.find { it.id == mealFoodId }
+            ?: throw BusinessException(MealErrorCode.MEAL_FOOD_NOT_FOUND)
+        validateIconIds(setOfNotNull(request.iconId))
+
+        request.name?.let { mealFood.updateName(it) }
+        request.portion?.let { mealFood.updatePortion(it) }
+        request.nutrition?.let {
+            mealFood.updateFixedServingNutrition(calculateServingNutrition(it.toNutrition(), mealFood.portion))
+        }
+        request.iconId?.let { mealFood.updateFixedIconId(it) }
+
+        return mealFoods
+    }
+
+    /**
+     * 식사의 음식 한 줄을 지우고, 남은 줄의 순서를 빈 번호 없이 다시 매긴다. 맨 위 줄을 지우면 다음 줄이 대표 음식이 된다.
+     *
+     * 식사에는 음식 줄이 하나 이상 있어야 하므로 하나 남은 줄은 지우지 않는다. 음식 목록 보내기가 빈 목록을 받지 않는 것과 같다.
+     * AI가 처음 낸 목록(스냅샷)은 건드리지 않는다.
+     *
+     * 식사의 합계를 다시 계산하는 일과 함께 커밋돼야 하므로 호출하는 쪽 트랜잭션에 합류한다.
+     *
+     * @param mealId 음식 줄이 있는 식사 ID
+     * @param mealFoodId 지울 음식 줄 ID
+     * @return 남은 음식 줄(순서대로). 식사의 합계를 다시 계산하는 데 쓴다
+     * @throws BusinessException [MealErrorCode.MEAL_FOOD_NOT_FOUND] 이 식사의 줄이 아닌 mealFoodId인 경우
+     * @throws BusinessException [MealErrorCode.LAST_MEAL_FOOD_NOT_DELETABLE] 식사에 하나 남은 줄인 경우
+     */
+    @Transactional
+    fun deleteMealFood(mealId: Long, mealFoodId: Long): List<MealFood> {
+        val mealFoods = mealFoodRepository.findAllByMealIdOrderByDisplayOrderAsc(mealId)
+        val mealFood = mealFoods.find { it.id == mealFoodId }
+            ?: throw BusinessException(MealErrorCode.MEAL_FOOD_NOT_FOUND)
+        if (mealFoods.size == 1) {
+            throw BusinessException(MealErrorCode.LAST_MEAL_FOOD_NOT_DELETABLE)
+        }
+
+        mealFoodRepository.deleteAllInBatch(listOf(mealFood))
+        val remainingMealFoods = mealFoods.filter { it.id != mealFoodId }
+        remainingMealFoods.forEachIndexed { index, remainingMealFood ->
+            remainingMealFood.updateDisplayOrder(index + 1)
+        }
+
+        return remainingMealFoods
+    }
+
     /** 사용자가 고른 아이콘이 모두 있는 아이콘인지 본다. 없는 id는 음식 줄에 저장할 수 없다. */
-    private fun validateIconIds(mealFoodRequests: List<MealFoodRequest>) {
-        val iconIds = mealFoodRequests.mapNotNull { it.iconId }.toSet()
+    private fun validateIconIds(iconIds: Set<Long>) {
         if (iconIds.isNotEmpty() && iconRepository.findAllById(iconIds).size != iconIds.size) {
             throw BusinessException(CommonErrorCode.INVALID_INPUT_VALUE)
         }

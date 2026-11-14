@@ -74,8 +74,8 @@ interface MealAnalysisJobRepository : JpaRepository<MealAnalysisJob, Long> {
     fun findIdByMealId(@Param("mealId") mealId: Long): Long?
 
     /**
-     * 작업을 id로 지운다. 사용자가 음식 목록을 다시 보내거나 식사를 지울 때 기다리던 작업을 없앤다.
-     * 그 작업을 처리하던 Worker는 결과를 쓸 때 자기 행이 없어 결과를 버린다.
+     * 작업을 id로 지운다. 사용자가 확인을 기다리던 식사의 음식 목록을 보내거나 식사를 지울 때 기다리던 작업을 없앤다.
+     * 식사를 지울 때 그 작업을 처리하던 Worker가 있으면, 결과를 쓸 때 자기 행이 없어 결과를 버린다.
      *
      * 조회 후 삭제하는 파생 메서드와 달리 바로 실행되는 한 문장이라, 같은 트랜잭션에서 이어서 새 작업을 저장해도
      * `meal_id` 유니크 제약에 걸리지 않는다.
