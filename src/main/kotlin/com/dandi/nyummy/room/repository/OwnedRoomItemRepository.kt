@@ -42,7 +42,7 @@ interface OwnedRoomItemRepository : JpaRepository<OwnedRoomItem, Long> {
      */
     @Query(
         """
-        select new com.dandi.nyummy.room.dto.OwnedRoomItemResult(o.id, i.name, o.itemId, o.isEquipped)
+        select new com.dandi.nyummy.room.dto.OwnedRoomItemResult(o.id, i.name, i.nameTranslations, o.itemId, o.isEquipped)
         from OwnedRoomItem as o
             join RoomItem as r on r.itemId = o.itemId
             join Item as i on i.id = o.itemId

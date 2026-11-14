@@ -41,6 +41,7 @@ import com.dandi.nyummy.user.repository.UserRepository
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection
+import org.springframework.data.repository.findByIdOrNull
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.transaction.support.TransactionTemplate
@@ -174,7 +175,7 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
         assertEquals(-3500, coinHistory.quantity)
         assertEquals(STARTING_BALANCE - 3500, coinHistory.balanceAfter)
 
-        mailService.claimMails(userId)
+        mailService.claimMails(userId, Language.KO)
 
         assertEquals(
             5,
@@ -184,6 +185,80 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
             ),
         )
         assertEquals(STARTING_BALANCE - 3500, getBalance(userId))
+    }
+
+    // 번역 JSON 컬럼은 클래스패스에 Jackson 2와 3이 함께 있어 Hibernate가 Map으로 읽는지, select new에 그대로
+    // 넘어가는지 mock으로 확인할 수 없다. 운영자가 SQL로 넣는 형태 그대로 넣어 본다.
+    @Test
+    fun `SQL로 넣은 상품 이름 번역으로 구매 우편 제목과 코인 내역을 요청 언어로 만든다`() {
+        val userId = createUser()
+        val product = createProduct(price = 500)
+        jdbcTemplate.update(
+            """update products set name_translations = '{"ja": "肉球クッション"}' where id = ?""",
+            product.id,
+        )
+        createCartItem(userId, product, quantity = 1)
+
+        purchase(userId, listOf(product to 1), language = Language.JA)
+
+        assertEquals(
+            mapOf("ja" to "肉球クッション"),
+            assertNotNull(productRepository.findByIdOrNull(product.id)).nameTranslations,
+        )
+        assertEquals(
+            "肉球クッション",
+            jdbcTemplate.queryForObject(
+                "select title from mails where user_id = ? and category = 'ITEM'",
+                String::class.java,
+                userId,
+            ),
+        )
+        val jaTitle = coinService.getCoinHistories(userId, cursor = null, size = 10, language = Language.JA)
+            .coinHistories.single().title
+        val koTitle = coinService.getCoinHistories(userId, cursor = null, size = 10, language = Language.KO)
+            .coinHistories.single().title
+        assertTrue("肉球クッション" in jaTitle, jaTitle)
+        assertEquals("상품 구매", koTitle)
+    }
+
+    @Test
+    fun `SQL로 넣은 아이템 이름 번역으로 받은 우편 아이템과 보유 아이템 이름을 요청 언어로 준다`() {
+        val userId = createUser()
+        val product = createProduct(price = 500)
+        jdbcTemplate.update(
+            """update items set name_translations = '{"ja": "かぼちゃクッション"}' where id = ?""",
+            product.representativeItemId,
+        )
+        createCartItem(userId, product, quantity = 1)
+        purchase(userId, listOf(product to 1))
+
+        val reward = mailService.claimMails(userId, Language.JA)
+        val jaNames = roomService.getOwnedRoomItems(userId, RoomItemCategory.BED, null, 10, Language.JA)
+            .ownedRoomItems.map { it.name }
+        val koNames = roomService.getOwnedRoomItems(userId, RoomItemCategory.BED, null, 10, Language.KO)
+            .ownedRoomItems.map { it.name }
+
+        assertEquals(listOf("かぼちゃクッション"), reward.items?.map { it.name })
+        assertEquals(listOf("かぼちゃクッション"), jaNames)
+        assertEquals(listOf("아이템"), koNames)
+    }
+
+    @Test
+    fun `엔티티로 저장한 상품 이름 번역은 언어 코드를 키로 둔 JSON 객체로 저장된다`() {
+        val product = createProduct(price = 500)
+        product.nameTranslations = mapOf("ja" to "肉球クッション", "en" to "Paw Cushion")
+        productRepository.save(product)
+
+        val translations = jdbcTemplate.queryForMap(
+            """
+            select json_unquote(json_extract(name_translations, '$.ja')) as ja,
+                   json_unquote(json_extract(name_translations, '$.en')) as en
+            from products where id = ?
+            """,
+            product.id,
+        )
+
+        assertEquals(mapOf("ja" to "肉球クッション", "en" to "Paw Cushion"), translations)
     }
 
     @Test
@@ -238,7 +313,7 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
         val tasks: List<() -> Unit> = products.flatMap { product ->
             listOf(
                 { purchase(userId, listOf(product to 1)) },
-                { mailService.claimMails(userId) },
+                { mailService.claimMails(userId, Language.KO) },
             )
         }
         val results = runConcurrently(tasks.size) { index -> tasks[index]() }
@@ -351,7 +426,7 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
             cartService.createCartItem(userId, CreateCartItemRequest(background.id, 1))
         }
 
-        mailService.claimMails(userId)
+        mailService.claimMails(userId, Language.KO)
 
         assertBusinessException(ShopErrorCode.ALREADY_OWNED) {
             cartService.createCartItem(userId, CreateCartItemRequest(background.id, 1))
@@ -368,7 +443,7 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
         purchase(userId, listOf(product to 2))
         assertEquals(2, getOwnedCount(userId, product))
 
-        mailService.claimMails(userId)
+        mailService.claimMails(userId, Language.KO)
         assertEquals(2, getOwnedCount(userId, product))
     }
 
@@ -470,7 +545,7 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
 
         assertEquals(1, getOwnedCount(userId, product))
 
-        val reward = mailService.claimMails(userId)
+        val reward = mailService.claimMails(userId, Language.KO)
 
         assertEquals(1, reward.items?.single()?.quantity)
         assertEquals(1, queryForInt("select count(*) from owned_room_items where user_id = ?", userId))
@@ -486,7 +561,7 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
         createCartItem(otherUserId, background, quantity = 1)
         purchase(userId, listOf(background to 1))
         purchase(otherUserId, listOf(background to 1))
-        mailService.claimMails(otherUserId)
+        mailService.claimMails(otherUserId, Language.KO)
         assertEquals(ShopErrorCode.ALREADY_OWNED, getUnavailableErrorCode(userId, background))
         assertEquals(ShopErrorCode.ALREADY_OWNED, getUnavailableErrorCode(otherUserId, background))
 
@@ -503,16 +578,22 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
         val product = createProduct(price = 500)
         createCartItem(userId, product, quantity = 2)
         purchase(userId, listOf(product to 2))
-        mailService.claimMails(userId)
+        mailService.claimMails(userId, Language.KO)
         val revokedId = getFirstOwnedRoomItemId(userId)
-        val remainingId = roomService.getOwnedRoomItems(userId, RoomItemCategory.BED, null, 10)
+        val remainingId = roomService.getOwnedRoomItems(userId, RoomItemCategory.BED, null, 10, Language.KO)
             .ownedRoomItems.map { it.ownedRoomItemId }.single { it != revokedId }
         roomService.updateEquippedRoomItems(userId, createEquippedRoomItemsRequest(revokedId, remainingId))
 
         // 장착 해제는 환불이 하지만, 조회는 장착 상태와 관계없이 회수된 행을 빼야 한다
         revokeRow("owned_room_items", revokedId)
 
-        val ownedRoomItems = roomService.getOwnedRoomItems(userId, RoomItemCategory.BED, null, 10).ownedRoomItems
+        val ownedRoomItems = roomService.getOwnedRoomItems(
+            userId,
+            RoomItemCategory.BED,
+            null,
+            10,
+            Language.KO,
+        ).ownedRoomItems
         assertEquals(listOf(remainingId), ownedRoomItems.map { it.ownedRoomItemId })
         assertEquals(listOf(remainingId), roomService.getEquippedRoomItems(userId).map { it.ownedRoomItemId })
         assertEquals(1, getOwnedCount(userId, product))
@@ -527,9 +608,9 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
         val product = createProduct(price = 500)
         createCartItem(userId, product, quantity = 2)
         purchase(userId, listOf(product to 2))
-        mailService.claimMails(userId)
+        mailService.claimMails(userId, Language.KO)
         val revokedId = getFirstOwnedRoomItemId(userId)
-        val remainingId = roomService.getOwnedRoomItems(userId, RoomItemCategory.BED, null, 10)
+        val remainingId = roomService.getOwnedRoomItems(userId, RoomItemCategory.BED, null, 10, Language.KO)
             .ownedRoomItems.map { it.ownedRoomItemId }.single { it != revokedId }
         roomService.updateEquippedRoomItems(userId, createEquippedRoomItemsRequest(revokedId, remainingId))
         val revoked = CountDownLatch(1)
@@ -611,6 +692,7 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
         userId: Long,
         products: List<Pair<Product, Int>>,
         idempotencyKey: String = UUID.randomUUID().toString(),
+        language: Language = Language.KO,
     ): ItemPurchaseResponse = itemPurchaseService.createItemPurchase(
         userId,
         idempotencyKey,
@@ -618,7 +700,7 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
             products.map { (product, quantity) -> ItemPurchaseProductRequest(product.id, quantity, product.price) },
         ),
         "1.0.0",
-        Language.KO,
+        language,
     )
 
     private fun getOwnedCount(userId: Long, product: Product): Int = shopItemService.createShopItems(

@@ -115,7 +115,7 @@ class AdminItemPurchaseRefundIntegrationTest @Autowired constructor(
         assertEquals(STARTING_BALANCE, getBalance(userId))
         assertFalse(mailService.existsNotClaimedMail(userId))
         assertEquals(emptyList(), mailService.getMails(userId, null, 10).mails)
-        assertNull(mailService.claimMails(userId).items)
+        assertNull(mailService.claimMails(userId, Language.KO).items)
         assertEquals(0, countOwnedRoomItems(userId))
         val coinHistory = coinService.getCoinHistories(userId, null, 10, Language.KO).coinHistories.first()
         assertEquals("상점 환불", coinHistory.title)
@@ -133,7 +133,7 @@ class AdminItemPurchaseRefundIntegrationTest @Autowired constructor(
 
         assertEquals(300, response.coinQuantity)
         assertEquals(1, mailService.getMails(userId, null, 10).mails.size)
-        assertEquals(1, mailService.claimMails(userId).items?.single()?.quantity)
+        assertEquals(1, mailService.claimMails(userId, Language.KO).items?.single()?.quantity)
         assertEquals(1, countOwnedRoomItems(userId))
         assertEquals(0, countActiveOwnedRoomItems(userId, firstLineId))
     }
@@ -142,7 +142,7 @@ class AdminItemPurchaseRefundIntegrationTest @Autowired constructor(
     fun `세트를 나눠서 환불하면 할인을 취소한 금액을 돌려주고 합계는 결제가와 같다`() {
         val userId = createUser()
         purchase(userId, createProduct(listOf(500, 300, 200), purchasePrice = 800))
-        mailService.claimMails(userId)
+        mailService.claimMails(userId, Language.KO)
         val lineIds = getItemPurchaseLineIds(userId)
 
         val refunded = lineIds.map { createRefund(listOf(it)).coinQuantity }
@@ -155,7 +155,7 @@ class AdminItemPurchaseRefundIntegrationTest @Autowired constructor(
     fun `장착한 아이템은 예외 표시 없이 거부되고 아무것도 바뀌지 않는다`() {
         val userId = createUser()
         purchase(userId, createProduct(listOf(500)))
-        mailService.claimMails(userId)
+        mailService.claimMails(userId, Language.KO)
         val lineIds = getItemPurchaseLineIds(userId)
         val ownedRoomItemId = getOwnedRoomItemId(userId)
         equip(userId, ownedRoomItemId)
@@ -174,7 +174,7 @@ class AdminItemPurchaseRefundIntegrationTest @Autowired constructor(
         val userId = createUser()
         val product = createProduct(listOf(500))
         purchase(userId, product, quantity = 2)
-        mailService.claimMails(userId)
+        mailService.claimMails(userId, Language.KO)
         val (equippedLineId, deletedLineId) = getItemPurchaseLineIds(userId)
         val equippedId = getOwnedRoomItemId(userId, equippedLineId)
         val deletedId = getOwnedRoomItemId(userId, deletedLineId)
@@ -211,7 +211,7 @@ class AdminItemPurchaseRefundIntegrationTest @Autowired constructor(
         val userId = createUser()
         val product = createProduct(listOf(500, 300), purchasePrice = 800)
         purchase(userId, product)
-        mailService.claimMails(userId)
+        mailService.claimMails(userId, Language.KO)
         val (equippedLineId, otherLineId) = getItemPurchaseLineIds(userId)
         equip(userId, getOwnedRoomItemId(userId, equippedLineId))
         expirePurchase(userId)
@@ -262,7 +262,7 @@ class AdminItemPurchaseRefundIntegrationTest @Autowired constructor(
 
             val results = runConcurrently(
                 { createRefund(lineIds) },
-                { mailService.claimMails(userId) },
+                { mailService.claimMails(userId, Language.KO) },
             )
 
             results.forEach { it.getOrThrow() }
@@ -383,7 +383,9 @@ class AdminItemPurchaseRefundIntegrationTest @Autowired constructor(
                 val request = CreateItemPurchaseRefundRequest(listOf(lineId), "실수 구매", preview.coinQuantity)
                 return@map { adminItemPurchaseRefundService.createRefund(adminId, itemPurchaseProductId, request) }
             }
-            val claims: List<() -> Any> = mailIds.map { mailId -> { mailService.claimMail(userId, mailId) } }
+            val claims: List<() -> Any> = mailIds.map { mailId ->
+                { mailService.claimMail(userId, mailId, Language.KO) }
+            }
             val purchases: List<() -> Any> = products.map { product ->
                 {
                     itemPurchaseService.createItemPurchase(
@@ -409,7 +411,7 @@ class AdminItemPurchaseRefundIntegrationTest @Autowired constructor(
     fun `구매 내역은 구성품마다 받기 전과 받음과 장착과 환불 상태를 알려 준다`() {
         val userId = createUser()
         purchase(userId, createProduct(listOf(500, 300, 200), purchasePrice = 1000))
-        mailService.claimMails(userId)
+        mailService.claimMails(userId, Language.KO)
         val (refundedLineId, equippedLineId, claimedLineId) = getItemPurchaseLineIds(userId)
         equip(userId, getOwnedRoomItemId(userId, equippedLineId))
         createRefund(listOf(refundedLineId))
@@ -443,7 +445,7 @@ class AdminItemPurchaseRefundIntegrationTest @Autowired constructor(
     fun `구매 내역에서 장착한 채 환불한 구성품은 장착이 아니고 사용자가 지운 아이템은 받은 상태다`() {
         val userId = createUser()
         purchase(userId, createProduct(listOf(500)), quantity = 2)
-        mailService.claimMails(userId)
+        mailService.claimMails(userId, Language.KO)
         val (equippedLineId, deletedLineId) = getItemPurchaseLineIds(userId)
         equip(userId, getOwnedRoomItemId(userId, equippedLineId))
         roomService.deleteOwnedRoomItem(userId, getOwnedRoomItemId(userId, deletedLineId))

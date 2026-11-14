@@ -71,8 +71,17 @@ class RoomServiceTest {
             ReflectionTestUtils.setField(this, "id", id)
         }
 
-    private fun ownedRoomItemResult(ownedRoomItemId: Long, isEquipped: Boolean = false) =
-        OwnedRoomItemResult(ownedRoomItemId = ownedRoomItemId, name = "호박 쿠션", itemId = 2L, isEquipped = isEquipped)
+    private fun ownedRoomItemResult(
+        ownedRoomItemId: Long,
+        isEquipped: Boolean = false,
+        nameTranslations: Map<String, String>? = null,
+    ) = OwnedRoomItemResult(
+        ownedRoomItemId = ownedRoomItemId,
+        name = "호박 쿠션",
+        nameTranslations = nameTranslations,
+        itemId = 2L,
+        isEquipped = isEquipped,
+    )
 
     private fun givenOwnedRoomItems(vararg results: OwnedRoomItemResult, hasNext: Boolean = false) {
         every {
@@ -135,7 +144,7 @@ class RoomServiceTest {
     fun `첫 요청은 장착한 아이템의 가장 큰 id를 기준으로 조회해 전부를 대상으로 한다`() {
         givenOwnedRoomItems()
 
-        roomService.getOwnedRoomItems(userId, RoomItemCategory.BED, cursor = null, size = 10)
+        roomService.getOwnedRoomItems(userId, RoomItemCategory.BED, cursor = null, size = 10, language = Language.KO)
 
         verify {
             ownedRoomItemRepository.findOwnedRoomItemsByUserIdBeforeCursor(
@@ -154,7 +163,7 @@ class RoomServiceTest {
             ownedRoomItem(id = 30L, isEquipped = false)
         givenOwnedRoomItems()
 
-        roomService.getOwnedRoomItems(userId, RoomItemCategory.BED, cursor = 30L, size = 10)
+        roomService.getOwnedRoomItems(userId, RoomItemCategory.BED, cursor = 30L, size = 10, language = Language.KO)
 
         verify {
             ownedRoomItemRepository.findOwnedRoomItemsByUserIdBeforeCursor(
@@ -172,7 +181,7 @@ class RoomServiceTest {
         every { ownedRoomItemRepository.findOwnedRoomItemByIdAndUserId(30L, userId) } returns null
 
         assertBusinessException(CommonErrorCode.INVALID_INPUT_VALUE) {
-            roomService.getOwnedRoomItems(userId, RoomItemCategory.BED, cursor = 30L, size = 10)
+            roomService.getOwnedRoomItems(userId, RoomItemCategory.BED, cursor = 30L, size = 10, language = Language.KO)
         }
         verify(exactly = 0) {
             ownedRoomItemRepository.findOwnedRoomItemsByUserIdBeforeCursor(any(), any(), any(), any(), any())
@@ -180,10 +189,30 @@ class RoomServiceTest {
     }
 
     @Test
+    fun `보유 아이템 이름은 요청 언어의 번역이 있으면 번역으로, 없으면 원본으로 준다`() {
+        givenOwnedRoomItems(
+            ownedRoomItemResult(9, nameTranslations = mapOf("ja" to "かぼちゃクッション")),
+            ownedRoomItemResult(7),
+        )
+
+        val ja = roomService.getOwnedRoomItems(userId, RoomItemCategory.BED, null, size = 10, Language.JA)
+        val ko = roomService.getOwnedRoomItems(userId, RoomItemCategory.BED, null, size = 10, Language.KO)
+
+        assertEquals(listOf("かぼちゃクッション", "호박 쿠션"), ja.ownedRoomItems.map { it.name })
+        assertEquals(listOf("호박 쿠션", "호박 쿠션"), ko.ownedRoomItems.map { it.name })
+    }
+
+    @Test
     fun `다음 묶음이 있으면 마지막 보유 아이템 id를 nextCursor로 준다`() {
         givenOwnedRoomItems(ownedRoomItemResult(9, isEquipped = true), ownedRoomItemResult(7), hasNext = true)
 
-        val result = roomService.getOwnedRoomItems(userId, RoomItemCategory.BED, cursor = null, size = 2)
+        val result = roomService.getOwnedRoomItems(
+            userId,
+            RoomItemCategory.BED,
+            cursor = null,
+            size = 2,
+            language = Language.KO,
+        )
 
         assertEquals(listOf(9L, 7L), result.ownedRoomItems.map { it.ownedRoomItemId })
         assertEquals(7L, result.nextCursor)
@@ -194,7 +223,13 @@ class RoomServiceTest {
     fun `마지막 묶음이면 nextCursor는 null이다`() {
         givenOwnedRoomItems(ownedRoomItemResult(3))
 
-        val result = roomService.getOwnedRoomItems(userId, RoomItemCategory.BED, cursor = null, size = 2)
+        val result = roomService.getOwnedRoomItems(
+            userId,
+            RoomItemCategory.BED,
+            cursor = null,
+            size = 2,
+            language = Language.KO,
+        )
 
         assertNull(result.nextCursor)
         assertFalse(result.hasNext)

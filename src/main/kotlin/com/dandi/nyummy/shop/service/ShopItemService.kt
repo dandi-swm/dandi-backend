@@ -5,6 +5,7 @@ import com.dandi.nyummy.exception.errorcode.ShopErrorCode
 import com.dandi.nyummy.exception.errorcode.UserErrorCode
 import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.language.getMessage
+import com.dandi.nyummy.language.pickTranslation
 import com.dandi.nyummy.mail.repository.MailItemRepository
 import com.dandi.nyummy.room.enum.RoomItemCategory
 import com.dandi.nyummy.room.repository.OwnedRoomItemRepository
@@ -161,6 +162,7 @@ class ShopItemService(
             )
 
             product.id to product.toShopItemResponse(
+                name = product.nameTranslations.pickTranslation(language, product.name),
                 purchasePrice = purchasePrice,
                 ownedCount = ownedCount,
                 categoryName = messageSource.getMessage("roomItemCategory.${product.category.name}", language),
