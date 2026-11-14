@@ -5,20 +5,14 @@ import com.dandi.nyummy.exception.errorcode.UserErrorCode
 import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.mail.service.MailService
 import com.dandi.nyummy.meal.dto.MealRecognitionOutcome
-import com.dandi.nyummy.meal.dto.MealRecognitionResult
 import com.dandi.nyummy.meal.dto.RewardBoxResult
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.entity.MealAnalysisJob
 import com.dandi.nyummy.meal.entity.MealFood
-import com.dandi.nyummy.meal.entity.MealFoodSnapshot
-import com.dandi.nyummy.meal.entity.MealSnapshot
 import com.dandi.nyummy.meal.enum.MealAnalysisJobCategory
 import com.dandi.nyummy.meal.enum.MealRecognitionCategory
 import com.dandi.nyummy.meal.repository.MealAnalysisJobRepository
-import com.dandi.nyummy.meal.repository.MealFoodRepository
-import com.dandi.nyummy.meal.repository.MealFoodSnapshotRepository
 import com.dandi.nyummy.meal.repository.MealRepository
-import com.dandi.nyummy.meal.repository.MealSnapshotRepository
 import com.dandi.nyummy.streak.service.StreakService
 import com.dandi.nyummy.user.repository.ProfileRepository
 import org.springframework.stereotype.Service
@@ -38,9 +32,7 @@ class MealTransactionService(
     private val mealAttemptService: MealAttemptService,
     private val mealRepository: MealRepository,
     private val mealAnalysisJobRepository: MealAnalysisJobRepository,
-    private val mealSnapshotRepository: MealSnapshotRepository,
-    private val mealFoodSnapshotRepository: MealFoodSnapshotRepository,
-    private val mealFoodRepository: MealFoodRepository,
+    private val mealFoodService: MealFoodService,
     private val mailService: MailService,
     private val streakService: StreakService,
 ) {
@@ -125,7 +117,11 @@ class MealTransactionService(
         mealRepository.save(meal)
         val mealFoods = when (outcome) {
             is MealRecognitionOutcome.Recognized -> {
-                val mealFoods = createMealFoods(meal.id, outcome.recognition)
+                val mealFoods = mealFoodService.createMealFoods(
+                    mealId = meal.id,
+                    recognition = outcome.recognition,
+                    recognitionCategory = MealRecognitionCategory.SYNC,
+                )
                 val job = mealAnalysisJobRepository.save(
                     MealAnalysisJob(
                         mealId = meal.id,
@@ -134,7 +130,7 @@ class MealTransactionService(
                     ),
                 )
                 if (nutritionDelay.toSeconds() > 0) {
-                    mealAnalysisJobRepository.updateLeaseExpiresAt(job.id, nutritionDelay.toSeconds())
+                    mealAnalysisJobRepository.updateAvailableAt(job.id, nutritionDelay.toSeconds())
                 }
                 mealFoods
             }
@@ -162,44 +158,5 @@ class MealTransactionService(
         streakService.updateStreak(meal.userId)
 
         return mealFoods
-    }
-
-    /**
-     * 인식 결과를 스냅샷(AI가 처음 낸 목록)과 음식 줄(사용자가 고치는 지금 값)로 저장한다.
-     * 음식 줄은 짝이 되는 스냅샷 줄을 가리키고, 순서는 인식이 낸 순서(맨 앞이 대표 음식)다.
-     */
-    private fun createMealFoods(mealId: Long, recognition: MealRecognitionResult): List<MealFood> {
-        val mealSnapshot = mealSnapshotRepository.save(
-            MealSnapshot(
-                mealId = mealId,
-                name = recognition.name,
-                recognitionCategory = MealRecognitionCategory.SYNC,
-                model = recognition.model,
-                promptVersion = recognition.promptVersion,
-                inputCategory = recognition.inputCategory,
-            ),
-        )
-        val mealFoodSnapshots = mealFoodSnapshotRepository.saveAll(
-            recognition.foods.mapIndexed { index, food ->
-                MealFoodSnapshot(
-                    mealSnapshotId = mealSnapshot.id,
-                    displayOrder = index + 1,
-                    name = food.name,
-                    portion = food.portion,
-                )
-            },
-        )
-
-        return mealFoodRepository.saveAll(
-            mealFoodSnapshots.map { mealFoodSnapshot ->
-                MealFood(
-                    mealId = mealId,
-                    mealFoodSnapshotId = mealFoodSnapshot.id,
-                    displayOrder = mealFoodSnapshot.displayOrder,
-                    name = mealFoodSnapshot.name,
-                    portion = mealFoodSnapshot.portion,
-                )
-            },
-        )
     }
 }

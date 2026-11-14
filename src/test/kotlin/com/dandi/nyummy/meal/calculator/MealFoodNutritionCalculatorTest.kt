@@ -101,4 +101,29 @@ class MealFoodNutritionCalculatorTest {
             assertEquals(nutrition, calculateMealFoodNutrition(mealFood), "인분 $portion")
         }
     }
+
+    // 저장하기 전의 값으로 계산
+
+    @Test
+    fun `1인분과 인분만으로 구한 줄 영양은 저장된 줄로 구한 값과 같다`() {
+        val servingNutrition = createServingNutrition("75", "6", "2", "5")
+
+        assertEquals(
+            calculateMealFoodNutrition(createMealFood(portion = "0.5", servingNutrition)),
+            calculateMealFoodNutrition(servingNutrition, BigDecimal("0.5")),
+        )
+    }
+
+    @Test
+    fun `1인분과 인분 쌍으로 구한 합계는 저장된 줄로 구한 식사 합계와 같다`() {
+        val first = createServingNutrition("276.67", "10.33", "20.5", "15.25")
+        val second = createServingNutrition("300", "65", "6", "1")
+
+        assertEquals(
+            calculateMealNutrition(
+                listOf(createMealFood(portion = "1.5", first), createMealFood(portion = "1.0", second)),
+            ),
+            calculateTotalNutrition(listOf(first to BigDecimal("1.5"), second to BigDecimal("1.0"))),
+        )
+    }
 }

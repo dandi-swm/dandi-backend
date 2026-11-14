@@ -15,18 +15,13 @@ import com.dandi.nyummy.meal.dto.RewardBoxResult
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.entity.MealAnalysisJob
 import com.dandi.nyummy.meal.entity.MealFood
-import com.dandi.nyummy.meal.entity.MealFoodSnapshot
-import com.dandi.nyummy.meal.entity.MealSnapshot
 import com.dandi.nyummy.meal.enum.MealAnalysisJobCategory
 import com.dandi.nyummy.meal.enum.MealInputCategory
 import com.dandi.nyummy.meal.enum.MealRecognitionCategory
 import com.dandi.nyummy.meal.enum.MealRecognitionDeferralCategory
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.repository.MealAnalysisJobRepository
-import com.dandi.nyummy.meal.repository.MealFoodRepository
-import com.dandi.nyummy.meal.repository.MealFoodSnapshotRepository
 import com.dandi.nyummy.meal.repository.MealRepository
-import com.dandi.nyummy.meal.repository.MealSnapshotRepository
 import com.dandi.nyummy.streak.service.StreakService
 import com.dandi.nyummy.user.entity.Profile
 import com.dandi.nyummy.user.repository.ProfileRepository
@@ -59,9 +54,7 @@ class MealTransactionServiceTest {
     private val mealAttemptService = mockk<MealAttemptService>()
     private val mealRepository = mockk<MealRepository>()
     private val mealAnalysisJobRepository = mockk<MealAnalysisJobRepository>()
-    private val mealSnapshotRepository = mockk<MealSnapshotRepository>()
-    private val mealFoodSnapshotRepository = mockk<MealFoodSnapshotRepository>()
-    private val mealFoodRepository = mockk<MealFoodRepository>()
+    private val mealFoodService = mockk<MealFoodService>()
     private val mailService = mockk<MailService>()
     private val streakService = mockk<StreakService>()
 
@@ -70,9 +63,7 @@ class MealTransactionServiceTest {
         mealAttemptService = mealAttemptService,
         mealRepository = mealRepository,
         mealAnalysisJobRepository = mealAnalysisJobRepository,
-        mealSnapshotRepository = mealSnapshotRepository,
-        mealFoodSnapshotRepository = mealFoodSnapshotRepository,
-        mealFoodRepository = mealFoodRepository,
+        mealFoodService = mealFoodService,
         mailService = mailService,
         streakService = streakService,
     )
@@ -84,10 +75,8 @@ class MealTransactionServiceTest {
         every { mealAnalysisJobRepository.save(any()) } answers { firstArg() }
         every { mailService.createMealRewardMail(any(), any(), any(), any(), any()) } returns mockk<Mail>()
         every { streakService.updateStreak(userId) } just Runs
-        every { mealSnapshotRepository.save(any()) } answers { firstArg() }
-        every { mealFoodSnapshotRepository.saveAll(any<List<MealFoodSnapshot>>()) } answers { firstArg() }
-        every { mealFoodRepository.saveAll(any<List<MealFood>>()) } answers { firstArg() }
-        every { mealAnalysisJobRepository.updateLeaseExpiresAt(any(), any()) } returns 1
+        every { mealFoodService.createMealFoods(any(), any(), any()) } returns emptyList()
+        every { mealAnalysisJobRepository.updateAvailableAt(any(), any()) } returns 1
     }
 
     private fun assertBusinessException(expected: ErrorCode, block: () -> Unit) {
@@ -206,27 +195,24 @@ class MealTransactionServiceTest {
         mealTransactionService.createMealV2(meal, outcome, rewardBox, rewardMailExpiresAt, nutritionDelay, language)
 
     @Test
-    fun `음식으로 인식했으면 스냅샷과 음식 줄을 인식한 순서대로 저장하고 돌려준다`() {
-        val mealSnapshot = slot<MealSnapshot>()
-        val mealFoodSnapshots = slot<List<MealFoodSnapshot>>()
-        every { mealSnapshotRepository.save(capture(mealSnapshot)) } answers { firstArg() }
-        every { mealFoodSnapshotRepository.saveAll(capture(mealFoodSnapshots)) } answers { firstArg() }
+    fun `음식으로 인식했으면 요청 안에서 인식한 것으로 음식 줄을 저장하고 저장한 줄을 돌려준다`() {
+        val savedMealFoods = listOf(
+            MealFood(
+                mealId = meal.id,
+                mealFoodSnapshotId = 11L,
+                displayOrder = 1,
+                name = "불고기",
+                portion = BigDecimal("1.5"),
+            ),
+        )
+        every {
+            mealFoodService.createMealFoods(meal.id, recognition, MealRecognitionCategory.SYNC)
+        } returns savedMealFoods
 
         val mealFoods = createMealV2(MealRecognitionOutcome.Recognized(recognition))
 
-        assertEquals("불고기 백반", mealSnapshot.captured.name)
-        assertEquals(MealRecognitionCategory.SYNC, mealSnapshot.captured.recognitionCategory)
-        assertEquals("gemini-recognition-test", mealSnapshot.captured.model)
-        assertEquals("v1", mealSnapshot.captured.promptVersion)
-        assertEquals(MealInputCategory.FOOD_PHOTO, mealSnapshot.captured.inputCategory)
-        assertEquals(
-            listOf(Triple(1, "불고기", BigDecimal("1.5")), Triple(2, "잡곡밥", BigDecimal("1.0"))),
-            mealFoodSnapshots.captured.map { Triple(it.displayOrder, it.name, it.portion) },
-        )
-        assertEquals(
-            listOf(Triple(1, "불고기", BigDecimal("1.5")), Triple(2, "잡곡밥", BigDecimal("1.0"))),
-            mealFoods.map { Triple(it.displayOrder, it.name, it.portion) },
-        )
+        assertEquals(savedMealFoods, mealFoods)
+        verify(exactly = 1) { mealFoodService.createMealFoods(meal.id, recognition, MealRecognitionCategory.SYNC) }
     }
 
     @Test
@@ -238,7 +224,7 @@ class MealTransactionServiceTest {
 
         assertEquals(MealAnalysisJobCategory.NUTRITION, job.captured.category)
         assertEquals(Language.JA, job.captured.language)
-        verify(exactly = 1) { mealAnalysisJobRepository.updateLeaseExpiresAt(job.captured.id, 300) }
+        verify(exactly = 1) { mealAnalysisJobRepository.updateAvailableAt(job.captured.id, 300) }
     }
 
     @Test
@@ -248,7 +234,7 @@ class MealTransactionServiceTest {
         assertTrue(mealFoods.isEmpty())
         verify(exactly = 1) { mealRepository.save(meal) }
         verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
-        verify(exactly = 0) { mealSnapshotRepository.save(any()) }
+        verify(exactly = 0) { mealFoodService.createMealFoods(any(), any(), any()) }
     }
 
     @Test
@@ -260,8 +246,8 @@ class MealTransactionServiceTest {
 
         assertTrue(mealFoods.isEmpty())
         assertEquals(MealAnalysisJobCategory.RECOGNITION, job.captured.category)
-        verify(exactly = 0) { mealAnalysisJobRepository.updateLeaseExpiresAt(any(), any()) }
-        verify(exactly = 0) { mealSnapshotRepository.save(any()) }
+        verify(exactly = 0) { mealAnalysisJobRepository.updateAvailableAt(any(), any()) }
+        verify(exactly = 0) { mealFoodService.createMealFoods(any(), any(), any()) }
     }
 
     @Test
@@ -289,7 +275,7 @@ class MealTransactionServiceTest {
             createMealV2(MealRecognitionOutcome.Recognized(recognition))
         }
         verify(exactly = 0) { mealRepository.save(any()) }
-        verify(exactly = 0) { mealSnapshotRepository.save(any()) }
+        verify(exactly = 0) { mealFoodService.createMealFoods(any(), any(), any()) }
         verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
         verify(exactly = 0) { mailService.createMealRewardMail(any(), any(), any(), any(), any()) }
     }

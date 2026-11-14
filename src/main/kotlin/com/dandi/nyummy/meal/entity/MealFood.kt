@@ -91,6 +91,17 @@ class MealFood(
             )
         }
 
+    fun updateServingNutrition(servingNutrition: ServingNutrition) {
+        this.servingCalory = servingNutrition.calory
+        this.servingCarbs = servingNutrition.carbs
+        this.servingProtein = servingNutrition.protein
+        this.servingFat = servingNutrition.fat
+    }
+
+    fun updateIconId(iconId: Long) {
+        this.iconId = iconId
+    }
+
     companion object {
         /** 식사 하나에 둘 수 있는 최대 줄 수 */
         const val MAX_COUNT = 10

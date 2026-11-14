@@ -1,6 +1,7 @@
 package com.dandi.nyummy.worker.dto
 
 import com.dandi.nyummy.language.enum.Language
+import com.dandi.nyummy.meal.enum.MealAnalysisJobCategory
 import java.time.Instant
 
 /**
@@ -8,8 +9,10 @@ import java.time.Instant
  *
  * @property leaseCount 이번에 가져가며 올린 번호. 결과를 쓸 때 이 번호로 아직 이 Worker의 작업인지 확인한다
  * @property canRetry 이번 시도가 일시적인 이유로 실패하면 다시 시도할 수 있는지. 마지막 시도면 false
- * @property createdAt 작업이 쌓인 시각. 식사 기록부터 결과까지 걸린 시간을 잴 때 쓴다
+ * @property availableAt 작업을 가져갈 수 있게 된 시각. 만들 때 미룬 작업이 아니면 작업이 쌓인 시각이다.
+ *   이때부터 작업이 끝날 때까지 걸린 시간을 잰다
  * @property language 식사를 기록한(재시도한) 요청의 앱 언어. 언어를 몰랐던 작업은 원본 언어다
+ * @property category v2 식사의 작업 종류. null이면 v1 분석 작업이다
  */
 data class MealAnalysisJobResult(
     val jobId: Long,
@@ -17,6 +20,7 @@ data class MealAnalysisJobResult(
     val leaseCount: Int,
     val imageKey: String,
     val canRetry: Boolean,
-    val createdAt: Instant,
+    val availableAt: Instant,
     val language: Language,
+    val category: MealAnalysisJobCategory? = null,
 )

@@ -1,19 +1,13 @@
 package com.dandi.nyummy.infra.ai.nutrition
 
-import aws.sdk.kotlin.services.s3.model.NoSuchKey
-import aws.smithy.kotlin.runtime.SdkBaseException
-import aws.smithy.kotlin.runtime.ServiceException
-import aws.smithy.kotlin.runtime.http.response.HttpResponse
 import com.dandi.nyummy.infra.ai.AiProperties
-import com.dandi.nyummy.infra.storage.s3.S3StorageClient
-import com.dandi.nyummy.infra.storage.s3.dto.S3ObjectContentResult
+import com.dandi.nyummy.infra.ai.AnalysisImageClient
 import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.meal.dto.IconSummaryResult
 import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.dto.NutritionAnalysisResult
 import com.dandi.nyummy.meal.repository.IconRepository
 import com.dandi.nyummy.meal.service.IconService
-import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import org.springframework.dao.DataAccessException
 import org.springframework.http.HttpStatus
@@ -31,7 +25,7 @@ import kotlin.io.encoding.Base64
 class GeminiNutritionAnalysisClient(
     private val restClient: RestClient,
     private val aiProperties: AiProperties,
-    private val s3StorageClient: S3StorageClient,
+    private val analysisImageClient: AnalysisImageClient,
     private val objectMapper: ObjectMapper,
     private val iconService: IconService,
 ) : NutritionAnalysisClient {
@@ -141,7 +135,7 @@ class GeminiNutritionAnalysisClient(
      * @throws AnalysisFailureException 실패를 [AnalysisFailureCategory]로 나눠 던진다. 분류에 없는 예외는 그대로 올린다.
      */
     override fun analyzeNutrition(imageKey: String, language: Language): NutritionAnalysisResult {
-        val objectContent = downloadImage(imageKey)
+        val objectContent = analysisImageClient.downloadImage(imageKey)
         val encodedContent = Base64.encode(objectContent.bytes, 0, objectContent.bytes.size)
         val mimeType = objectContent.contentType
 
@@ -263,36 +257,6 @@ class GeminiNutritionAnalysisClient(
             .mapNotNull { it.reason }
     } catch (_: JacksonException) {
         emptyList()
-    }
-
-    /**
-     * 분석할 식사 이미지를 S3에서 받는다.
-     * 객체가 없거나 비었으면 다시 해도 소용없으므로 [AnalysisFailureCategory.INVALID_REQUEST],
-     * 권한 오류(403)는 이미지와 상관없이 모든 요청이 거부되므로 [AnalysisFailureCategory.MISCONFIGURED],
-     * S3 서버 오류·요청 한도·네트워크 오류는 [AnalysisFailureCategory.UNAVAILABLE]이다.
-     */
-    private fun downloadImage(imageKey: String): S3ObjectContentResult = try {
-        runBlocking { s3StorageClient.downloadObject(imageKey) }
-    } catch (e: NoSuchKey) {
-        throw AnalysisFailureException(AnalysisFailureCategory.INVALID_REQUEST, "분석할 이미지가 없습니다: $imageKey", e)
-    } catch (e: ServiceException) {
-        val metadata = e.sdkErrorMetadata
-        val category = when {
-            (metadata.protocolResponse as? HttpResponse)?.status?.value == HttpStatus.FORBIDDEN.value() ->
-                AnalysisFailureCategory.MISCONFIGURED
-
-            metadata.errorType == ServiceException.ErrorType.Client && !metadata.isThrottling ->
-                AnalysisFailureCategory.INVALID_REQUEST
-
-            else -> AnalysisFailureCategory.UNAVAILABLE
-        }
-        throw AnalysisFailureException(category, "분석할 이미지를 받지 못했습니다: $imageKey", e)
-    } catch (e: SdkBaseException) {
-        // 응답을 받기 전의 실패(타임아웃·연결 오류·재시도 소진)다.
-        throw AnalysisFailureException(AnalysisFailureCategory.UNAVAILABLE, "분석할 이미지를 받지 못했습니다: $imageKey", e)
-    } catch (e: IllegalStateException) {
-        // S3StorageClient가 바디 없는 객체를 이렇게 알린다.
-        throw AnalysisFailureException(AnalysisFailureCategory.INVALID_REQUEST, "분석할 이미지가 비어 있습니다: $imageKey", e)
     }
 
     /** 프롬프트에 넣을 아이콘 목록. DB 조회 실패는 잠시 뒤 다시 하면 될 수 있다. */

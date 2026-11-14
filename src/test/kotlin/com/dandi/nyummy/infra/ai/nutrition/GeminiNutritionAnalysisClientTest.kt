@@ -1,19 +1,11 @@
 package com.dandi.nyummy.infra.ai.nutrition
 
-import aws.sdk.kotlin.services.s3.model.NoSuchKey
-import aws.sdk.kotlin.services.s3.model.S3ErrorMetadata
-import aws.sdk.kotlin.services.s3.model.S3Exception
-import aws.smithy.kotlin.runtime.SdkBaseException
-import aws.smithy.kotlin.runtime.ServiceException
-import aws.smithy.kotlin.runtime.http.HttpStatusCode
-import aws.smithy.kotlin.runtime.http.response.HttpResponse
 import com.dandi.nyummy.infra.ai.AiProperties
-import com.dandi.nyummy.infra.storage.s3.S3StorageClient
+import com.dandi.nyummy.infra.ai.AnalysisImageClient
 import com.dandi.nyummy.infra.storage.s3.dto.S3ObjectContentResult
 import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.meal.dto.IconSummaryResult
 import com.dandi.nyummy.meal.service.IconService
-import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import org.springframework.dao.QueryTimeoutException
@@ -40,8 +32,9 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
- * Gemini·S3·아이콘 조회의 실패가 정한 [AnalysisFailureCategory]로 나뉘는지 다룬다.
- * Gemini HTTP는 [MockRestServiceServer]로, S3·아이콘 조회는 mockk로 흉내 낸다.
+ * Gemini·아이콘 조회의 실패가 정한 [AnalysisFailureCategory]로 나뉘는지 다룬다.
+ * Gemini HTTP는 [MockRestServiceServer]로, 이미지 다운로드·아이콘 조회는 mockk로 흉내 낸다.
+ * 이미지 다운로드의 실패 분류는 [AnalysisImageClient]의 테스트가 다룬다.
  */
 class GeminiNutritionAnalysisClientTest {
 
@@ -62,20 +55,20 @@ class GeminiNutritionAnalysisClientTest {
 
     private val restClientBuilder = RestClient.builder().baseUrl(aiProperties.baseUrl)
     private val server = MockRestServiceServer.bindTo(restClientBuilder).build()
-    private val s3StorageClient = mockk<S3StorageClient>()
+    private val analysisImageClient = mockk<AnalysisImageClient>()
     private val iconService = mockk<IconService>()
     private val objectMapper = jacksonObjectMapper()
 
     private val client = GeminiNutritionAnalysisClient(
         restClient = restClientBuilder.build(),
         aiProperties = aiProperties,
-        s3StorageClient = s3StorageClient,
+        analysisImageClient = analysisImageClient,
         objectMapper = objectMapper,
         iconService = iconService,
     )
 
     init {
-        coEvery { s3StorageClient.downloadObject(imageKey) } returns
+        every { analysisImageClient.downloadImage(imageKey) } returns
             S3ObjectContentResult(bytes = byteArrayOf(1, 2, 3), contentType = "image/jpeg")
         every { iconService.getIcons() } returns listOf(IconSummaryResult(id = 5L, name = "밥"))
     }
@@ -121,25 +114,6 @@ class GeminiNutritionAnalysisClientTest {
         )
         server.expect(requestTo(generateContentUrl))
             .andRespond(withStatus(status).contentType(MediaType.APPLICATION_JSON).body(body))
-    }
-
-    private fun givenS3Failure(exception: Throwable) {
-        coEvery { s3StorageClient.downloadObject(imageKey) } throws exception
-    }
-
-    /** 오류 메타데이터를 채우는 SDK API는 내부용이라, 분류에 쓰는 값만 mockk로 흉내 낸다. */
-    private fun createS3Exception(
-        errorType: ServiceException.ErrorType,
-        status: HttpStatusCode,
-        isThrottling: Boolean = false,
-    ): S3Exception {
-        val response = mockk<HttpResponse> { every { this@mockk.status } returns status }
-        val metadata = mockk<S3ErrorMetadata> {
-            every { this@mockk.errorType } returns errorType
-            every { this@mockk.isThrottling } returns isThrottling
-            every { protocolResponse } returns response
-        }
-        return mockk<S3Exception> { every { sdkErrorMetadata } returns metadata }
     }
 
     // 성공
@@ -328,69 +302,18 @@ class GeminiNutritionAnalysisClientTest {
         assertAnalysisFailure(AnalysisFailureCategory.UNAVAILABLE) { client.analyzeNutrition(imageKey, Language.KO) }
     }
 
-    // S3 이미지 다운로드
+    // 이미지 다운로드
 
     @Test
-    fun `분석할 이미지가 없으면 INVALID_REQUEST로 실패하고 Gemini를 부르지 않는다`() {
-        givenS3Failure(NoSuchKey {})
+    fun `이미지를 받지 못하면 그 실패를 그대로 던지고 Gemini를 부르지 않는다`() {
+        every { analysisImageClient.downloadImage(imageKey) } throws
+            AnalysisFailureException(AnalysisFailureCategory.INVALID_REQUEST, "분석할 이미지가 없습니다: $imageKey")
 
         assertAnalysisFailure(AnalysisFailureCategory.INVALID_REQUEST) {
             client.analyzeNutrition(imageKey, Language.KO)
         }
 
         server.verify()
-    }
-
-    @Test
-    fun `S3 서버 오류면 UNAVAILABLE로 실패한다`() {
-        givenS3Failure(createS3Exception(ServiceException.ErrorType.Server, HttpStatusCode.InternalServerError))
-
-        assertAnalysisFailure(AnalysisFailureCategory.UNAVAILABLE) { client.analyzeNutrition(imageKey, Language.KO) }
-    }
-
-    @Test
-    fun `S3 요청 한도를 넘으면 UNAVAILABLE로 실패한다`() {
-        givenS3Failure(
-            createS3Exception(
-                ServiceException.ErrorType.Client,
-                HttpStatusCode.ServiceUnavailable,
-                isThrottling = true,
-            ),
-        )
-
-        assertAnalysisFailure(AnalysisFailureCategory.UNAVAILABLE) { client.analyzeNutrition(imageKey, Language.KO) }
-    }
-
-    @Test
-    fun `S3가 요청을 거부하면 INVALID_REQUEST로 실패한다`() {
-        givenS3Failure(createS3Exception(ServiceException.ErrorType.Client, HttpStatusCode.BadRequest))
-
-        assertAnalysisFailure(AnalysisFailureCategory.INVALID_REQUEST) {
-            client.analyzeNutrition(imageKey, Language.KO)
-        }
-    }
-
-    @Test
-    fun `S3 권한이 없어 거부하면 MISCONFIGURED로 실패한다`() {
-        givenS3Failure(createS3Exception(ServiceException.ErrorType.Client, HttpStatusCode.Forbidden))
-
-        assertAnalysisFailure(AnalysisFailureCategory.MISCONFIGURED) { client.analyzeNutrition(imageKey, Language.KO) }
-    }
-
-    @Test
-    fun `S3 응답을 받기 전에 실패하면 UNAVAILABLE로 실패한다`() {
-        givenS3Failure(SdkBaseException("connect timed out"))
-
-        assertAnalysisFailure(AnalysisFailureCategory.UNAVAILABLE) { client.analyzeNutrition(imageKey, Language.KO) }
-    }
-
-    @Test
-    fun `이미지가 비었으면 INVALID_REQUEST로 실패한다`() {
-        givenS3Failure(IllegalStateException("S3 객체 바디가 비어 있습니다: $imageKey"))
-
-        assertAnalysisFailure(AnalysisFailureCategory.INVALID_REQUEST) {
-            client.analyzeNutrition(imageKey, Language.KO)
-        }
     }
 
     // 아이콘 조회

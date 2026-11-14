@@ -134,6 +134,8 @@ class MealTransactionServiceV2IntegrationTest @Autowired constructor(
         // lease_expires_at이 미래라 Worker가 그때까지 가져가지 않는다. DB 시계와 JVM 시계의 차이를 감안해 1분 여유를 둔다.
         val leaseExpiresAt = assertNotNull(job.leaseExpiresAt)
         assertTrue(leaseExpiresAt > Instant.now().plus(NUTRITION_DELAY).minus(Duration.ofMinutes(1)))
+        // 지표가 기다린 시간을 셀 기준으로, 가져갈 수 있게 되는 시각을 따로 남긴다.
+        assertEquals(leaseExpiresAt, job.availableAt)
     }
 
     @Test
@@ -151,6 +153,7 @@ class MealTransactionServiceV2IntegrationTest @Autowired constructor(
         val job = mealAnalysisJobRepository.findAll().single { it.mealId == meal.id }
         assertEquals(MealAnalysisJobCategory.RECOGNITION, job.category)
         assertNull(job.leaseExpiresAt)
+        assertNull(job.availableAt)
     }
 
     @Test

@@ -16,10 +16,19 @@ import com.dandi.nyummy.cat.repository.CatRepository
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.CatErrorCode
 import com.dandi.nyummy.exception.errorcode.UserErrorCode
+import com.dandi.nyummy.infra.ai.comment.CatCommentClient
+import com.dandi.nyummy.infra.ai.nutrition.AnalysisFailureCategory
+import com.dandi.nyummy.infra.ai.nutrition.AnalysisFailureException
 import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.language.getMessage
+import com.dandi.nyummy.meal.calculator.calculateCaloryShareBalance
 import com.dandi.nyummy.meal.calculator.calculateRecommendedDailyIntake
+import com.dandi.nyummy.meal.dto.CatCommentInput
+import com.dandi.nyummy.meal.dto.CatCommentMealFoodInput
+import com.dandi.nyummy.meal.dto.CatCommentMealInput
+import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.enum.MealStatus
+import com.dandi.nyummy.meal.mapper.toNutrition
 import com.dandi.nyummy.meal.repository.MealRepository
 import com.dandi.nyummy.user.repository.ProfileRepository
 import com.dandi.nyummy.user.service.UserService
@@ -29,6 +38,7 @@ import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
+import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
@@ -43,11 +53,18 @@ class CatService(
     private val clock: Clock,
     private val catAnimationLoader: CatAnimationLoader,
     private val messageSource: MessageSource,
+    private val catCommentClient: CatCommentClient,
 ) {
 
     companion object {
         private val MAX_EVALUATED_INTERVALS = CatWeight.MAX_WEIGHT - CatWeight.MIN_WEIGHT
         private val logger = LoggerFactory.getLogger(CatService::class.java)
+
+        // 코멘트의 응답을 기다리는 최대 시간. 영양 작업은 1인분 조회에 이어 코멘트를 부르므로, 둘을 더해도 Worker가 작업을 쥐고 있는
+        // 시간(lease) 안에 끝나게 줄여 둔다. 넘으면 고정 문구를 쓴다.
+        private val CAT_COMMENT_TIMEOUT = Duration.ofSeconds(10)
+
+        private const val DEFAULT_CAT_COMMENT_MESSAGE_KEY = "catComment.default"
     }
 
     /**
@@ -147,6 +164,91 @@ class CatService(
 
         cat.updateLastMealAt(lastMealAt)
     }
+
+    /**
+     * 방금 영양을 계산한 식사에 대한 고양이 코멘트를 만든다. 그 식사의 음식 줄에 하루 문맥을 더해 넘긴다.
+     * 코멘트는 식사의 영양을 처음 계산할 때 한 번만 만들고, 그 뒤로는 바뀌지 않는다.
+     *
+     * 하루 문맥은 같은 날(식사 시각의 날짜) 이 식사보다 앞선 완료 식사와, 그 식사들에 이 식사를 더한 오늘 합계, 하루 목표,
+     * 많은·부족한 영양소다. 지운 식사와 아직 영양을 모르는 식사는 넣지 않는다.
+     *
+     * 예외를 던지지 않는다. 코멘트를 만들지 못하면(모델 실패, 응답 대기 시간 초과, 하루 문맥 조회 실패, 고양이 없음)
+     * 고정 문구를 돌려준다. 코멘트 때문에 영양 계산까지 실패로 끝나지 않게 하려는 것이다.
+     *
+     * 모델을 부르는 동안 DB 연결을 쥐지 않도록 트랜잭션을 걸지 않는다.
+     *
+     * @param userId 식사를 기록한 사용자 ID
+     * @param mealAt 이 식사를 먹은 시각
+     * @param mealFoods 이 식사의 음식 줄. 줄 영양까지 계산돼 있어야 한다
+     * @param nutrition 이 식사의 합계
+     * @param language 코멘트를 쓸 언어. 식사를 기록한 요청의 앱 언어다
+     * @return 저장할 코멘트
+     */
+    fun createCatComment(
+        userId: Long,
+        mealAt: Instant,
+        mealFoods: List<CatCommentMealFoodInput>,
+        nutrition: Nutrition,
+        language: Language,
+    ): String = try {
+        val catName = catRepository.findByUserId(userId)?.name
+        if (catName == null) {
+            logger.error("가입 시 생성되어야 할 고양이가 없어 고정 문구를 씁니다: userId={}", userId)
+            getDefaultCatComment(language)
+        } else {
+            val input = createCatCommentInput(userId, catName, mealAt, mealFoods, nutrition)
+            catCommentClient.createCatComment(input, language, CAT_COMMENT_TIMEOUT)
+        }
+    } catch (e: AnalysisFailureException) {
+        if (e.category == AnalysisFailureCategory.UNAVAILABLE) {
+            logger.warn("고양이 코멘트를 만들지 못해 고정 문구를 씁니다: userId={}, {}", userId, e.message)
+        } else {
+            logger.error("고양이 코멘트를 만들지 못해 고정 문구를 씁니다: userId={}, category={}", userId, e.category, e)
+        }
+        getDefaultCatComment(language)
+    } catch (e: RuntimeException) {
+        logger.error("고양이 코멘트를 만드는 중 예상하지 못한 오류로 고정 문구를 씁니다: userId={}", userId, e)
+        getDefaultCatComment(language)
+    }
+
+    private fun createCatCommentInput(
+        userId: Long,
+        catName: String,
+        mealAt: Instant,
+        mealFoods: List<CatCommentMealFoodInput>,
+        nutrition: Nutrition,
+    ): CatCommentInput {
+        // TODO: 사용자별 timezone에 맞게 계산
+        val zone = ZoneId.of("Asia/Seoul")
+        val date = mealAt.atZone(zone).toLocalDate()
+        val start = date.atStartOfDay(zone).toInstant()
+        val end = date.plusDays(1).atStartOfDay(zone).toInstant()
+
+        val earlierMeals = mealRepository.findMealsByUserIdAndPeriod(userId, start, end)
+            .filter { it.status == MealStatus.COMPLETED && it.mealAt < mealAt }
+            .sortedBy { it.mealAt }
+            .map {
+                CatCommentMealInput(
+                    mealAt = it.mealAt.atZone(zone).toLocalTime(),
+                    name = it.name,
+                    nutrition = it.toNutrition(),
+                )
+            }
+        val current = earlierMeals.fold(nutrition) { total, meal -> total + meal.nutrition }
+        val target = calculateRecommendedDailyIntake(profileRepository.findProfileByUserId(userId), date)
+
+        return CatCommentInput(
+            catName = catName,
+            mealFoods = mealFoods,
+            earlierMeals = earlierMeals,
+            current = current,
+            target = target,
+            caloryShareBalance = calculateCaloryShareBalance(current, target),
+        )
+    }
+
+    private fun getDefaultCatComment(language: Language): String =
+        messageSource.getMessage(DEFAULT_CAT_COMMENT_MESSAGE_KEY, language)
 
     /**
      * 고양이의 현재 체형에 해당하는 애니메이션 메타데이터를 조회한다.
