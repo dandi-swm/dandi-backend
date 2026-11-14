@@ -592,6 +592,59 @@ class MealServiceV2IntegrationTest @Autowired constructor(
         assertEquals("불고기", mealFoodRepository.findAllByMealIdOrderByDisplayOrderAsc(meal.id)[0].name)
     }
 
+    // 음식 줄 삭제 (deleteMealFoodV2)
+
+    @Test
+    fun `완료된 식사의 맨 위 줄을 지우면 남은 줄이 대표 음식이 되고 합계와 식사 아이콘이 그 자리에서 바뀐다`() {
+        val (meal, mealFoods) = createCompletedMeal("delete-food@nyummy.co.kr")
+
+        mealService.deleteMealFoodV2(meal.userId, meal.id, mealFoods[0].id, Language.KO)
+
+        val savedMealFoods = mealFoodRepository.findAllByMealIdOrderByDisplayOrderAsc(meal.id)
+        assertEquals(listOf("잡곡밥"), savedMealFoods.map { it.name })
+        // 남은 줄의 순서는 저장을 따로 부르지 않고 변경 감지로 남는다.
+        assertEquals(1, savedMealFoods[0].displayOrder)
+        val savedMeal = mealRepository.findById(meal.id).orElseThrow()
+        assertEquals(MealStatus.COMPLETED, savedMeal.status)
+        // 잡곡밥 1인분
+        assertEquals(300, savedMeal.calory)
+        assertEquals(65, savedMeal.carbs)
+        assertEquals(6, savedMeal.protein)
+        assertEquals(1, savedMeal.fat)
+        assertEquals(mealFoods[1].iconId, savedMeal.iconId)
+        assertEquals("든든하게 먹었다냥", savedMeal.catComment)
+        assertNull(findJob(meal.id))
+    }
+
+    @Test
+    fun `하나 남은 줄을 지우려 하면 거절하고 줄과 식사의 합계는 그대로다`() {
+        val (meal, mealFoods) = createCompletedMeal("delete-last-food@nyummy.co.kr")
+        mealService.deleteMealFoodV2(meal.userId, meal.id, mealFoods[0].id, Language.KO)
+
+        assertBusinessException(MealErrorCode.LAST_MEAL_FOOD_NOT_DELETABLE) {
+            mealService.deleteMealFoodV2(meal.userId, meal.id, mealFoods[1].id, Language.KO)
+        }
+
+        assertEquals(listOf("잡곡밥"), mealFoodRepository.findAllByMealIdOrderByDisplayOrderAsc(meal.id).map { it.name })
+        val savedMeal = mealRepository.findById(meal.id).orElseThrow()
+        assertEquals(MealStatus.COMPLETED, savedMeal.status)
+        assertEquals(300, savedMeal.calory)
+    }
+
+    @Test
+    fun `확인을 기다리는 식사의 줄을 지우려 하면 거절하고 5분을 기다리던 작업과 음식 줄은 그대로다`() {
+        val (meal, mealFoods) = createConfirmingMeal("delete-food-confirming@nyummy.co.kr")
+        val delayedJob = assertNotNull(findJob(meal.id))
+
+        assertBusinessException(MealErrorCode.MEAL_FOODS_NOT_UPDATABLE) {
+            mealService.deleteMealFoodV2(meal.userId, meal.id, mealFoods[0].id, Language.KO)
+        }
+
+        assertEquals(delayedJob.id, findJob(meal.id)?.id)
+        assertEquals(MealStatus.CONFIRMING, mealRepository.findById(meal.id).orElseThrow().status)
+        assertEquals(2, mealFoodRepository.findAllByMealIdOrderByDisplayOrderAsc(meal.id).size)
+    }
+
     // 끼니 알림이 보는 최근 식사 (MealRepository.existsMealAfter)
 
     @Test

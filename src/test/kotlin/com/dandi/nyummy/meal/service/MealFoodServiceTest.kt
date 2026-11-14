@@ -592,6 +592,63 @@ class MealFoodServiceTest {
         assertFalse(bulgogi.isIconFixed)
     }
 
+    // deleteMealFood
+
+    @Test
+    fun `한 줄을 지우면 그 줄만 지우고 남은 줄의 순서를 빈 번호 없이 다시 매긴다`() {
+        val bulgogi = createMealFood(displayOrder = 1, name = "불고기")
+        val rice = createMealFood(displayOrder = 2, name = "잡곡밥")
+        val kimchi = createMealFood(displayOrder = 3, name = "김치")
+        givenMealFoodsToUpdate(bulgogi, rice, kimchi)
+
+        val mealFoods = mealFoodService.deleteMealFood(mealId, 2L)
+
+        assertEquals(listOf(rice), deletedMealFoods.captured.toList())
+        // 식사의 합계를 다시 계산할 수 있게 남은 줄을 순서대로 돌려준다.
+        assertEquals(listOf("불고기" to 1, "김치" to 2), mealFoods.map { it.name to it.displayOrder })
+        // AI가 처음 낸 목록의 스냅샷은 건드리지 않는다.
+        verify(exactly = 0) { mealSnapshotRepository.findByMealId(any()) }
+    }
+
+    @Test
+    fun `맨 위 줄을 지우면 다음 줄이 대표 음식이 된다`() {
+        val bulgogi = createMealFood(displayOrder = 1, name = "불고기")
+        val rice = createMealFood(displayOrder = 2, name = "잡곡밥")
+        val kimchi = createMealFood(displayOrder = 3, name = "김치")
+        givenMealFoodsToUpdate(bulgogi, rice, kimchi)
+
+        val mealFoods = mealFoodService.deleteMealFood(mealId, 1L)
+
+        assertEquals(listOf(bulgogi), deletedMealFoods.captured.toList())
+        assertEquals(listOf("잡곡밥" to 1, "김치" to 2), mealFoods.map { it.name to it.displayOrder })
+    }
+
+    @Test
+    fun `이 식사의 줄이 아닌 mealFoodId를 지우려 하면 MEAL_FOOD_NOT_FOUND이고 아무 줄도 지우거나 옮기지 않는다`() {
+        val bulgogi = createMealFood(displayOrder = 1, name = "불고기")
+        val rice = createMealFood(displayOrder = 2, name = "잡곡밥")
+        givenMealFoodsToUpdate(bulgogi, rice)
+
+        assertBusinessException(MealErrorCode.MEAL_FOOD_NOT_FOUND) {
+            mealFoodService.deleteMealFood(mealId, 999L)
+        }
+
+        verify(exactly = 0) { mealFoodRepository.deleteAllInBatch(any<Iterable<MealFood>>()) }
+        assertEquals(listOf(1, 2), listOf(bulgogi.displayOrder, rice.displayOrder))
+    }
+
+    @Test
+    fun `식사에 하나 남은 줄을 지우려 하면 LAST_MEAL_FOOD_NOT_DELETABLE이고 그 줄을 지우지 않는다`() {
+        val bulgogi = createMealFood(displayOrder = 1, name = "불고기")
+        givenMealFoodsToUpdate(bulgogi)
+
+        assertBusinessException(MealErrorCode.LAST_MEAL_FOOD_NOT_DELETABLE) {
+            mealFoodService.deleteMealFood(mealId, 1L)
+        }
+
+        verify(exactly = 0) { mealFoodRepository.deleteAllInBatch(any<Iterable<MealFood>>()) }
+    }
+
     // deleteMealFoods
 
     @Test
