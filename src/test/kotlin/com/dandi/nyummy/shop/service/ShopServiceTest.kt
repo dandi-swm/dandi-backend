@@ -177,8 +177,12 @@ class ShopServiceTest {
 
     private inline fun <reified T> ShopPageResponse.componentOf(): T = sduiComponents.filterIsInstance<T>().single()
 
-    private fun getPromotionProducts(promotionId: Long, cursor: Long? = null, size: Int = 20) =
-        shopService.getPromotionProducts(userId, promotionId, cursor, size, Language.KO)
+    private fun getPromotionProducts(
+        promotionId: Long,
+        cursor: Long? = null,
+        size: Int = 20,
+        language: Language = Language.KO,
+    ) = shopService.getPromotionProducts(userId, promotionId, cursor, size, language)
 
     private fun getProductIds(
         tab: ShopTab = ShopTab.INTERIOR,
@@ -222,6 +226,37 @@ class ShopServiceTest {
         assertEquals("https://cdn.test.com/shop-banners/12.png", banner.imageUrl)
         assertEquals(BannerCornerStyle.ROUNDED, banner.cornerStyle)
         assertEquals("https://link.nyummy.co.kr/shop/promotions/2", banner.action?.navigateLink)
+    }
+
+    @Test
+    fun `배너 제목과 설명은 요청 언어의 번역이 있으면 번역으로, 없으면 원본으로 준다`() {
+        promotions = listOf(promotion(1), promotion(2))
+        val translated = shopBanner(11, promotionId = 1).apply {
+            description = "첫 구매 할인"
+            titleTranslations = mapOf("ja" to "バナー 11")
+            descriptionTranslations = mapOf("ja" to "初回購入割引")
+        }
+        val untranslated = shopBanner(12, promotionId = 2).apply { description = "설명 12" }
+        shopBanners = listOf(translated, untranslated)
+
+        val banners = getRecommendPage(language = Language.JA)
+            .componentOf<HeroBannerComponentResponse>().content.banners
+
+        assertEquals(listOf("バナー 11", "배너 12"), banners.map { it.title.single().text })
+        assertEquals(listOf("初回購入割引", "설명 12"), banners.map { it.description?.single()?.text })
+    }
+
+    @Test
+    fun `설명이 없는 배너는 설명 번역이 있어도 설명을 비운다`() {
+        promotions = listOf(promotion(1))
+        shopBanners = listOf(
+            shopBanner(11, promotionId = 1).apply { descriptionTranslations = mapOf("ja" to "初回購入割引") },
+        )
+
+        val banner = getRecommendPage(language = Language.JA)
+            .componentOf<HeroBannerComponentResponse>().content.banners.single()
+
+        assertNull(banner.description)
     }
 
     @Test
@@ -409,6 +444,22 @@ class ShopServiceTest {
     }
 
     @Test
+    fun `상품 카드 이름은 요청 언어의 번역이 있으면 번역으로, 없으면 원본으로 준다`() {
+        val translated = product(101, salesCount = 2).apply { nameTranslations = mapOf("ja" to "肉球クッション") }
+        val untranslated = product(102, salesCount = 1)
+        products = listOf(translated, untranslated)
+        productItems = products.map { single(it) }
+
+        val jaNames = getRecommendPage(language = Language.JA)
+            .componentOf<RankingComponentResponse>().content.items.map { it.name }
+        val koNames = getRecommendPage(language = Language.KO)
+            .componentOf<RankingComponentResponse>().content.items.map { it.name }
+
+        assertEquals(listOf("肉球クッション", "상품 102"), jaNames)
+        assertEquals(listOf("상품 101", "상품 102"), koNames)
+    }
+
+    @Test
     fun `단품은 대표 아이템 보유 개수에 안 받은 구매분을 더하고, 세트는 0을 준다`() {
         val bed = product(101)
         val set = product(102, salesCount = 1)
@@ -486,6 +537,19 @@ class ShopServiceTest {
         assertEquals(listOf(102L, 101L), response.items.map { it.productId })
         assertNull(response.nextCursor)
         assertFalse(response.hasNext)
+    }
+
+    @Test
+    fun `프로모션 화면 배너 제목도 요청 언어로 준다`() {
+        products = listOf(product(101))
+        productItems = products.map { single(it) }
+        promotions = listOf(promotion(2))
+        promotionProducts = listOf(PromotionProduct(2, 101, 0))
+        shopBanners = listOf(shopBanner(12, promotionId = 2).apply { titleTranslations = mapOf("en" to "Banner 12") })
+
+        val response = getPromotionProducts(2, language = Language.EN)
+
+        assertEquals("Banner 12", response.banner.title.single().text)
     }
 
     @Test

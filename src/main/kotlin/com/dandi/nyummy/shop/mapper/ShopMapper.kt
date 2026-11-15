@@ -13,12 +13,14 @@ import java.util.Locale
 private const val LINK = "https://link.nyummy.co.kr"
 
 /**
+ * @param name 요청 언어로 고른 상품 이름
  * @param purchasePrice 이 사용자의 1개 결제가
  * @param ownedCount 단품은 대표 아이템 보유 개수 + 우편함에서 아직 받지 않은 구매분, 세트는 0
  * @param categoryName 요청 언어로 꺼낸 분류 이름
  * @param tag 요청 언어로 꺼낸 태그. 붙일 태그가 없으면 null ([pickTagMessageKey])
  */
 fun Product.toShopItemResponse(
+    name: String,
     purchasePrice: Int,
     ownedCount: Int,
     categoryName: String,
@@ -26,7 +28,7 @@ fun Product.toShopItemResponse(
 ): ShopItemResponse = ShopItemResponse(
     productId = this.id,
     itemId = this.representativeItemId,
-    name = this.name,
+    name = name,
     category = this.category,
     categoryName = categoryName,
     price = createPriceText(this.price, purchasePrice),
@@ -36,10 +38,14 @@ fun Product.toShopItemResponse(
 )
 
 /**
+ * @param title 요청 언어로 고른 제목
+ * @param description 요청 언어로 고른 설명. 설명이 없는 배너는 null
  * @param price 프로모션 상품 전체를 묶음으로 본 가격 글자. 할인이 없으면 null
  * @param action 누르면 할 일. 프로모션 화면 맨 위 배너는 null
  */
 fun ShopBanner.toShopBannerResponse(
+    title: String,
+    description: String?,
     imageUrl: String,
     cornerStyle: BannerCornerStyle,
     price: List<RichTextResponse>?,
@@ -48,8 +54,8 @@ fun ShopBanner.toShopBannerResponse(
     bannerId = this.id,
     imageUrl = imageUrl,
     cornerStyle = cornerStyle,
-    title = listOf(RichTextResponse(text = this.title, typeScale = "displayM", color = this.titleColor)),
-    description = this.description?.let {
+    title = listOf(RichTextResponse(text = title, typeScale = "displayM", color = this.titleColor)),
+    description = description?.let {
         listOf(RichTextResponse(text = it, typeScale = "labelS", color = this.descriptionColor))
     },
     price = price,

@@ -29,7 +29,7 @@ interface ItemPurchaseProductRepository : JpaRepository<ItemPurchaseProduct, Lon
     /** 구매들의 구매 상품 이름을 구매 상품 id 순서로 조회한다. 코인 내역 문구를 한 번의 쿼리로 만드는 데 쓴다. */
     @Query(
         """
-        select new com.dandi.nyummy.shop.dto.ItemPurchaseProductNameResult(ipp.itemPurchaseId, p.name)
+        select new com.dandi.nyummy.shop.dto.ItemPurchaseProductNameResult(ipp.itemPurchaseId, p.name, p.nameTranslations)
         from ItemPurchaseProduct as ipp
             join Product as p on p.id = ipp.productId
         where ipp.itemPurchaseId in :itemPurchaseIds

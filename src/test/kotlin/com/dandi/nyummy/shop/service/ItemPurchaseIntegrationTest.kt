@@ -41,6 +41,7 @@ import com.dandi.nyummy.user.repository.UserRepository
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection
+import org.springframework.data.repository.findByIdOrNull
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.transaction.support.TransactionTemplate
@@ -184,6 +185,58 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
             ),
         )
         assertEquals(STARTING_BALANCE - 3500, getBalance(userId))
+    }
+
+    // 번역 JSON 컬럼은 클래스패스에 Jackson 2와 3이 함께 있어 Hibernate가 Map으로 읽는지, select new에 그대로
+    // 넘어가는지 mock으로 확인할 수 없다. 운영자가 SQL로 넣는 형태 그대로 넣어 본다.
+    @Test
+    fun `SQL로 넣은 상품 이름 번역으로 구매 우편 제목과 코인 내역을 요청 언어로 만든다`() {
+        val userId = createUser()
+        val product = createProduct(price = 500)
+        jdbcTemplate.update(
+            """update products set name_translations = '{"ja": "肉球クッション"}' where id = ?""",
+            product.id,
+        )
+        createCartItem(userId, product, quantity = 1)
+
+        purchase(userId, listOf(product to 1), language = Language.JA)
+
+        assertEquals(
+            mapOf("ja" to "肉球クッション"),
+            assertNotNull(productRepository.findByIdOrNull(product.id)).nameTranslations,
+        )
+        assertEquals(
+            "肉球クッション",
+            jdbcTemplate.queryForObject(
+                "select title from mails where user_id = ? and category = 'ITEM'",
+                String::class.java,
+                userId,
+            ),
+        )
+        val jaTitle = coinService.getCoinHistories(userId, cursor = null, size = 10, language = Language.JA)
+            .coinHistories.single().title
+        val koTitle = coinService.getCoinHistories(userId, cursor = null, size = 10, language = Language.KO)
+            .coinHistories.single().title
+        assertTrue("肉球クッション" in jaTitle, jaTitle)
+        assertEquals("상품 구매", koTitle)
+    }
+
+    @Test
+    fun `엔티티로 저장한 상품 이름 번역은 언어 코드를 키로 둔 JSON 객체로 저장된다`() {
+        val product = createProduct(price = 500)
+        product.nameTranslations = mapOf("ja" to "肉球クッション", "en" to "Paw Cushion")
+        productRepository.save(product)
+
+        val translations = jdbcTemplate.queryForMap(
+            """
+            select json_unquote(json_extract(name_translations, '$.ja')) as ja,
+                   json_unquote(json_extract(name_translations, '$.en')) as en
+            from products where id = ?
+            """,
+            product.id,
+        )
+
+        assertEquals(mapOf("ja" to "肉球クッション", "en" to "Paw Cushion"), translations)
     }
 
     @Test
@@ -611,6 +664,7 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
         userId: Long,
         products: List<Pair<Product, Int>>,
         idempotencyKey: String = UUID.randomUUID().toString(),
+        language: Language = Language.KO,
     ): ItemPurchaseResponse = itemPurchaseService.createItemPurchase(
         userId,
         idempotencyKey,
@@ -618,7 +672,7 @@ class ItemPurchaseIntegrationTest @Autowired constructor(
             products.map { (product, quantity) -> ItemPurchaseProductRequest(product.id, quantity, product.price) },
         ),
         "1.0.0",
-        Language.KO,
+        language,
     )
 
     private fun getOwnedCount(userId: Long, product: Product): Int = shopItemService.createShopItems(

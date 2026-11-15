@@ -193,10 +193,10 @@ class CoinServiceTest {
             coinHistory(6, CoinHistoryCategory.MAIL_CLAIM, sourceId = 2L),
         )
         every { itemPurchaseProductRepository.findItemPurchaseProductNames(listOf(1L, 2L, 99L)) } returns listOf(
-            ItemPurchaseProductNameResult(1L, "발바닥 방석"),
-            ItemPurchaseProductNameResult(2L, "호박 쿠션"),
-            ItemPurchaseProductNameResult(2L, "호박 쿠션"),
-            ItemPurchaseProductNameResult(2L, "스크래처"),
+            ItemPurchaseProductNameResult(1L, "발바닥 방석", null),
+            ItemPurchaseProductNameResult(2L, "호박 쿠션", null),
+            ItemPurchaseProductNameResult(2L, "호박 쿠션", null),
+            ItemPurchaseProductNameResult(2L, "스크래처", null),
         )
 
         val response = coinService.getCoinHistories(userId, cursor = null, size = 10, language = Language.KO)
@@ -209,23 +209,23 @@ class CoinServiceTest {
     }
 
     @Test
-    fun `코인 내역 제목은 요청 언어로 주고 상품 이름은 그대로 넣는다`() {
+    fun `코인 내역 제목은 요청 언어로 주고 상품 이름은 번역이 있으면 번역으로 넣는다`() {
         givenCoinHistories(
             coinHistory(9, CoinHistoryCategory.ROOM_ITEM_PURCHASE, sourceId = 1L),
             coinHistory(8, CoinHistoryCategory.ROOM_ITEM_PURCHASE, sourceId = 2L),
             coinHistory(7, CoinHistoryCategory.REPORT_PURCHASE, sourceId = 3L),
         )
         every { itemPurchaseProductRepository.findItemPurchaseProductNames(listOf(1L, 2L)) } returns listOf(
-            ItemPurchaseProductNameResult(1L, "발바닥 방석"),
-            ItemPurchaseProductNameResult(2L, "호박 쿠션"),
-            ItemPurchaseProductNameResult(2L, "스크래처"),
+            ItemPurchaseProductNameResult(1L, "발바닥 방석", mapOf("en" to "Paw Cushion", "ja" to "肉球クッション")),
+            ItemPurchaseProductNameResult(2L, "호박 쿠션", null),
+            ItemPurchaseProductNameResult(2L, "스크래처", null),
         )
 
         val response = coinService.getCoinHistories(userId, cursor = null, size = 10, language = Language.EN)
 
         assertEquals(
             listOf(
-                messageSource.getMessage("coinHistory.itemPurchase.single", Language.EN, "발바닥 방석"),
+                messageSource.getMessage("coinHistory.itemPurchase.single", Language.EN, "Paw Cushion"),
                 messageSource.getMessage("coinHistory.itemPurchase.multiple", Language.EN, "호박 쿠션", 1),
                 messageSource.getMessage("coinHistoryCategory.REPORT_PURCHASE", Language.EN),
             ),

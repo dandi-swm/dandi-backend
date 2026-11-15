@@ -6,6 +6,7 @@ import com.dandi.nyummy.coin.service.CoinService
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.ShopErrorCode
 import com.dandi.nyummy.language.enum.Language
+import com.dandi.nyummy.language.pickTranslation
 import com.dandi.nyummy.mail.service.MailService
 import com.dandi.nyummy.room.dto.GrantedRoomItem
 import com.dandi.nyummy.shop.calculator.calculatePurchasePrice
@@ -219,7 +220,8 @@ class ItemPurchaseTransactionService(
         )
         mailService.createItemPurchaseMail(
             userId = userId,
-            title = product.name,
+            // 우편 제목은 만들 때 저장하므로 구매 요청의 언어로 고른다. 이미 만든 우편은 그때 언어로 남는다
+            title = product.nameTranslations.pickTranslation(language, product.name),
             representativeItemId = product.representativeItemId,
             items = lines.map { GrantedRoomItem(it.itemId, itemPurchaseLineId = it.id) },
             language = language,

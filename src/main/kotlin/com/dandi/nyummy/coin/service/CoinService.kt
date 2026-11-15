@@ -9,6 +9,7 @@ import com.dandi.nyummy.coin.repository.CoinHistoryRepository
 import com.dandi.nyummy.coin.repository.CoinRepository
 import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.language.getMessage
+import com.dandi.nyummy.language.pickTranslation
 import com.dandi.nyummy.shop.repository.ItemPurchaseProductRepository
 import org.slf4j.LoggerFactory
 import org.springframework.context.MessageSource
@@ -139,7 +140,7 @@ class CoinService(
             cursor = cursor ?: Long.MAX_VALUE,
             pageable = PageRequest.of(0, size),
         )
-        val productNames = getItemPurchaseProductNames(coinHistories.content)
+        val productNames = getItemPurchaseProductNames(coinHistories.content, language)
 
         return CoinHistoriesResponse(
             coinHistories = coinHistories.content.map { coinHistory ->
@@ -150,15 +151,18 @@ class CoinService(
         )
     }
 
-    // 구매 id별 구매 상품 이름. 묶음에 구매가 없으면 쿼리하지 않는다.
-    private fun getItemPurchaseProductNames(coinHistories: List<CoinHistory>): Map<Long, List<String>> {
+    // 구매 id별 구매 상품 이름(요청 언어). 묶음에 구매가 없으면 쿼리하지 않는다.
+    private fun getItemPurchaseProductNames(
+        coinHistories: List<CoinHistory>,
+        language: Language,
+    ): Map<Long, List<String>> {
         val itemPurchaseIds = coinHistories
             .filter { it.category == CoinHistoryCategory.ROOM_ITEM_PURCHASE }
             .mapNotNull { it.sourceId }
         if (itemPurchaseIds.isEmpty()) return emptyMap()
 
         return itemPurchaseProductRepository.findItemPurchaseProductNames(itemPurchaseIds)
-            .groupBy({ it.itemPurchaseId }, { it.name })
+            .groupBy({ it.itemPurchaseId }, { it.nameTranslations.pickTranslation(language, it.name) })
     }
 
     // 종류마다 문구 파일의 coinHistoryCategory.<이름>을 쓰고, 상점 구매만 상품 이름을 넣는다
@@ -178,7 +182,6 @@ class CoinService(
     }
 
     // 상품 1개는 "발바닥 방석 구매", 여러 개는 같은 상품이어도 1개당 한 행이라 "발바닥 방석 외 2개 구매"다.
-    // 상품 이름은 아직 번역하지 않아 모든 언어에서 한국어다.
     private fun createItemPurchaseTitle(productNames: List<String>, language: Language): String =
         when (productNames.size) {
             1 -> messageSource.getMessage("coinHistory.itemPurchase.single", language, productNames.first())

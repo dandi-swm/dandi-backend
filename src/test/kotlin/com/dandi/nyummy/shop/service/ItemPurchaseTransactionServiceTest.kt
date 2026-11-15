@@ -174,8 +174,8 @@ class ItemPurchaseTransactionServiceTest {
         },
     )
 
-    private fun purchase(request: CreateItemPurchaseRequest) =
-        service.createItemPurchase(userId, idempotencyKey, request, appVersion = "1.0.0", language = Language.KO)
+    private fun purchase(request: CreateItemPurchaseRequest, language: Language = Language.KO) =
+        service.createItemPurchase(userId, idempotencyKey, request, appVersion = "1.0.0", language = language)
 
     private fun assertBusinessException(expected: ErrorCode, block: () -> Unit) {
         val exception = assertFailsWith<BusinessException>(block = block)
@@ -243,6 +243,21 @@ class ItemPurchaseTransactionServiceTest {
                     GrantedRoomItem(1010L, itemPurchaseLineId = 2003L),
                 ),
             )
+        }
+    }
+
+    @Test
+    fun `구매 우편 제목은 구매 요청 언어의 상품 이름 번역으로 저장하고 번역이 없으면 원본으로 저장한다`() {
+        givenSingle(product(101).apply { nameTranslations = mapOf("ja" to "肉球クッション") })
+        givenSingle(product(102))
+
+        purchase(request(Triple(101L, 1, 1000), Triple(102L, 1, 1000)), Language.JA)
+
+        verify(exactly = 1) {
+            mailService.createItemPurchaseMail(userId, "肉球クッション", 1010L, any(), Language.JA)
+        }
+        verify(exactly = 1) {
+            mailService.createItemPurchaseMail(userId, "상품 102", 1020L, any(), Language.JA)
         }
     }
 

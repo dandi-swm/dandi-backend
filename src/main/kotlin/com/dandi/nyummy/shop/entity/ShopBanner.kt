@@ -9,6 +9,8 @@ import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.Table
+import org.hibernate.annotations.JdbcTypeCode
+import org.hibernate.type.SqlTypes
 import org.springframework.data.annotation.CreatedDate
 import org.springframework.data.annotation.LastModifiedDate
 import org.springframework.data.jpa.domain.support.AuditingEntityListener
@@ -65,6 +67,16 @@ class ShopBanner(
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id", nullable = false)
     val id: Long = 0L
+
+    /** [title]의 번역. 키는 언어 코드이고 원본(한국어)은 넣지 않는다. null이면 모든 언어에서 [title]로 응답한다 */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "title_translations")
+    var titleTranslations: Map<String, String>? = null
+
+    /** [description]의 번역. [description]이 null이면 번역이 있어도 설명을 내보내지 않는다 */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "description_translations")
+    var descriptionTranslations: Map<String, String>? = null
 
     @CreatedDate
     @Column(name = "created_at", nullable = false)
