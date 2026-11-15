@@ -22,6 +22,7 @@ import com.dandi.nyummy.config.AppLinkProperties
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.AuthErrorCode
 import com.dandi.nyummy.infra.email.EmailService
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.notification.repository.DeviceTokenRepository
 import com.dandi.nyummy.room.service.RoomService
 import com.dandi.nyummy.security.jwt.JwtService
@@ -280,13 +281,14 @@ class AuthService(
      * 용도는 emailChallengeToken의 클레임에 실려 confirm까지 전달된다.
      *
      * @param request 인증 코드 발송 요청 정보를 담은 [SendAuthCodeRequest] (이메일, 용도)
+     * @param language 요청의 `X-Language`로 정한 앱 언어. 메일 제목과 본문을 이 언어로 쓴다
      * @return 발급된 emailChallengeToken을 담은 [SendAuthCodeResponse]
      * @throws BusinessException [AuthErrorCode.EMAIL_ALREADY_EXISTS] 회원가입 용도인데 이미 가입된 이메일인 경우
      * @throws BusinessException [AuthErrorCode.EMAIL_NOT_FOUND] 비밀번호 찾기 용도인데 가입되지 않은 이메일인 경우
      * @throws BusinessException [AuthErrorCode.EMAIL_SEND_RATE_LIMITED] TTL 윈도우 내 발송 횟수가 5회를 초과한 경우
      * @throws BusinessException [EmailErrorCode.EMAIL_SEND_FAILED] 이메일 발송이 실패한 경우
      */
-    fun sendAuthCode(request: SendAuthCodeRequest): SendAuthCodeResponse {
+    fun sendAuthCode(request: SendAuthCodeRequest, language: Language): SendAuthCodeResponse {
         val email = request.email
         val purpose = request.purpose
 
@@ -294,7 +296,7 @@ class AuthService(
 
         val authCode = codeService.createCodeByEmail(email, purpose)
 
-        emailService.sendAuthCode(email, authCode)
+        emailService.sendAuthCode(email, authCode, language)
 
         val emailChallengeToken = jwtService.createEmailChallengeToken(email, purpose)
 
@@ -342,12 +344,13 @@ class AuthService(
      * 순차 실행된다 — 발송이 실패하면 사용자는 코드 발송부터 플로우를 재시작해야 한다.
      *
      * @param request 비밀번호 재설정 요청 정보를 담은 [ResetPasswordRequest] (verifiedToken)
+     * @param language 요청의 `X-Language`로 정한 앱 언어. 임시 비밀번호 메일을 이 언어로 쓴다
      * @throws BusinessException [AuthErrorCode.VERIFICATION_EXPIRED] verifiedToken이 만료된 경우
      * @throws BusinessException [AuthErrorCode.INVALID_VERIFIED_TOKEN] 토큰의 서명·형식·타입이 유효하지 않거나, 이메일 계정의 비밀번호 찾기 용도가 아닌 경우
      * @throws BusinessException [AuthErrorCode.EMAIL_NOT_FOUND] 토큰의 이메일에 해당하는 사용자가 없는 경우
      * @throws BusinessException [EmailErrorCode.EMAIL_SEND_FAILED] 임시 비밀번호 이메일 발송이 실패한 경우
      */
-    fun resetPassword(request: ResetPasswordRequest) {
+    fun resetPassword(request: ResetPasswordRequest, language: Language) {
         // TODO: 레디스 도입 시 사용한 verifiedToken을 블랙리스트로 등록해 일회성 보장
 
         val claims = jwtService.getVerifiedClaims(request.verifiedToken)
@@ -370,7 +373,7 @@ class AuthService(
             logger.error("토큰 무효화 기록 실패: userId={}", user.id, e)
         }
 
-        emailService.sendTempPassword(email, tempPassword)
+        emailService.sendTempPassword(email, tempPassword, language)
     }
 
     /**

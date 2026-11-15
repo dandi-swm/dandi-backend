@@ -18,6 +18,8 @@ import com.dandi.nyummy.auth.service.OAuthService
 import com.dandi.nyummy.config.openapi.ApiErrorCodes
 import com.dandi.nyummy.exception.errorcode.AuthErrorCode
 import com.dandi.nyummy.exception.errorcode.EmailErrorCode
+import com.dandi.nyummy.language.CurrentLanguage
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.security.AuthUser
 import com.dandi.nyummy.security.CurrentUser
 import io.swagger.v3.oas.annotations.Operation
@@ -112,8 +114,11 @@ class AuthController(private val authService: AuthService, private val oauthServ
         email = [EmailErrorCode.EMAIL_SEND_FAILED],
     )
     @PostMapping("/email-verification")
-    fun sendAuthCode(@Valid @RequestBody request: SendAuthCodeRequest): ResponseEntity<SendAuthCodeResponse> {
-        val response = authService.sendAuthCode(request)
+    fun sendAuthCode(
+        @CurrentLanguage language: Language,
+        @Valid @RequestBody request: SendAuthCodeRequest,
+    ): ResponseEntity<SendAuthCodeResponse> {
+        val response = authService.sendAuthCode(request, language)
 
         return ResponseEntity
             .status(HttpStatus.CREATED)
@@ -159,8 +164,11 @@ class AuthController(private val authService: AuthService, private val oauthServ
         email = [EmailErrorCode.EMAIL_SEND_FAILED],
     )
     @PostMapping("/password/reset")
-    fun resetPassword(@Valid @RequestBody request: ResetPasswordRequest): ResponseEntity<Void> {
-        authService.resetPassword(request)
+    fun resetPassword(
+        @CurrentLanguage language: Language,
+        @Valid @RequestBody request: ResetPasswordRequest,
+    ): ResponseEntity<Void> {
+        authService.resetPassword(request, language)
 
         return ResponseEntity
             .noContent()

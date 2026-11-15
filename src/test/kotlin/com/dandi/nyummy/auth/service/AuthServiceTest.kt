@@ -17,6 +17,7 @@ import com.dandi.nyummy.exception.errorcode.AuthErrorCode
 import com.dandi.nyummy.exception.errorcode.EmailErrorCode
 import com.dandi.nyummy.exception.errorcode.ErrorCode
 import com.dandi.nyummy.infra.email.EmailService
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.notification.repository.DeviceTokenRepository
 import com.dandi.nyummy.room.service.RoomService
 import com.dandi.nyummy.security.jwt.EmailChallengeClaims
@@ -229,18 +230,32 @@ class AuthServiceTest {
     // sendAuthCode
 
     @Test
+    fun `인증 코드 메일은 인증 코드를 요청한 언어로 보낸다`() {
+        every { userRepository.existsByProviderAndEmail(AuthProvider.EMAIL, email) } returns false
+        every { codeService.createCodeByEmail(email, AuthPurpose.SIGNUP) } returns "123456"
+        every { jwtService.createEmailChallengeToken(email, AuthPurpose.SIGNUP) } returns "challenge-token"
+
+        authService.sendAuthCode(SendAuthCodeRequest(email = email, purpose = AuthPurpose.SIGNUP), Language.JA)
+
+        verify(exactly = 1) { emailService.sendAuthCode(email, "123456", Language.JA) }
+    }
+
+    @Test
     fun `코드 발급, 이메일 발송, 챌린지 토큰 발급 순으로 진행한다`() {
         every { userRepository.existsByProviderAndEmail(AuthProvider.EMAIL, email) } returns false
         every { codeService.createCodeByEmail(email, AuthPurpose.SIGNUP) } returns "123456"
         every { jwtService.createEmailChallengeToken(email, AuthPurpose.SIGNUP) } returns "challenge-token"
 
-        val response = authService.sendAuthCode(SendAuthCodeRequest(email = email, purpose = AuthPurpose.SIGNUP))
+        val response = authService.sendAuthCode(
+            SendAuthCodeRequest(email = email, purpose = AuthPurpose.SIGNUP),
+            Language.KO,
+        )
 
         assertEquals("challenge-token", response.emailChallengeToken)
         verifyOrder {
             userRepository.existsByProviderAndEmail(AuthProvider.EMAIL, email)
             codeService.createCodeByEmail(email, AuthPurpose.SIGNUP)
-            emailService.sendAuthCode(email, "123456")
+            emailService.sendAuthCode(email, "123456", Language.KO)
             jwtService.createEmailChallengeToken(email, AuthPurpose.SIGNUP)
         }
     }
@@ -250,20 +265,21 @@ class AuthServiceTest {
         every { userRepository.existsByProviderAndEmail(AuthProvider.EMAIL, email) } returns true
 
         assertBusinessException(AuthErrorCode.EMAIL_ALREADY_EXISTS) {
-            authService.sendAuthCode(SendAuthCodeRequest(email = email, purpose = AuthPurpose.SIGNUP))
+            authService.sendAuthCode(SendAuthCodeRequest(email = email, purpose = AuthPurpose.SIGNUP), Language.KO)
         }
         verify(exactly = 0) { codeService.createCodeByEmail(any(), any()) }
-        verify(exactly = 0) { emailService.sendAuthCode(any(), any()) }
+        verify(exactly = 0) { emailService.sendAuthCode(any(), any(), any()) }
     }
 
     @Test
     fun `이메일 발송에 실패하면 예외를 전파하고 챌린지 토큰을 발급하지 않는다`() {
         every { userRepository.existsByProviderAndEmail(AuthProvider.EMAIL, email) } returns false
         every { codeService.createCodeByEmail(email, AuthPurpose.SIGNUP) } returns "123456"
-        every { emailService.sendAuthCode(email, "123456") } throws BusinessException(EmailErrorCode.EMAIL_SEND_FAILED)
+        every { emailService.sendAuthCode(email, "123456", Language.KO) } throws
+            BusinessException(EmailErrorCode.EMAIL_SEND_FAILED)
 
         assertBusinessException(EmailErrorCode.EMAIL_SEND_FAILED) {
-            authService.sendAuthCode(SendAuthCodeRequest(email = email, purpose = AuthPurpose.SIGNUP))
+            authService.sendAuthCode(SendAuthCodeRequest(email = email, purpose = AuthPurpose.SIGNUP), Language.KO)
         }
         verify(exactly = 0) { jwtService.createEmailChallengeToken(any(), any()) }
     }
@@ -309,7 +325,7 @@ class AuthServiceTest {
         stubVerifiedToken(AuthPurpose.SIGNUP)
 
         assertBusinessException(AuthErrorCode.INVALID_VERIFIED_TOKEN) {
-            authService.resetPassword(ResetPasswordRequest(verifiedToken = "verified-token"))
+            authService.resetPassword(ResetPasswordRequest(verifiedToken = "verified-token"), Language.KO)
         }
         verify(exactly = 0) { passwordService.createTempPasswordByEmail(any()) }
     }
@@ -320,9 +336,21 @@ class AuthServiceTest {
         every { userRepository.findByProviderAndEmail(AuthProvider.EMAIL, email) } returns null
 
         assertBusinessException(AuthErrorCode.EMAIL_NOT_FOUND) {
-            authService.resetPassword(ResetPasswordRequest(verifiedToken = "verified-token"))
+            authService.resetPassword(ResetPasswordRequest(verifiedToken = "verified-token"), Language.KO)
         }
         verify(exactly = 0) { passwordService.createTempPasswordByEmail(any()) }
+    }
+
+    @Test
+    fun `임시 비밀번호 메일은 비밀번호 재설정을 요청한 언어로 보낸다`() {
+        stubVerifiedToken(AuthPurpose.RESET_PASSWORD)
+        val user = User(provider = AuthProvider.EMAIL, email = email, password = "encoded:old")
+        every { userRepository.findByProviderAndEmail(AuthProvider.EMAIL, email) } returns user
+        every { passwordService.createTempPasswordByEmail(email) } returns "Temp12345678"
+
+        authService.resetPassword(ResetPasswordRequest(verifiedToken = "verified-token"), Language.EN)
+
+        verify(exactly = 1) { emailService.sendTempPassword(email, "Temp12345678", Language.EN) }
     }
 
     @Test
@@ -332,12 +360,12 @@ class AuthServiceTest {
         every { userRepository.findByProviderAndEmail(AuthProvider.EMAIL, email) } returns user
         every { passwordService.createTempPasswordByEmail(email) } returns "Temp12345678"
 
-        authService.resetPassword(ResetPasswordRequest(verifiedToken = "verified-token"))
+        authService.resetPassword(ResetPasswordRequest(verifiedToken = "verified-token"), Language.KO)
 
         verifyOrder {
             passwordService.createTempPasswordByEmail(email)
             tokenInvalidationRepository.createInvalidatedAt(user.id, now)
-            emailService.sendTempPassword(email, "Temp12345678")
+            emailService.sendTempPassword(email, "Temp12345678", Language.KO)
         }
     }
 
@@ -351,8 +379,8 @@ class AuthServiceTest {
             tokenInvalidationRepository.createInvalidatedAt(user.id, now)
         } throws DataAccessResourceFailureException("redis down")
 
-        authService.resetPassword(ResetPasswordRequest(verifiedToken = "verified-token"))
+        authService.resetPassword(ResetPasswordRequest(verifiedToken = "verified-token"), Language.KO)
 
-        verify(exactly = 1) { emailService.sendTempPassword(email, "Temp12345678") }
+        verify(exactly = 1) { emailService.sendTempPassword(email, "Temp12345678", Language.KO) }
     }
 }
