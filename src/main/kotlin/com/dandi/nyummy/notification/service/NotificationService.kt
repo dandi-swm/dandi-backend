@@ -9,7 +9,7 @@ import com.dandi.nyummy.notification.entity.DeviceToken
 import com.dandi.nyummy.notification.entity.PushHistory
 import com.dandi.nyummy.notification.enum.PushOutcome
 import com.dandi.nyummy.notification.repository.DeviceTokenRepository
-import com.dandi.nyummy.notification.repository.PushHistoryRepository
+import com.dandi.nyummy.notification.repository.PushHistoryJdbcRepository
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -19,7 +19,7 @@ import java.time.Instant
 @Service
 class NotificationService(
     private val deviceTokenRepository: DeviceTokenRepository,
-    private val pushHistoryRepository: PushHistoryRepository,
+    private val pushHistoryJdbcRepository: PushHistoryJdbcRepository,
     private val pushClient: PushClient,
     private val clock: Clock,
 ) {
@@ -104,7 +104,7 @@ class NotificationService(
             val invalidTokens = result.invalidTokens.toSet()
             val retryableTokens = result.retryableTokens.toSet()
 
-            pushHistoryRepository.saveAll(
+            pushHistoryJdbcRepository.createPushHistories(
                 messagesByToken.map { (token, message) ->
                     PushHistory(
                         userId = message.userId,

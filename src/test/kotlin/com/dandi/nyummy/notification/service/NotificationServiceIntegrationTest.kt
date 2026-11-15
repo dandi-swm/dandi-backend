@@ -6,9 +6,11 @@ import com.dandi.nyummy.infra.push.dto.PushType
 import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.notification.dto.CreateDeviceTokenRequest
 import com.dandi.nyummy.notification.entity.DeviceToken
+import com.dandi.nyummy.notification.entity.PushHistory
 import com.dandi.nyummy.notification.enum.DevicePlatform
 import com.dandi.nyummy.notification.enum.PushOutcome
 import com.dandi.nyummy.notification.repository.DeviceTokenRepository
+import com.dandi.nyummy.notification.repository.PushHistoryJdbcRepository
 import com.dandi.nyummy.notification.repository.PushHistoryRepository
 import com.dandi.nyummy.user.entity.User
 import com.dandi.nyummy.user.repository.UserRepository
@@ -19,6 +21,7 @@ import org.springframework.test.context.ActiveProfiles
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.mysql.MySQLContainer
+import java.time.Instant
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -34,6 +37,7 @@ class NotificationServiceIntegrationTest @Autowired constructor(
     private val userRepository: UserRepository,
     private val deviceTokenRepository: DeviceTokenRepository,
     private val pushHistoryRepository: PushHistoryRepository,
+    private val pushHistoryJdbcRepository: PushHistoryJdbcRepository,
 ) {
     companion object {
         @Container
@@ -86,4 +90,63 @@ class NotificationServiceIntegrationTest @Autowired constructor(
 
         assertEquals(Language.JA, deviceTokenRepository.findDeviceTokenByUserId(userId)?.language)
     }
+
+    // 전송 내역 JDBC 저장 (PushHistoryJdbcRepository). SQL에 적은 컬럼 이름과 값 변환은 ddl-auto: validate가 검사하지 않는다.
+
+    @Test
+    fun `여러 전송 내역을 한 번에 저장하면 JPA로 읽은 값이 넘긴 값과 같다`() {
+        val iosUserId = createUser()
+        val unknownPlatformUserId = createUser()
+        val sentAt = Instant.parse("2026-11-13T03:00:00Z")
+
+        pushHistoryJdbcRepository.createPushHistories(
+            listOf(
+                createPushHistory(iosUserId, DevicePlatform.IOS, PushOutcome.SUCCESS, sentAt),
+                createPushHistory(unknownPlatformUserId, null, PushOutcome.INVALID_TOKEN, sentAt),
+            ),
+        )
+
+        val pushHistoriesByUserId = pushHistoryRepository.findAll()
+            .filter { it.userId in setOf(iosUserId, unknownPlatformUserId) }
+            .associateBy { it.userId }
+        assertEquals(2, pushHistoriesByUserId.size)
+
+        val iosPushHistory = pushHistoriesByUserId.getValue(iosUserId)
+        assertEquals("meal-reminder:$iosUserId:2026-11-13:LUNCH", iosPushHistory.notificationId)
+        assertEquals(PushType.MEAL_REMINDER, iosPushHistory.category)
+        assertEquals(DevicePlatform.IOS, iosPushHistory.platform)
+        assertEquals("집사, 점심은 먹었어? 🐾", iosPushHistory.title)
+        assertEquals("치즈 너무 배고프다냥. 사진 한 장만 찍어줘!", iosPushHistory.body)
+        assertEquals(PushOutcome.SUCCESS, iosPushHistory.outcome)
+        assertEquals(sentAt, iosPushHistory.sentAt)
+
+        val unknownPlatformPushHistory = pushHistoriesByUserId.getValue(unknownPlatformUserId)
+        assertEquals(null, unknownPlatformPushHistory.platform)
+        assertEquals(PushOutcome.INVALID_TOKEN, unknownPlatformPushHistory.outcome)
+    }
+
+    @Test
+    fun `저장할 전송 내역이 없으면 아무것도 저장하지 않는다`() {
+        val countBefore = pushHistoryRepository.count()
+
+        pushHistoryJdbcRepository.createPushHistories(emptyList())
+
+        assertEquals(countBefore, pushHistoryRepository.count())
+    }
+
+    private fun createUser(): Long = userRepository.save(
+        User(provider = AuthProvider.EMAIL, email = "${UUID.randomUUID()}@nyummy.co.kr"),
+    ).id
+
+    private fun createPushHistory(userId: Long, platform: DevicePlatform?, outcome: PushOutcome, sentAt: Instant) =
+        PushHistory(
+            userId = userId,
+            notificationId = "meal-reminder:$userId:2026-11-13:LUNCH",
+            category = PushType.MEAL_REMINDER,
+            platform = platform,
+            title = "집사, 점심은 먹었어? 🐾",
+            body = "치즈 너무 배고프다냥. 사진 한 장만 찍어줘!",
+            outcome = outcome,
+            sentAt = sentAt,
+        )
 }
