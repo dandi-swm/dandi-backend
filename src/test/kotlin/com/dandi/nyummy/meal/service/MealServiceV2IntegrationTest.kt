@@ -43,6 +43,7 @@ import org.testcontainers.mysql.MySQLContainer
 import java.math.BigDecimal
 import java.time.Clock
 import java.time.Instant
+import java.time.temporal.ChronoUnit
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -645,32 +646,76 @@ class MealServiceV2IntegrationTest @Autowired constructor(
         assertEquals(2, mealFoodRepository.findAllByMealIdOrderByDisplayOrderAsc(meal.id).size)
     }
 
-    // 끼니 알림이 보는 최근 식사 (MealRepository.existsMealAfter)
+    // 끼니 알림이 보는 최근 식사 (MealRepository.findUserIdsWithMealAfter)
 
     @Test
     fun `최근에 먹은 식사는 실패한 식사와 지운 식사만 빼고 상태와 상관없이 기록한 것으로 본다`() {
-        val now = Instant.now(clock)
+        // meal_at은 초 단위로 저장된다(소수는 반올림). 경계 사례가 반올림으로 기준을 넘지 않게 초 단위로 맞춘다
+        val now = Instant.now(clock).truncatedTo(ChronoUnit.SECONDS)
         val oneHourAgo = now.minusSeconds(3600)
+        val recently = now.minusSeconds(600)
 
-        fun existsRecentMeal(email: String, status: MealStatus, mealAt: Instant, isDeleted: Boolean = false): Boolean {
+        fun createUserWithMeal(email: String, status: MealStatus, mealAt: Instant, isDeleted: Boolean = false): Long {
             val userId = userRepository.save(User(provider = AuthProvider.EMAIL, email = email)).id
             mealRepository.save(
                 Meal(status = status, imageKey = "meals/$userId/$email.jpg", mealAt = mealAt, userId = userId).apply {
                     if (isDeleted) updateDeletedAt(now)
                 },
             )
-            return mealRepository.existsMealAfter(userId, MealStatus.FAILED, oneHourAgo)
+            return userId
         }
+        val recordedUserIds = listOf(
+            createUserWithMeal("recent-recognizing@nyummy.co.kr", MealStatus.RECOGNIZING, recently),
+            createUserWithMeal("recent-confirming@nyummy.co.kr", MealStatus.CONFIRMING, recently),
+            createUserWithMeal("recent-waiting@nyummy.co.kr", MealStatus.WAITING, recently),
+            createUserWithMeal("recent-analyzing@nyummy.co.kr", MealStatus.ANALYZING, recently),
+            createUserWithMeal("recent-completed@nyummy.co.kr", MealStatus.COMPLETED, recently),
+        )
+        val notRecordedUserIds = listOf(
+            createUserWithMeal("recent-failed@nyummy.co.kr", MealStatus.FAILED, recently),
+            createUserWithMeal("recent-deleted@nyummy.co.kr", MealStatus.COMPLETED, recently, isDeleted = true),
+            createUserWithMeal("old-completed@nyummy.co.kr", MealStatus.COMPLETED, now.minusSeconds(7200)),
+            createUserWithMeal("boundary-completed@nyummy.co.kr", MealStatus.COMPLETED, oneHourAgo),
+        )
+
+        val userIds = mealRepository.findUserIdsWithMealAfter(
+            recordedUserIds + notRecordedUserIds,
+            MealStatus.FAILED,
+            oneHourAgo,
+        )
+
+        assertEquals(recordedUserIds.toSet(), userIds.toSet())
+    }
+
+    @Test
+    fun `최근 식사가 여럿인 사용자는 한 번만 돌려주고 목록 밖 사용자는 보지 않는다`() {
+        val now = Instant.now(clock)
         val recently = now.minusSeconds(600)
 
-        assertTrue(existsRecentMeal("recent-recognizing@nyummy.co.kr", MealStatus.RECOGNIZING, recently))
-        assertTrue(existsRecentMeal("recent-confirming@nyummy.co.kr", MealStatus.CONFIRMING, recently))
-        assertTrue(existsRecentMeal("recent-waiting@nyummy.co.kr", MealStatus.WAITING, recently))
-        assertTrue(existsRecentMeal("recent-analyzing@nyummy.co.kr", MealStatus.ANALYZING, recently))
-        assertTrue(existsRecentMeal("recent-completed@nyummy.co.kr", MealStatus.COMPLETED, recently))
-        assertFalse(existsRecentMeal("recent-failed@nyummy.co.kr", MealStatus.FAILED, recently))
-        assertFalse(existsRecentMeal("recent-deleted@nyummy.co.kr", MealStatus.COMPLETED, recently, isDeleted = true))
-        assertFalse(existsRecentMeal("old-completed@nyummy.co.kr", MealStatus.COMPLETED, now.minusSeconds(7200)))
+        fun createUserWithMeals(email: String, mealCount: Int): Long {
+            val userId = userRepository.save(User(provider = AuthProvider.EMAIL, email = email)).id
+            repeat(mealCount) { index ->
+                mealRepository.save(
+                    Meal(
+                        status = MealStatus.COMPLETED,
+                        imageKey = "meals/$userId/$index.jpg",
+                        mealAt = recently.plusSeconds(index.toLong()),
+                        userId = userId,
+                    ),
+                )
+            }
+            return userId
+        }
+        val twiceRecordedUserId = createUserWithMeals("recent-twice@nyummy.co.kr", mealCount = 2)
+        createUserWithMeals("recent-outside@nyummy.co.kr", mealCount = 1)
+
+        val userIds = mealRepository.findUserIdsWithMealAfter(
+            listOf(twiceRecordedUserId),
+            MealStatus.FAILED,
+            now.minusSeconds(3600),
+        )
+
+        assertEquals(listOf(twiceRecordedUserId), userIds)
     }
 
     /** [count]개의 스레드가 같은 순간에 [action]을 실행하게 하고, 실패한 것의 예외를 돌려준다. */
