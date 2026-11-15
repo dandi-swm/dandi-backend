@@ -9,27 +9,46 @@ import com.dandi.nyummy.language.createTestMessageSource
 import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.language.getMessage
 import com.dandi.nyummy.meal.enum.MealStatus
+import com.dandi.nyummy.meal.enum.MealTime
 import com.dandi.nyummy.meal.repository.MealRepository
+import com.dandi.nyummy.notification.NotificationId
 import com.dandi.nyummy.notification.service.NotificationService
 import com.dandi.nyummy.user.repository.ProfileRepository
+import io.mockk.Runs
 import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
 import io.mockk.slot
+import io.mockk.verify
+import io.mockk.verifyOrder
+import org.springframework.data.domain.PageRequest
+import org.springframework.data.domain.Slice
+import org.springframework.data.domain.SliceImpl
 import java.time.Clock
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneOffset
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * 식사 리마인더 문구를 기기 언어로 고르는지 다룬다. 2026-11-02 12시(KST)에 점심 리마인더를 보낸다.
+ * 식사 리마인더의 묶음 발송과 문구 언어를 다룬다. 2026-11-02 12시(KST)에 점심 리마인더를 보낸다.
  */
 class MealReminderServiceTest {
 
     private val profileRepository = mockk<ProfileRepository>()
-    private val mealRepository = mockk<MealRepository>()
-    private val pushDeduplicationRepository = mockk<PushDeduplicationRepository>(relaxed = true)
-    private val notificationService = mockk<NotificationService>(relaxed = true)
+    private val mealRepository = mockk<MealRepository> {
+        every { existsMealAfter(any(), any(), any()) } returns false
+    }
+    private val pushDeduplicationRepository = mockk<PushDeduplicationRepository> {
+        every { createSentMark(any(), any()) } returns true
+        every { deleteSentMarks(any()) } just Runs
+    }
+    private val notificationService = mockk<NotificationService> {
+        every { sendPushes(any()) } answers
+            { PushResult(firstArg<Map<String, PushMessage>>().size, emptyList(), emptyList()) }
+        every { deleteInvalidDeviceTokens(any()) } just Runs
+    }
     private val messageSource = createTestMessageSource()
 
     private val mealReminderService = MealReminderService(
@@ -42,31 +61,129 @@ class MealReminderServiceTest {
         messageSource = messageSource,
     )
 
-    private fun sendLunchReminders(vararg targets: MealReminderTargetResult): Map<String, PushMessage> {
-        every { profileRepository.findMealReminderTargets(LUNCH_HOUR) } returns targets.toList()
-        every { mealRepository.existsMealAfter(any(), any(), any()) } returns false
-        every { pushDeduplicationRepository.createSentMark(any(), any()) } returns true
-        val messagesByToken = slot<Map<String, PushMessage>>()
-        every { notificationService.sendPushes(capture(messagesByToken)) } returns PushResult(
-            targets.size,
-            emptyList(),
-            emptyList(),
+    private fun createTarget(userId: Long, token: String = "token-$userId", language: Language? = null) =
+        MealReminderTargetResult(
+            userId = userId,
+            catName = "냐미",
+            breakfastHour = 8,
+            lunchHour = LUNCH_HOUR,
+            dinnerHour = 19,
+            token = token,
+            language = language,
         )
+
+    private fun givenPage(cursor: Long, targets: List<MealReminderTargetResult>, hasNext: Boolean) {
+        val page: Slice<MealReminderTargetResult> = SliceImpl(targets, PageRequest.of(0, PAGE_SIZE), hasNext)
+        every { profileRepository.findMealReminderTargetsAfterCursor(LUNCH_HOUR, cursor, any()) } returns page
+    }
+
+    private fun givenUserIdPage(cursor: Long, userIds: List<Long>, hasNext: Boolean) =
+        givenPage(cursor, userIds.map { createTarget(it) }, hasNext)
+
+    private fun sendLunchReminders(vararg targets: MealReminderTargetResult): Map<String, PushMessage> {
+        givenPage(cursor = 0, targets.toList(), hasNext = false)
+        val messagesByToken = slot<Map<String, PushMessage>>()
+        every { notificationService.sendPushes(capture(messagesByToken)) } returns
+            PushResult(targets.size, emptyList(), emptyList())
 
         mealReminderService.sendMealReminders()
 
         return messagesByToken.captured
     }
 
-    private fun createTarget(userId: Long, token: String, language: Language?) = MealReminderTargetResult(
-        userId = userId,
-        catName = "냐미",
-        breakfastHour = 8,
-        lunchHour = LUNCH_HOUR,
-        dinnerHour = 19,
-        token = token,
-        language = language,
-    )
+    @Test
+    fun `다음 묶음이 있으면 직전 묶음의 마지막 userId를 커서로 다음 묶음을 조회한다`() {
+        givenUserIdPage(cursor = 0, listOf(1, 2), hasNext = true)
+        givenUserIdPage(cursor = 2, listOf(3), hasNext = false)
+
+        mealReminderService.sendMealReminders(LUNCH_HOUR)
+
+        verifyOrder {
+            profileRepository.findMealReminderTargetsAfterCursor(LUNCH_HOUR, 0, PageRequest.of(0, PAGE_SIZE))
+            profileRepository.findMealReminderTargetsAfterCursor(LUNCH_HOUR, 2, PageRequest.of(0, PAGE_SIZE))
+        }
+        verify(exactly = 2) { notificationService.sendPushes(any()) }
+    }
+
+    @Test
+    fun `다음 묶음이 없으면 더 조회하지 않는다`() {
+        givenUserIdPage(cursor = 0, listOf(1, 2), hasNext = false)
+
+        mealReminderService.sendMealReminders(LUNCH_HOUR)
+
+        verify(exactly = 1) { profileRepository.findMealReminderTargetsAfterCursor(any(), any(), any()) }
+    }
+
+    @Test
+    fun `최근 기록으로 걸러진 사용자가 묶음의 마지막이어도 그 userId를 커서로 다음 묶음을 조회한다`() {
+        givenUserIdPage(cursor = 0, listOf(1, 2), hasNext = true)
+        givenUserIdPage(cursor = 2, listOf(3), hasNext = false)
+        every { mealRepository.existsMealAfter(2, MealStatus.FAILED, any()) } returns true
+
+        mealReminderService.sendMealReminders(LUNCH_HOUR)
+
+        verify(exactly = 1) { profileRepository.findMealReminderTargetsAfterCursor(LUNCH_HOUR, 2, any()) }
+        verify { notificationService.sendPushes(match { it.keys == setOf("token-1") }) }
+    }
+
+    @Test
+    fun `최근 한 시간 안에 실패하지 않은 식사가 있는 사용자에게는 보내지 않는다`() {
+        // 지금은 12:00 KST(03:00Z)이고 한 시간 전은 02:00Z다. 실패한 식사만 빼고 본다.
+        val oneHourAgo = Instant.parse("2026-11-02T02:00:00Z")
+        every { mealRepository.existsMealAfter(1L, MealStatus.FAILED, oneHourAgo) } returns true
+
+        val messagesByToken = sendLunchReminders(
+            createTarget(1L, "recorded-token", Language.KO),
+            createTarget(2L, "not-recorded-token", Language.KO),
+        )
+
+        assertEquals(setOf("not-recorded-token"), messagesByToken.keys)
+    }
+
+    @Test
+    fun `무효 토큰 삭제와 재시도 표시 삭제를 묶음마다 한다`() {
+        givenUserIdPage(cursor = 0, listOf(1, 2), hasNext = true)
+        givenUserIdPage(cursor = 2, listOf(3), hasNext = false)
+        every { notificationService.sendPushes(match { "token-1" in it }) } returns
+            PushResult(successCount = 1, invalidTokens = listOf("token-1"), retryableTokens = emptyList())
+        every { notificationService.sendPushes(match { "token-3" in it }) } returns
+            PushResult(successCount = 0, invalidTokens = emptyList(), retryableTokens = listOf("token-3"))
+
+        mealReminderService.sendMealReminders(LUNCH_HOUR)
+
+        verifyOrder {
+            notificationService.deleteInvalidDeviceTokens(listOf("token-1"))
+            notificationService.deleteInvalidDeviceTokens(emptyList())
+        }
+        verify {
+            pushDeduplicationRepository.deleteSentMarks(
+                listOf(NotificationId.createMealReminderId(3, TODAY, MealTime.LUNCH)),
+            )
+        }
+    }
+
+    @Test
+    fun `이미 발송 표시가 있는 사용자는 보내지 않는다`() {
+        every {
+            pushDeduplicationRepository.createSentMark(
+                NotificationId.createMealReminderId(1, TODAY, MealTime.LUNCH),
+                any(),
+            )
+        } returns false
+
+        val messagesByToken = sendLunchReminders(createTarget(1), createTarget(2))
+
+        assertEquals(setOf("token-2"), messagesByToken.keys)
+    }
+
+    @Test
+    fun `대상이 없으면 발송하지 않는다`() {
+        givenUserIdPage(cursor = 0, emptyList<Long>(), hasNext = false)
+
+        mealReminderService.sendMealReminders(LUNCH_HOUR)
+
+        verify(exactly = 0) { notificationService.sendPushes(any()) }
+    }
 
     @Test
     fun `언어를 모르는 기기는 원본 언어로 지금까지와 같은 문구를 보낸다`() {
@@ -99,27 +216,9 @@ class MealReminderServiceTest {
         )
     }
 
-    @Test
-    fun `최근 한 시간 안에 실패하지 않은 식사가 있는 사용자에게는 보내지 않는다`() {
-        every { profileRepository.findMealReminderTargets(LUNCH_HOUR) } returns listOf(
-            createTarget(1L, "recorded-token", Language.KO),
-            createTarget(2L, "not-recorded-token", Language.KO),
-        )
-        // 지금은 12:00 KST(03:00Z)이고 한 시간 전은 02:00Z다. 실패한 식사만 빼고 본다.
-        val oneHourAgo = Instant.parse("2026-11-02T02:00:00Z")
-        every { mealRepository.existsMealAfter(1L, MealStatus.FAILED, oneHourAgo) } returns true
-        every { mealRepository.existsMealAfter(2L, MealStatus.FAILED, oneHourAgo) } returns false
-        every { pushDeduplicationRepository.createSentMark(any(), any()) } returns true
-        val messagesByToken = slot<Map<String, PushMessage>>()
-        every { notificationService.sendPushes(capture(messagesByToken)) } returns
-            PushResult(1, emptyList(), emptyList())
-
-        mealReminderService.sendMealReminders()
-
-        assertEquals(setOf("not-recorded-token"), messagesByToken.captured.keys)
-    }
-
     private companion object {
         const val LUNCH_HOUR = 12
+        const val PAGE_SIZE = 500
+        val TODAY: LocalDate = LocalDate.of(2026, 11, 2)
     }
 }

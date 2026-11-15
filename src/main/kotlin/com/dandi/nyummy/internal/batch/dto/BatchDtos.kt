@@ -22,6 +22,37 @@ data class MealReminderTargetResult(
     }
 }
 
+/**
+ * 식사 리마인더 발송 건수. 묶음마다 만들어 더한다.
+ *
+ * 토큰 목록 대신 건수만 담는다. 목록을 묶음 밖으로 넘기면 FCM 장애로 전부 재시도 대상이 될 때 대상 수만큼 쌓인다.
+ */
+data class MealReminderSendResult(
+    val targetCount: Int,
+    val sentCount: Int,
+    val successCount: Int,
+    val invalidCount: Int,
+    val retryableCount: Int,
+) {
+    operator fun plus(other: MealReminderSendResult): MealReminderSendResult = MealReminderSendResult(
+        targetCount = targetCount + other.targetCount,
+        sentCount = sentCount + other.sentCount,
+        successCount = successCount + other.successCount,
+        invalidCount = invalidCount + other.invalidCount,
+        retryableCount = retryableCount + other.retryableCount,
+    )
+
+    companion object {
+        val EMPTY = MealReminderSendResult(
+            targetCount = 0,
+            sentCount = 0,
+            successCount = 0,
+            invalidCount = 0,
+            retryableCount = 0,
+        )
+    }
+}
+
 /** @property language 기기 앱 언어. V0.53 전에 등록한 기기 토큰은 null이고, 원본 언어로 보낸다. */
 data class RetentionTargetResult(
     val userId: Long,
