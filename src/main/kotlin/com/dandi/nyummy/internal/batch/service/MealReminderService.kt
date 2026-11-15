@@ -3,6 +3,8 @@ package com.dandi.nyummy.internal.batch.service
 import com.dandi.nyummy.config.AppLinkProperties
 import com.dandi.nyummy.infra.push.dto.PushMessage
 import com.dandi.nyummy.infra.push.dto.PushType
+import com.dandi.nyummy.internal.batch.dto.MealReminderSendResult
+import com.dandi.nyummy.internal.batch.dto.MealReminderTargetResult
 import com.dandi.nyummy.internal.batch.repository.PushDeduplicationRepository
 import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.language.getMessage
@@ -13,6 +15,7 @@ import com.dandi.nyummy.notification.service.NotificationService
 import com.dandi.nyummy.user.repository.ProfileRepository
 import org.slf4j.LoggerFactory
 import org.springframework.context.MessageSource
+import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
 import java.time.Clock
 import java.time.Duration
@@ -37,6 +40,9 @@ class MealReminderService(
         // TODO: 사용자별 timezone으로 수정
         private val ZONE = ZoneId.of("Asia/Seoul")
         private val DEDUPLICATION_TIME_TO_LIVE = Duration.ofHours(25)
+
+        // 한 묶음의 대상 수. FCM sendEach 상한(500)과 같아 한 묶음이 FCM 호출 한 번이 된다
+        private const val PAGE_SIZE = 500
         private val logger = LoggerFactory.getLogger(MealReminderService::class.java)
     }
 
@@ -63,17 +69,57 @@ class MealReminderService(
         val today = LocalDate.now(zonedClock)
         val oneHourAgo = Instant.now(clock).minus(1, ChronoUnit.HOURS)
 
+        // 대상을 한꺼번에 올리지 않고 user_id 커서로 묶음씩 보낸다. 메모리가 대상 수와 무관하게 묶음 하나로 고정된다.
+        var cursor = 0L
+        var total = MealReminderSendResult.EMPTY
+
+        do {
+            val page = profileRepository.findMealReminderTargetsAfterCursor(
+                hour = targetHour,
+                cursor = cursor,
+                pageable = PageRequest.of(0, PAGE_SIZE),
+            )
+
+            if (!page.hasContent()) {
+                break
+            }
+
+            // 거르기 전 마지막 행으로 넘어간다. 걸러진 사용자가 마지막이어도 같은 묶음을 다시 읽지 않는다
+            cursor = page.content.last().userId
+            total += sendMealReminderPage(page.content, targetHour, today, oneHourAgo)
+        } while (page.hasNext())
+
+        if (total.targetCount == 0) {
+            logger.info("식사 리마인더 대상 없음: hour={}, elapsed={}ms", targetHour, startedAt.elapsedNow().inWholeMilliseconds)
+            return
+        }
+
+        logger.info(
+            "식사 리마인더 발송: hour={}, target={}, sent={}, success={}, invalid={}, retryable={}, elapsed={}ms",
+            targetHour,
+            total.targetCount,
+            total.sentCount,
+            total.successCount,
+            total.invalidCount,
+            total.retryableCount,
+            startedAt.elapsedNow().inWholeMilliseconds,
+        )
+    }
+
+    /**
+     * 한 묶음을 보낸다. 무효 토큰 삭제와 재시도 표시 삭제까지 묶음 안에서 끝내고 건수만 돌려준다.
+     */
+    private fun sendMealReminderPage(
+        page: List<MealReminderTargetResult>,
+        targetHour: Int,
+        today: LocalDate,
+        oneHourAgo: Instant,
+    ): MealReminderSendResult {
         // 최근 한 시간 안에 음식을 기록했으면 리마인드하지 않는다. 영양 계산이 끝났는지는 보지 않는다.
         // 알림의 뜻이 "아직 안 찍었으면 찍어라"라, 인식 중이거나 계산을 기다리는 식사도 기록한 것으로 본다.
         // 실패한 식사만 뺀다. 음식이 아닌 사진만 올린 사용자는 아직 기록하지 않은 것이다.
-        val targets = profileRepository.findMealReminderTargets(targetHour)
-            .filterNot {
-                mealRepository.existsMealAfter(it.userId, MealStatus.FAILED, oneHourAgo)
-            }
-
-        if (targets.isEmpty()) {
-            logger.info("식사 리마인더 대상 없음: hour={}, elapsed={}ms", targetHour, startedAt.elapsedNow().inWholeMilliseconds)
-            return
+        val targets = page.filterNot {
+            mealRepository.existsMealAfter(it.userId, MealStatus.FAILED, oneHourAgo)
         }
 
         val messagesByToken = targets.mapNotNull { target ->
@@ -103,15 +149,12 @@ class MealReminderService(
         notificationService.deleteInvalidDeviceTokens(result.invalidTokens)
         pushDeduplicationRepository.deleteSentMarks(result.getRetryableNotificationIds(messagesByToken))
 
-        logger.info(
-            "식사 리마인더 발송: hour={}, target={}, sent={}, success={}, invalid={}, retryable={}, elapsed={}ms",
-            targetHour,
-            targets.size,
-            messagesByToken.size,
-            result.successCount,
-            result.invalidTokens.size,
-            result.retryableTokens.size,
-            startedAt.elapsedNow().inWholeMilliseconds,
+        return MealReminderSendResult(
+            targetCount = targets.size,
+            sentCount = messagesByToken.size,
+            successCount = result.successCount,
+            invalidCount = result.invalidTokens.size,
+            retryableCount = result.retryableTokens.size,
         )
     }
 }
