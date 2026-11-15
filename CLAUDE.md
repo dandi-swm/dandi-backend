@@ -110,6 +110,12 @@
 - 비관적 잠금 조회 `~WithLock~`(`findProfileWithLockByUserId`, ForUpdate·Locked 금지)
 - E2E: 테스트 클래스 `~E2eTest`(source set `e2eTest`), 공유 준비 상태 `Fixture`(Setup·Helper 금지), 남의 리소스를 확인하는 두 번째 계정 `Other`(Second·Another·Stranger 금지), REST Assured 요청 명세 `Spec`(Template·Builder 금지), prod 전환 전 최소 시나리오 `Smoke`(Sanity 금지)
 
+### 언어
+
+- 앱이 화면에 쓰는 언어 `Language`(패키지 language, 헤더 `X-Language`, 컨트롤러 파라미터 주입 `@CurrentLanguage`, Lang·Locale 금지 — `java.util.Locale`은 `MessageSource`에 넘길 때 `toLocale()`로만 만든다)
+- 모든 문구의 원본 언어 `ORIGINAL_LANGUAGE`와 지원하지 않는 언어일 때 쓰는 대체 언어 `FALLBACK_LANGUAGE` — 서로 다른 언어라 둘 다 Default·Base로 부르지 않는다
+- 운영자가 입력한 문구의 번역 `Translation`(필드 `~Translations`·컬럼 `~_translations`, 고르기 `pickTranslation`, I18n·Localized 금지) — 서버 고정 문구 파일(`messages*.properties`)의 문구와 다른 것
+
 ### 사용자·인증
 
 - 사용자 `User`, 신체·개인 정보 `Profile`, 성별 `Gender`, 본인 리소스 `Me`(`/users/me`, `getMe`)
