@@ -279,6 +279,14 @@ class GeminiMealRecognitionClientTest {
     }
 
     @Test
+    fun `식사 전체의 값으로 적힌 숫자는 어느 음식에도 적지 말고, 음식이 하나면 그 음식의 값으로 적으라고 지시한다`() {
+        val prompt = capturePrompt(Language.KO)
+
+        assertContains(prompt, "식사 전체의 값은 어느 음식에도 적지 말고")
+        assertContains(prompt, "음식이 하나뿐이면 적혀 있는 값이 그 음식의 값이니 그대로 적어")
+    }
+
+    @Test
     fun `한국어 요청에는 출력 언어 지시를 덧붙이지 않는다`() {
         assertFalse(capturePrompt(Language.KO).contains("[출력 언어]"))
     }
