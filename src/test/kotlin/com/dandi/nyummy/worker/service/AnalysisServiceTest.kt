@@ -23,6 +23,9 @@ import com.dandi.nyummy.meal.dto.MealFoodRecognitionResult
 import com.dandi.nyummy.meal.dto.MealRecognitionResult
 import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.dto.NutritionAnalysisResult
+import com.dandi.nyummy.meal.dto.NutritionHint
+import com.dandi.nyummy.meal.dto.PhotoServingNutritionInput
+import com.dandi.nyummy.meal.dto.PhotoServingNutritionResult
 import com.dandi.nyummy.meal.dto.ServingNutrition
 import com.dandi.nyummy.meal.dto.ServingNutritionResult
 import com.dandi.nyummy.meal.entity.MealFood
@@ -605,7 +608,11 @@ class AnalysisServiceTest {
         fat = BigDecimal(fat),
     )
 
-    /** 불고기 1.5인분(id 101)과 잡곡밥 1인분(id 102). 1인분과 아이콘은 인자로 준 값만 이미 저장돼 있다. */
+    /**
+     * 불고기 1.5인분(id 101)과 잡곡밥 1인분(id 102). 1인분과 아이콘은 인자로 준 값만 이미 저장돼 있다.
+     *
+     * @param isRecognized 인식이 사진에서 찾은 줄인지. 기본은 사용자가 더한 줄이라 이름만으로 구한다
+     */
     private fun createAnalysisMeal(
         bulgogiServingNutrition: ServingNutrition? = null,
         bulgogiIconId: Long? = null,
@@ -614,14 +621,32 @@ class AnalysisServiceTest {
         hasCatComment: Boolean = false,
         inputCategory: MealInputCategory = MealInputCategory.FOOD_PHOTO,
         bulgogiPortion: BigDecimal? = BigDecimal("1.5"),
+        isRecognized: Boolean = false,
+        bulgogiNutritionHint: NutritionHint? = null,
     ) = AnalysisMealResult(
         userId = userId,
         mealAt = mealAt,
         inputCategory = inputCategory,
         hasCatComment = hasCatComment,
         mealFoods = listOf(
-            AnalysisMealFoodResult(101L, "불고기", bulgogiPortion, bulgogiServingNutrition, bulgogiIconId),
-            AnalysisMealFoodResult(102L, "잡곡밥", BigDecimal("1.0"), riceServingNutrition, riceIconId),
+            AnalysisMealFoodResult(
+                mealFoodId = 101L,
+                name = "불고기",
+                portion = bulgogiPortion,
+                servingNutrition = bulgogiServingNutrition,
+                iconId = bulgogiIconId,
+                nutritionHint = bulgogiNutritionHint,
+                isRecognized = isRecognized,
+            ),
+            AnalysisMealFoodResult(
+                102L,
+                "잡곡밥",
+                BigDecimal("1.0"),
+                riceServingNutrition,
+                riceIconId,
+                null,
+                isRecognized,
+            ),
         ),
     )
 
@@ -663,9 +688,224 @@ class AnalysisServiceTest {
                 "든든하게 먹었다냥",
             )
         }
-        // 영양 작업은 사진을 다시 보지 않는다.
+        // 이름만으로 구하는 줄은 사진을 받지 않는다.
         verify(exactly = 0) { nutritionAnalysisClient.analyzeNutrition(any(), any()) }
         verify(exactly = 0) { analysisImageClient.downloadImage(any()) }
+    }
+
+    // 영양 작업: 사진을 함께 보내 구하는 줄
+
+    private fun givenPhotoServingNutritions(
+        foods: List<PhotoServingNutritionInput>,
+        results: List<ServingNutritionResult>,
+        totalNutritionHint: NutritionHint? = null,
+    ) {
+        givenImage(nutritionJob)
+        every { servingNutritionClient.getPhotoServingNutritions(imageBytes, "image/jpeg", foods) } returns
+            PhotoServingNutritionResult(results, totalNutritionHint)
+    }
+
+    @Test
+    fun `음식 사진 식사에서 인식한 줄은 사진을 함께 보내 구하고 구한 인분을 결과에 싣는다`() {
+        givenAnalysisMeal(createAnalysisMeal(isRecognized = true, bulgogiPortion = null))
+        givenPhotoServingNutritions(
+            listOf(PhotoServingNutritionInput("불고기"), PhotoServingNutritionInput("잡곡밥")),
+            listOf(
+                ServingNutritionResult(bulgogiServingNutrition, 12L, BigDecimal("2.0")),
+                ServingNutritionResult(riceServingNutrition, 5L, BigDecimal("1.0")),
+            ),
+        )
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        verify(exactly = 1) {
+            mealAnalysisJobTransactionService.confirmMealNutrition(
+                nutritionJob,
+                mapOf(
+                    101L to ServingNutritionResult(bulgogiServingNutrition, 12L, BigDecimal("2.0")),
+                    102L to ServingNutritionResult(riceServingNutrition, 5L, BigDecimal("1.0")),
+                ),
+                any(),
+            )
+        }
+        verify(exactly = 0) { servingNutritionClient.getServingNutritions(any(), any()) }
+    }
+
+    @Test
+    fun `코멘트의 줄 영양은 비어 있던 인분에 사진으로 구한 인분을 넣어 계산한다`() {
+        givenAnalysisMeal(createAnalysisMeal(isRecognized = true, bulgogiPortion = null))
+        givenPhotoServingNutritions(
+            listOf(PhotoServingNutritionInput("불고기"), PhotoServingNutritionInput("잡곡밥")),
+            listOf(
+                ServingNutritionResult(bulgogiServingNutrition, 12L, BigDecimal("2.0")),
+                // 잡곡밥은 인분이 이미 1.0이라 조회 결과의 인분(3.0)을 쓰지 않는다.
+                ServingNutritionResult(riceServingNutrition, 5L, BigDecimal("3.0")),
+            ),
+        )
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        verify(exactly = 1) {
+            catService.createCatComment(
+                userId = userId,
+                mealAt = mealAt,
+                mealFoods = listOf(
+                    // 350 × 2.0 = 700, 15.5 × 2 = 31, 25.25 × 2 = 50.5 → 51, 20 × 2 = 40
+                    CatCommentMealFoodInput("불고기", BigDecimal("2.0"), Nutrition(700, 31, 51, 40)),
+                    CatCommentMealFoodInput("잡곡밥", BigDecimal("1.0"), Nutrition(300, 65, 6, 1)),
+                ),
+                nutrition = Nutrition(calory = 1000, carbs = 96, protein = 57, fat = 41),
+                language = nutritionJob.language,
+            )
+        }
+    }
+
+    @Test
+    fun `음식 사진 식사여도 사용자가 더한 줄은 이름만으로 구하고 사진을 받지 않는다`() {
+        givenAnalysisMeal(createAnalysisMeal(isRecognized = false))
+        givenServingNutritions(
+            listOf("불고기", "잡곡밥"),
+            listOf(
+                ServingNutritionResult(bulgogiServingNutrition, 12L),
+                ServingNutritionResult(riceServingNutrition, 5L),
+            ),
+        )
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        verify(exactly = 0) { servingNutritionClient.getPhotoServingNutritions(any(), any(), any()) }
+        verify(exactly = 0) { analysisImageClient.downloadImage(any()) }
+    }
+
+    @Test
+    fun `음식 사진이 아닌 유형은 인식한 줄이어도 이름만으로 구한다`() {
+        listOf(MealInputCategory.TEXT_RECORD, MealInputCategory.ILLUSTRATION, MealInputCategory.PACKAGE)
+            .forEach { inputCategory ->
+                givenAnalysisMeal(createAnalysisMeal(isRecognized = true, inputCategory = inputCategory))
+                givenServingNutritions(
+                    listOf("불고기", "잡곡밥"),
+                    listOf(
+                        ServingNutritionResult(bulgogiServingNutrition, 12L),
+                        ServingNutritionResult(riceServingNutrition, 5L),
+                    ),
+                    inputCategory,
+                )
+
+                analysisService.analyzeMealAnalysisJob(nutritionJob)
+            }
+
+        verify(exactly = 0) { servingNutritionClient.getPhotoServingNutritions(any(), any(), any()) }
+    }
+
+    @Test
+    fun `사진에 식사 전체의 값이 적혀 있으면 인식한 줄들의 합이 그 값과 같아지게 1인분을 맞춘다`() {
+        // 불고기 350 × 1.5 + 잡곡밥 300 × 1.0 = 825kcal → 적힌 660kcal(0.8배)
+        givenAnalysisMeal(createAnalysisMeal(isRecognized = true))
+        givenPhotoServingNutritions(
+            listOf(PhotoServingNutritionInput("불고기"), PhotoServingNutritionInput("잡곡밥")),
+            listOf(
+                ServingNutritionResult(bulgogiServingNutrition, 12L, BigDecimal("1.0")),
+                ServingNutritionResult(riceServingNutrition, 5L, BigDecimal("1.0")),
+            ),
+            totalNutritionHint = NutritionHint(calory = BigDecimal("660.00")),
+        )
+        val servingNutritions = slot<Map<Long, ServingNutritionResult>>()
+        every {
+            mealAnalysisJobTransactionService.confirmMealNutrition(any(), capture(servingNutritions), any())
+        } returns createPushResult(MealStatus.COMPLETED)
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        // 칼로리만 적혀 있었으므로 칼로리만 맞춘다. 음식별 비율은 구한 값 그대로다.
+        assertEquals(BigDecimal("280.00"), servingNutritions.captured.getValue(101L).servingNutrition.calory)
+        assertEquals(BigDecimal("240.00"), servingNutritions.captured.getValue(102L).servingNutrition.calory)
+        assertEquals(BigDecimal("15.50"), servingNutritions.captured.getValue(101L).servingNutrition.carbs)
+    }
+
+    @Test
+    fun `인식한 줄 가운데 일부만 다시 구할 때는 식사 전체의 값에 맞추지 않는다`() {
+        // 계산이 끝난 식사에서 불고기의 이름만 고쳐 그 줄만 다시 구한다. 잡곡밥은 값이 다 있다.
+        givenAnalysisMeal(
+            createAnalysisMeal(isRecognized = true, riceServingNutrition = riceServingNutrition, riceIconId = 5L),
+        )
+        givenPhotoServingNutritions(
+            listOf(PhotoServingNutritionInput("불고기")),
+            listOf(ServingNutritionResult(bulgogiServingNutrition, 12L, BigDecimal("1.0"))),
+            totalNutritionHint = NutritionHint(calory = BigDecimal("660.00")),
+        )
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        verify(exactly = 1) {
+            mealAnalysisJobTransactionService.confirmMealNutrition(
+                nutritionJob,
+                mapOf(101L to ServingNutritionResult(bulgogiServingNutrition, 12L, BigDecimal("1.0"))),
+                any(),
+            )
+        }
+    }
+
+    @Test
+    fun `사진에 일부 값이 적혀 있던 인식한 줄은 그 값을 사진 조회에 함께 넘긴다`() {
+        val nutritionHint = NutritionHint(calory = BigDecimal("780.00"))
+        givenAnalysisMeal(createAnalysisMeal(isRecognized = true, bulgogiNutritionHint = nutritionHint))
+        givenPhotoServingNutritions(
+            listOf(PhotoServingNutritionInput("불고기", nutritionHint), PhotoServingNutritionInput("잡곡밥")),
+            listOf(
+                ServingNutritionResult(bulgogiServingNutrition, 12L, BigDecimal("1.0")),
+                ServingNutritionResult(riceServingNutrition, 5L, BigDecimal("1.0")),
+            ),
+        )
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        verify(exactly = 1) { mealAnalysisJobTransactionService.confirmMealNutrition(nutritionJob, any(), any()) }
+    }
+
+    @Test
+    fun `이름만으로 구하는 줄에 칼로리가 적혀 있었으면 구한 값을 그 칼로리에 맞춘다`() {
+        // 글씨 유형: 메뉴판에 280kcal만 적혀 있던 불고기. 구한 350kcal의 0.8배로 맞춘다.
+        givenAnalysisMeal(
+            createAnalysisMeal(
+                inputCategory = MealInputCategory.TEXT_RECORD,
+                isRecognized = true,
+                bulgogiNutritionHint = NutritionHint(calory = BigDecimal("280.00")),
+            ),
+        )
+        givenServingNutritions(
+            listOf("불고기", "잡곡밥"),
+            listOf(
+                ServingNutritionResult(bulgogiServingNutrition, 12L),
+                ServingNutritionResult(riceServingNutrition, 5L),
+            ),
+            MealInputCategory.TEXT_RECORD,
+        )
+        val servingNutritions = slot<Map<Long, ServingNutritionResult>>()
+        every {
+            mealAnalysisJobTransactionService.confirmMealNutrition(any(), capture(servingNutritions), any())
+        } returns createPushResult(MealStatus.COMPLETED)
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        // 15.5 × 0.8 = 12.40, 25.25 × 0.8 = 20.20, 20 × 0.8 = 16.00
+        assertEquals(
+            createServingNutrition("280.00", "12.40", "20.20", "16.00"),
+            servingNutritions.captured.getValue(101L).servingNutrition,
+        )
+        assertEquals(riceServingNutrition, servingNutritions.captured.getValue(102L).servingNutrition)
+    }
+
+    @Test
+    fun `사진을 함께 보낼 줄이 있는데 사진의 콘텐츠 타입이 없으면 FAILED로 끝낸다`() {
+        givenAnalysisMeal(createAnalysisMeal(isRecognized = true))
+        givenImage(nutritionJob, contentType = null)
+        every { mealAnalysisJobTransactionService.failMealAnalysis(nutritionJob) } returns
+            createPushResult(MealStatus.FAILED)
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        verify(exactly = 1) { mealAnalysisJobTransactionService.failMealAnalysis(nutritionJob) }
+        verify(exactly = 0) { servingNutritionClient.getPhotoServingNutritions(any(), any(), any()) }
     }
 
     @Test
