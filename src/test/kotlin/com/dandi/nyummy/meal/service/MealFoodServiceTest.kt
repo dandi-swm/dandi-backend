@@ -298,10 +298,10 @@ class MealFoodServiceTest {
     private fun createRequest(
         mealFoodId: Long?,
         name: String,
-        portion: String = "1.0",
+        portion: String? = "1.0",
         nutrition: MealFoodNutritionRequest? = null,
         iconId: Long? = null,
-    ) = MealFoodRequest(mealFoodId, name, BigDecimal(portion), nutrition, iconId)
+    ) = MealFoodRequest(mealFoodId, name, portion?.let(::BigDecimal), nutrition, iconId)
 
     @Test
     fun `받은 순서대로 순서를 다시 매기고 맨 앞이 대표 음식이 된다`() {
@@ -430,6 +430,53 @@ class MealFoodServiceTest {
         assertEquals(BigDecimal("0.5"), kimchi.portion)
         assertNull(kimchi.servingNutrition)
         assertNull(kimchi.iconId)
+    }
+
+    @Test
+    fun `인분을 생략한 기존 줄은 인분을 그대로 둔다`() {
+        val bulgogi =
+            createMealFood(displayOrder = 1, name = "불고기", servingNutrition = oldServingNutrition, iconId = 12L)
+                .apply { updatePortion(BigDecimal("1.5")) }
+        givenMealFoodsToUpdate(bulgogi)
+
+        mealFoodService.updateMealFoods(mealId, listOf(createRequest(1L, "불고기", portion = null)))
+
+        assertEquals(BigDecimal("1.5"), bulgogi.portion)
+        assertEquals(oldServingNutrition, bulgogi.servingNutrition)
+    }
+
+    @Test
+    fun `인분을 생략한 새 줄은 인분을 비워 둔다`() {
+        givenMealFoodsToUpdate()
+
+        val mealFoods = mealFoodService.updateMealFoods(mealId, listOf(createRequest(null, "김치", portion = null)))
+
+        assertNull(mealFoods.single().portion)
+    }
+
+    @Test
+    fun `인분을 생략한 새 줄에 영양을 채우면 인분을 1로 두고 그 값을 그대로 1인분으로 저장해 고정한다`() {
+        givenMealFoodsToUpdate()
+
+        val mealFoods = mealFoodService.updateMealFoods(
+            mealId,
+            listOf(
+                createRequest(
+                    mealFoodId = null,
+                    name = "김치",
+                    portion = null,
+                    nutrition = MealFoodNutritionRequest(calory = 15, carbs = 3, protein = 1, fat = 0),
+                ),
+            ),
+        )
+
+        val kimchi = mealFoods.single()
+        assertEquals(MealFood.DEFAULT_PORTION, kimchi.portion)
+        assertEquals(
+            ServingNutrition(BigDecimal("15.00"), BigDecimal("3.00"), BigDecimal("1.00"), BigDecimal("0.00")),
+            kimchi.servingNutrition,
+        )
+        assertTrue(kimchi.isNutritionFixed)
     }
 
     @Test

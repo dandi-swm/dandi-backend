@@ -193,6 +193,21 @@ Authorization: Bearer {{accessToken}}
   ]
 }
 
+### 음식 목록 보내기 API v2 (인분 생략)
+# portion은 생략할 수 있다. 생략한 기존 줄은 인분을 그대로 두고, 새 줄은 인분을 비워 두어 영양을 계산할 때 채운다(1.0).
+# 인분이 빈 줄이 있으면 응답의 status는 WAITING이다. 계산이 끝난 뒤 단건을 조회하면 새 줄의 portion이 채워져 있다.
+PUT {{url}}/api/v2/meals/{{mealIdV2}}/foods
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "foods": [
+    { "mealFoodId": {{mealFoodId1}}, "name": "불고기" },
+    { "mealFoodId": {{mealFoodId2}}, "name": "잡곡밥" },
+    { "mealFoodId": null, "name": "김치" }
+  ]
+}
+
 ### 음식 목록 보내기 API v2 (이름·인분 고치기, 줄 추가, 순서 바꾸기)
 # 맨 위 줄이 대표 음식이고 그 줄의 아이콘이 식사 아이콘이 된다. 이름을 바꾼 줄은 영양과 아이콘을 다시 구한다.
 # mealFoodId가 null인 줄은 새 줄이다. 요청에 없는 기존 줄은 지워진다.

@@ -80,6 +80,7 @@ class MealFoodService(
      * - [MealFoodRequest.mealFoodId]가 있으면 그 줄을 고치고, 없으면 새 줄을 만든다. 요청에 없는 기존 줄은 지운다.
      * - 이름이 바뀐 줄은 고정하지 않은 1인분 영양과 아이콘을 비운다([MealFood.updateName]). Worker가 새 이름으로 다시 구한다.
      * - 인분만 바뀐 줄은 1인분 영양을 그대로 둔다. 줄 영양은 1인분 × 새 인분이 된다.
+     * - 인분을 생략한 줄은 있는 줄이면 인분을 그대로 두고, 새 줄이면 비워 둔다. 빈 인분은 영양을 계산할 때 채운다.
      * - [MealFoodRequest.nutrition]을 채운 줄은 그 값을 인분으로 나눠 1인분으로 저장하고 고정한다([updateFixedNutrition]).
      * - [MealFoodRequest.iconId]를 채운 줄은 그 아이콘으로 고정한다.
      *
@@ -117,7 +118,7 @@ class MealFoodService(
                 )
             mealFood.updateDisplayOrder(index + 1)
             mealFood.updateName(request.name)
-            mealFood.updatePortion(request.portion)
+            request.portion?.let { mealFood.updatePortion(it) }
             request.nutrition?.let { updateFixedNutrition(mealFood, it.toNutrition()) }
             request.iconId?.let { mealFood.updateFixedIconId(it) }
 

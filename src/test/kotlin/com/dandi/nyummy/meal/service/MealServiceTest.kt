@@ -1260,6 +1260,22 @@ class MealServiceTest {
     }
 
     @Test
+    fun `인분을 생략한 줄은 0_5 단위 검사를 하지 않고 받은 그대로 음식 줄을 바꾸게 한다`() {
+        val request = UpdateMealFoodsRequest(
+            foods = listOf(
+                MealFoodRequest(mealFoodId = 1L, name = "불고기"),
+                MealFoodRequest(mealFoodId = null, name = "김치", portion = BigDecimal("0.5")),
+            ),
+        )
+        val meal = createMealV2(MealStatus.CONFIRMING)
+        givenMealToUpdate(meal)
+
+        mealService.updateMealFoodsV2(userId, mealId, request, Language.KO)
+
+        verify(exactly = 1) { mealFoodService.updateMealFoods(meal.id, request.foods) }
+    }
+
+    @Test
     fun `인분이 0_5 단위가 아니면 아무것도 잠그기 전에 INVALID_INPUT_VALUE로 거절한다`() {
         val request = UpdateMealFoodsRequest(
             foods = listOf(MealFoodRequest(mealFoodId = 1L, name = "불고기", portion = BigDecimal("1.3"))),
