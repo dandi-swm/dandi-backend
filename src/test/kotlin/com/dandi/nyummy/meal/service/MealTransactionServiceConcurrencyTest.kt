@@ -6,6 +6,7 @@ import com.dandi.nyummy.exception.errorcode.MealErrorCode
 import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.mail.enum.RewardBoxCategory
 import com.dandi.nyummy.mail.repository.MailRepository
+import com.dandi.nyummy.meal.config.MealProperties
 import com.dandi.nyummy.meal.dto.RewardBoxResult
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.enum.MealStatus
@@ -49,6 +50,7 @@ class MealTransactionServiceConcurrencyTest @Autowired constructor(
     private val mealRepository: MealRepository,
     private val mailRepository: MailRepository,
     private val streakRepository: StreakRepository,
+    private val mealProperties: MealProperties,
     private val clock: Clock,
 ) {
     companion object {
@@ -60,8 +62,8 @@ class MealTransactionServiceConcurrencyTest @Autowired constructor(
             .withUsername("test")
             .withPassword("test")
 
-        private const val EXISTING_MEAL_COUNT = 4
         private const val REQUEST_COUNT = 10
+        private const val EXPECTED_SUCCESS_COUNT = 6
         private val MEAL_ZONE: ZoneId = ZoneId.of("Asia/Seoul")
     }
 
@@ -70,7 +72,9 @@ class MealTransactionServiceConcurrencyTest @Autowired constructor(
         val userId = userRepository.save(User(provider = AuthProvider.EMAIL, email = "concurrency@nyummy.co.kr")).id
         profileRepository.save(Profile(userId = userId))
         val now = Instant.now(clock)
-        repeat(EXISTING_MEAL_COUNT) { index ->
+        // 상한에서 EXPECTED_SUCCESS_COUNT만큼 남겨 두고 시작해야 동시 요청 일부만 통과하는지 볼 수 있다.
+        val existingMealCount = mealProperties.maxDailyCount - EXPECTED_SUCCESS_COUNT
+        repeat(existingMealCount) { index ->
             mealRepository.save(createMeal(userId, "existing-$index", now))
         }
         // 오늘 이미 기록한 사용자라 연속 기록 행도 있다. 행이 없으면 첫 행 INSERT끼리 uk_streaks_user_id에 걸려
@@ -103,9 +107,9 @@ class MealTransactionServiceConcurrencyTest @Autowired constructor(
         val rewardBoxMailCount = mailRepository.findAll().count { it.userId == userId }
         val summary = "성공 ${successCount}건, 오늘 식사 ${todayAttempts}건, 상자 우편 ${rewardBoxMailCount}건"
 
-        assertEquals(6, successCount, summary)
-        assertEquals(10L, todayAttempts, summary)
-        assertEquals(6, rewardBoxMailCount, summary)
+        assertEquals(EXPECTED_SUCCESS_COUNT, successCount, summary)
+        assertEquals(mealProperties.maxDailyCount.toLong(), todayAttempts, summary)
+        assertEquals(EXPECTED_SUCCESS_COUNT, rewardBoxMailCount, summary)
         assertEquals(1, streakRepository.findByUserId(userId)?.streakDays, summary)
         results.mapNotNull { it.exceptionOrNull() }.forEach { failure ->
             assertEquals(MealErrorCode.DAILY_COUNT_EXCEEDED, (failure as BusinessException).errorCode, summary)
