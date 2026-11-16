@@ -216,6 +216,9 @@ class AnalysisService(
      * 사진에 식사 전체의 값이 적혀 있으면 줄들의 합이 그 값과 같아지게 1인분을 맞춘다
      * ([calculateTotalAdjustedServingNutritions]). 식사에서 인식한 줄을 이번에 모두 구할 때만 맞춘다.
      * 일부 줄만 다시 구할 때(계산이 끝난 식사에서 한 줄의 이름을 고친 경우)는 그 줄만 전체 값에 맞출 수 없어 구한 값 그대로 쓴다.
+     *
+     * 여기서 구한 값은 음식 이름으로 저장하지 않고, 저장해 둔 값을 찾지도 않는다. 그 사진 속 음식의 재료와 양을 보고 구한 값이라
+     * 같은 이름의 다른 음식에 다시 쓸 수 없고, 인분은 사진을 봐야 구할 수 있다.
      */
     private fun getPhotoServingNutritions(
         job: MealAnalysisJobResult,

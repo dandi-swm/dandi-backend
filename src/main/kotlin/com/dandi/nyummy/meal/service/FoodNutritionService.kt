@@ -46,7 +46,7 @@ class FoodNutritionService(
      * - 칼로리가 탄단지로 계산한 칼로리와 허용 오차를 넘게 다른 값
      *
      * @param name 음식 이름. 다듬어서 저장한다
-     * @param result 그 이름으로 모델이 구한 값. 사진에 적혀 있던 값이나 식사 전체 값에 맞춘 값은 넘기지 않는다
+     * @param result 이름만으로 모델이 구한 값. 사진을 보고 구한 값과 사진에 적혀 있던 값은 그 식사의 값이라 넘기지 않는다
      */
     fun createFoodNutrition(name: String, result: ServingNutritionResult) {
         if (!result.isFood) {

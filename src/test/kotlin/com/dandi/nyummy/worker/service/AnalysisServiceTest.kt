@@ -804,6 +804,24 @@ class AnalysisServiceTest {
     }
 
     @Test
+    fun `사진을 함께 보내 구한 값은 음식 이름으로 저장하지 않고 저장해 둔 값을 찾지도 않는다`() {
+        // 그 사진 속 음식을 보고 구한 값이라 같은 이름의 다른 음식에 다시 쓰지 않는다.
+        givenAnalysisMeal(createAnalysisMeal(isRecognized = true, bulgogiPortion = null))
+        givenPhotoServingNutritions(
+            listOf(PhotoServingNutritionInput("불고기"), PhotoServingNutritionInput("잡곡밥")),
+            listOf(
+                ServingNutritionResult(bulgogiServingNutrition, 12L, BigDecimal("2.0")),
+                ServingNutritionResult(riceServingNutrition, 5L, BigDecimal("1.0")),
+            ),
+        )
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        verify(exactly = 0) { foodNutritionService.createFoodNutrition(any(), any()) }
+        verify(exactly = 0) { foodNutritionService.getFoodNutrition(any()) }
+    }
+
+    @Test
     fun `사진에 식사 전체의 값이 적혀 있으면 인식한 줄들의 합이 그 값과 같아지게 1인분을 맞춘다`() {
         // 불고기 350 × 1.5 + 잡곡밥 300 × 1.0 = 825kcal → 적힌 660kcal(0.8배)
         givenAnalysisMeal(createAnalysisMeal(isRecognized = true))
