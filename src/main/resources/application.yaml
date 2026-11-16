@@ -271,6 +271,9 @@ app:
     recognition-model: "gemini-3.5-flash-lite"
     # 식사 인식 v2에서 음식 이름마다 1인분 영양과 아이콘을 구하는 데 쓰는 모델. 글만 넣는 호출이고 Worker가 부른다.
     serving-nutrition-model: "gemini-3.5-flash-lite"
+    # 식사 인식 v2에서 음식 사진을 함께 보내 음식마다 1인분 영양·인분·아이콘을 구하는 데 쓰는 모델. Worker가 부르고 응답 기한이 없다.
+    # 1인분 조회와 따로 두는 것은 사진을 보는 호출만 모델을 바꿔 비교할 수 있게 하려는 것이다.
+    photo-nutrition-model: "gemini-3.5-flash-lite"
     # 식사 인식 v2에서 영양 계산이 처음 끝났을 때 고양이 코멘트를 쓰는 모델. 글만 넣는 호출이고 Worker가 부른다.
     cat-comment-model: "gemini-3.5-flash-lite"
     base-url: "https://aiplatform.googleapis.com"
