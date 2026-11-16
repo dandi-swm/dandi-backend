@@ -17,6 +17,11 @@ spring:
         # 행 잠금을 기다리는 시간. 기본 50초면 그동안 커넥션을 붙잡고 앱 요청도 먼저 끊긴다.
         # JPA 힌트(jakarta.persistence.lock.timeout)는 MySQL에서 무시되어 세션 변수로 건다.
         sessionVariables: innodb_lock_wait_timeout=3
+        # executeBatch()로 보낸 INSERT를 드라이버가 multi-values INSERT 한 문장으로 바꿔 보낸다(기본 false면 행마다 왕복).
+        # 지금 배치를 쓰는 곳은 전송 내역 저장(PushHistoryJdbcRepository)뿐이다. 일반 JPA는 hibernate.jdbc.batch_size가 없어 배치를 쓰지 않는다.
+        # 주의: 바뀐 문장은 행 하나가 실패하면 그 문장 전체가 실패하고, 행별 영향 행 수를 정확히 돌려주지 않을 수 있다.
+        # Hibernate 배치를 켜면 @Version 확인이 영향 행 수를 쓰므로 함께 동작하는지 먼저 확인한다.
+        rewriteBatchedStatements: true
 
   flyway:
     enabled: true

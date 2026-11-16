@@ -11,8 +11,10 @@ import com.dandi.nyummy.notification.entity.PushHistory
 import com.dandi.nyummy.notification.enum.DevicePlatform
 import com.dandi.nyummy.notification.enum.PushOutcome
 import com.dandi.nyummy.notification.repository.DeviceTokenRepository
-import com.dandi.nyummy.notification.repository.PushHistoryRepository
+import com.dandi.nyummy.notification.repository.PushHistoryJdbcRepository
+import io.mockk.Runs
 import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
@@ -30,12 +32,12 @@ class NotificationServiceTest {
     private val now = Instant.parse("2026-11-03T03:00:00Z")
 
     private val deviceTokenRepository = mockk<DeviceTokenRepository>()
-    private val pushHistoryRepository = mockk<PushHistoryRepository>()
+    private val pushHistoryJdbcRepository = mockk<PushHistoryJdbcRepository>()
     private val pushClient = mockk<PushClient>()
 
     private val notificationService = NotificationService(
         deviceTokenRepository = deviceTokenRepository,
-        pushHistoryRepository = pushHistoryRepository,
+        pushHistoryJdbcRepository = pushHistoryJdbcRepository,
         pushClient = pushClient,
         clock = Clock.fixed(now, ZoneOffset.UTC),
     )
@@ -97,7 +99,7 @@ class NotificationServiceTest {
             retryableTokens = listOf("retryable-token"),
         )
         val pushHistories = slot<List<PushHistory>>()
-        every { pushHistoryRepository.saveAll(capture(pushHistories)) } answers { firstArg() }
+        every { pushHistoryJdbcRepository.createPushHistories(capture(pushHistories)) } just Runs
 
         notificationService.sendPushes(messagesByToken)
 
@@ -119,7 +121,7 @@ class NotificationServiceTest {
             listOf(DeviceToken("token", DevicePlatform.IOS, 1L, Language.KO))
         every { pushClient.sendPushes(messagesByToken) } returns PushResult(1, emptyList(), emptyList())
         val pushHistories = slot<List<PushHistory>>()
-        every { pushHistoryRepository.saveAll(capture(pushHistories)) } answers { firstArg() }
+        every { pushHistoryJdbcRepository.createPushHistories(capture(pushHistories)) } just Runs
 
         notificationService.sendPushes(messagesByToken)
 
@@ -138,7 +140,7 @@ class NotificationServiceTest {
         every { deviceTokenRepository.findDeviceTokensByTokenIn(messagesByToken.keys) } returns emptyList()
         every { pushClient.sendPushes(messagesByToken) } returns PushResult(1, emptyList(), emptyList())
         val pushHistories = slot<List<PushHistory>>()
-        every { pushHistoryRepository.saveAll(capture(pushHistories)) } answers { firstArg() }
+        every { pushHistoryJdbcRepository.createPushHistories(capture(pushHistories)) } just Runs
 
         notificationService.sendPushes(messagesByToken)
 
@@ -151,7 +153,7 @@ class NotificationServiceTest {
         val result = PushResult(0, listOf("token"), emptyList())
         every { deviceTokenRepository.findDeviceTokensByTokenIn(messagesByToken.keys) } returns emptyList()
         every { pushClient.sendPushes(messagesByToken) } returns result
-        every { pushHistoryRepository.saveAll(any<List<PushHistory>>()) } throws
+        every { pushHistoryJdbcRepository.createPushHistories(any()) } throws
             DataAccessResourceFailureException("DB 장애")
 
         assertSame(result, notificationService.sendPushes(messagesByToken))
@@ -163,7 +165,7 @@ class NotificationServiceTest {
 
         assertSame(PushResult.EMPTY, result)
         verify(exactly = 0) { pushClient.sendPushes(any()) }
-        verify(exactly = 0) { pushHistoryRepository.saveAll(any<List<PushHistory>>()) }
+        verify(exactly = 0) { pushHistoryJdbcRepository.createPushHistories(any()) }
     }
 
     private fun createPushMessage(userId: Long) = PushMessage(
