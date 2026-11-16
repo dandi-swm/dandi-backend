@@ -105,8 +105,19 @@ class MailServiceTest {
         every { mailItemRepository.findMailItemsByMailIds(listOf(mailId)) } returns mailItems.toList()
     }
 
-    private fun mailItem(itemId: Long, name: String, quantity: Int, mailId: Long = this.mailId) =
-        MailItemResult(mailId = mailId, itemId = itemId, name = name, quantity = quantity)
+    private fun mailItem(
+        itemId: Long,
+        name: String,
+        quantity: Int,
+        mailId: Long = this.mailId,
+        nameTranslations: Map<String, String>? = null,
+    ) = MailItemResult(
+        mailId = mailId,
+        itemId = itemId,
+        name = name,
+        nameTranslations = nameTranslations,
+        quantity = quantity,
+    )
 
     private fun grantedRoomItems(vararg itemIds: Long) = itemIds.map { GrantedRoomItem(it) }
 
@@ -336,7 +347,7 @@ class MailServiceTest {
         )
         givenMail(mail)
 
-        val reward = mailService.claimMail(userId, mailId)
+        val reward = mailService.claimMail(userId, mailId, Language.KO)
 
         verify { coinService.increaseBalance(coin, 270, CoinHistoryCategory.MAIL_CLAIM, mailId) }
         assertEquals(now, mail.claimedAt)
@@ -351,7 +362,7 @@ class MailServiceTest {
     fun `코인 우편을 받으면 코인을 지급하고 상자는 null이다`() {
         givenMail(mail(id = mailId, category = MailCategory.COIN, coinQuantity = 100))
 
-        val reward = mailService.claimMail(userId, mailId)
+        val reward = mailService.claimMail(userId, mailId, Language.KO)
 
         verify { coinService.increaseBalance(coin, 100, CoinHistoryCategory.MAIL_CLAIM, mailId) }
         assertEquals(100, reward.coin?.quantity)
@@ -362,7 +373,7 @@ class MailServiceTest {
     fun `코인이 없는 우편은 코인을 지급하지 않는다`() {
         givenMail(mail(id = mailId, category = MailCategory.ITEM, representativeItemId = 3L))
 
-        val reward = mailService.claimMail(userId, mailId)
+        val reward = mailService.claimMail(userId, mailId, Language.KO)
 
         verify(exactly = 0) { coinService.increaseBalance(any(), any(), any(), any()) }
         assertNull(reward.coin)
@@ -373,7 +384,7 @@ class MailServiceTest {
         givenMail(mail(id = mailId, category = MailCategory.ITEM, representativeItemId = 2L))
         givenMailItems(mailItem(itemId = 2L, name = "호박 쿠션", quantity = 2))
 
-        val reward = mailService.claimMail(userId, mailId)
+        val reward = mailService.claimMail(userId, mailId, Language.KO)
 
         verify { roomService.createOwnedRoomItems(userId, grantedRoomItems(2L, 2L)) }
         val item = reward.items?.single()
@@ -394,7 +405,7 @@ class MailServiceTest {
         )
         givenMailItems(mailItem(itemId = 3L, name = "스크래처 타워", quantity = 1))
 
-        val reward = mailService.claimMail(userId, mailId)
+        val reward = mailService.claimMail(userId, mailId, Language.KO)
 
         verify { roomService.createOwnedRoomItems(userId, grantedRoomItems(3L)) }
         verify { coinService.increaseBalance(coin, 30, CoinHistoryCategory.MAIL_CLAIM, mailId) }
@@ -412,7 +423,7 @@ class MailServiceTest {
             mailItem(itemId = 3L, name = "스크래처 타워", quantity = 2),
         )
 
-        val reward = mailService.claimMail(userId, mailId)
+        val reward = mailService.claimMail(userId, mailId, Language.KO)
 
         verify { roomService.createOwnedRoomItems(userId, grantedRoomItems(3L, 2L, 3L, 3L)) }
         assertEquals(listOf(3L to 3, 2L to 1), reward.items?.map { it.imageId to it.quantity })
@@ -422,7 +433,7 @@ class MailServiceTest {
     fun `아이템이 없는 우편은 보유 아이템을 만들지 않고 items는 null이다`() {
         givenMail(mail(id = mailId, category = MailCategory.COIN, coinQuantity = 100))
 
-        val reward = mailService.claimMail(userId, mailId)
+        val reward = mailService.claimMail(userId, mailId, Language.KO)
 
         verify(exactly = 0) { roomService.createOwnedRoomItems(any(), any()) }
         assertNull(reward.items)
@@ -432,11 +443,25 @@ class MailServiceTest {
     fun `구매 우편의 아이템은 구매 구성품을 이어서 보유 아이템으로 만든다`() {
         givenMail(mail(id = mailId, category = MailCategory.ITEM))
         givenMailItems(
-            MailItemResult(mailId = mailId, itemId = 2L, name = "호박 쿠션", quantity = 1, itemPurchaseLineId = 7L),
-            MailItemResult(mailId = mailId, itemId = 3L, name = "스크래처 타워", quantity = 1, itemPurchaseLineId = 8L),
+            MailItemResult(
+                mailId = mailId,
+                itemId = 2L,
+                name = "호박 쿠션",
+                nameTranslations = null,
+                quantity = 1,
+                itemPurchaseLineId = 7L,
+            ),
+            MailItemResult(
+                mailId = mailId,
+                itemId = 3L,
+                name = "스크래처 타워",
+                nameTranslations = null,
+                quantity = 1,
+                itemPurchaseLineId = 8L,
+            ),
         )
 
-        mailService.claimMail(userId, mailId)
+        mailService.claimMail(userId, mailId, Language.KO)
 
         verify {
             roomService.createOwnedRoomItems(
@@ -450,7 +475,7 @@ class MailServiceTest {
     fun `하나 받기는 코인을 먼저 잠근 뒤 우편을 잠그고 지급한다`() {
         givenMail(mail(id = mailId, coinQuantity = 100))
 
-        mailService.claimMail(userId, mailId)
+        mailService.claimMail(userId, mailId, Language.KO)
 
         verifyOrder {
             coinService.lockCoin(userId)
@@ -463,7 +488,7 @@ class MailServiceTest {
     fun `없거나 삭제된 우편이면 거부한다`() {
         givenMail(null)
 
-        assertBusinessException(MailErrorCode.MAIL_NOT_FOUND) { mailService.claimMail(userId, mailId) }
+        assertBusinessException(MailErrorCode.MAIL_NOT_FOUND) { mailService.claimMail(userId, mailId, Language.KO) }
         verify(exactly = 0) { coinService.increaseBalance(any(), any(), any(), any()) }
     }
 
@@ -472,7 +497,7 @@ class MailServiceTest {
         val mail = mail(id = mailId, ownerId = 2L, coinQuantity = 100)
         givenMail(mail)
 
-        assertBusinessException(AuthErrorCode.FORBIDDEN) { mailService.claimMail(userId, mailId) }
+        assertBusinessException(AuthErrorCode.FORBIDDEN) { mailService.claimMail(userId, mailId, Language.KO) }
         assertNull(mail.claimedAt)
         verify(exactly = 0) { coinService.increaseBalance(any(), any(), any(), any()) }
         verify(exactly = 0) { roomService.createOwnedRoomItems(any(), any()) }
@@ -482,7 +507,7 @@ class MailServiceTest {
     fun `이미 받은 우편이면 코인을 다시 지급하지 않는다`() {
         givenMail(mail(id = mailId, coinQuantity = 100).apply { claimedAt = now.minusSeconds(600) })
 
-        assertBusinessException(MailErrorCode.ALREADY_CLAIMED) { mailService.claimMail(userId, mailId) }
+        assertBusinessException(MailErrorCode.ALREADY_CLAIMED) { mailService.claimMail(userId, mailId, Language.KO) }
         verify(exactly = 0) { coinService.increaseBalance(any(), any(), any(), any()) }
         verify(exactly = 0) { roomService.createOwnedRoomItems(any(), any()) }
     }
@@ -493,7 +518,7 @@ class MailServiceTest {
     fun `받을 우편이 없으면 아무것도 지급하지 않고 코인과 아이템 모두 null이다`() {
         givenUnclaimedMails()
 
-        val reward = mailService.claimMails(userId)
+        val reward = mailService.claimMails(userId, Language.KO)
 
         assertNull(reward.coin)
         assertNull(reward.items)
@@ -507,7 +532,7 @@ class MailServiceTest {
         val mails = listOf(mail(id = 1, coinQuantity = 10), mail(id = 2, coinQuantity = 20))
         givenUnclaimedMails(*mails.toTypedArray())
 
-        mailService.claimMails(userId)
+        mailService.claimMails(userId, Language.KO)
 
         verify { mailRepository.findMailsWithLockByUserIdAndClaimedAtIsNull(userId, now) }
         assertTrue(mails.all { it.claimedAt == now })
@@ -526,7 +551,7 @@ class MailServiceTest {
             mail(id = 3, category = MailCategory.COIN, coinQuantity = 100),
         )
 
-        val reward = mailService.claimMails(userId)
+        val reward = mailService.claimMails(userId, Language.KO)
 
         verify { coinService.increaseBalance(coin, 30, CoinHistoryCategory.MAIL_CLAIM, 1L) }
         verify { coinService.increaseBalance(coin, 100, CoinHistoryCategory.MAIL_CLAIM, 3L) }
@@ -541,7 +566,7 @@ class MailServiceTest {
         every { mailItemRepository.findMailItemsByMailIds(listOf(1L)) } returns
             listOf(mailItem(itemId = 2L, name = "호박 쿠션", quantity = 1, mailId = 1L))
 
-        val reward = mailService.claimMails(userId)
+        val reward = mailService.claimMails(userId, Language.KO)
 
         assertNull(reward.coin)
         verify(exactly = 0) { coinService.increaseBalance(any(), any(), any(), any()) }
@@ -559,11 +584,41 @@ class MailServiceTest {
             mailItem(itemId = 2L, name = "호박 쿠션", quantity = 2, mailId = 2L),
         )
 
-        val reward = mailService.claimMails(userId)
+        val reward = mailService.claimMails(userId, Language.KO)
 
         verify { roomService.createOwnedRoomItems(userId, grantedRoomItems(3L, 2L, 2L, 2L)) }
         assertEquals(listOf(3L to 1, 2L to 3), reward.items?.map { it.imageId to it.quantity })
         assertEquals(listOf("스크래처 타워", "호박 쿠션"), reward.items?.map { it.name })
+    }
+
+    @Test
+    fun `받은 아이템 이름은 요청 언어의 번역이 있으면 번역으로, 없으면 원본으로 준다`() {
+        givenMail(mail(id = mailId, category = MailCategory.ITEM, representativeItemId = 2L))
+        givenMailItems(
+            mailItem(itemId = 2L, name = "호박 쿠션", quantity = 1, nameTranslations = mapOf("en" to "Pumpkin Cushion")),
+            mailItem(itemId = 3L, name = "스크래처 타워", quantity = 1),
+        )
+
+        val reward = mailService.claimMail(userId, mailId, Language.EN)
+
+        assertEquals(listOf("Pumpkin Cushion", "스크래처 타워"), reward.items?.map { it.name })
+    }
+
+    @Test
+    fun `모두 받기도 아이템 이름을 요청 언어로 주고 여러 우편의 같은 아이템은 하나로 합친다`() {
+        val translations = mapOf("ja" to "かぼちゃクッション")
+        givenUnclaimedMails(
+            mail(id = 1, category = MailCategory.ITEM, representativeItemId = 2L),
+            mail(id = 2, category = MailCategory.ITEM, representativeItemId = 2L),
+        )
+        every { mailItemRepository.findMailItemsByMailIds(listOf(1L, 2L)) } returns listOf(
+            mailItem(itemId = 2L, name = "호박 쿠션", quantity = 1, mailId = 1L, nameTranslations = translations),
+            mailItem(itemId = 2L, name = "호박 쿠션", quantity = 2, mailId = 2L, nameTranslations = translations),
+        )
+
+        val reward = mailService.claimMails(userId, Language.JA)
+
+        assertEquals(listOf("かぼちゃクッション" to 3), reward.items?.map { it.name to it.quantity })
     }
 
     @Test
@@ -579,7 +634,7 @@ class MailServiceTest {
         every { mailItemRepository.findMailItemsByMailIds(listOf(1L)) } returns
             listOf(mailItem(itemId = 3L, name = "스크래처 타워", quantity = 1, mailId = 1L))
 
-        mailService.claimMails(userId)
+        mailService.claimMails(userId, Language.KO)
 
         verifyOrder {
             coinService.lockCoin(userId)

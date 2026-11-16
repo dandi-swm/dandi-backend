@@ -4,6 +4,8 @@ import com.dandi.nyummy.config.openapi.ApiErrorCodes
 import com.dandi.nyummy.exception.errorcode.AuthErrorCode
 import com.dandi.nyummy.exception.errorcode.CommonErrorCode
 import com.dandi.nyummy.exception.errorcode.MailErrorCode
+import com.dandi.nyummy.language.CurrentLanguage
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.mail.dto.MailsResponse
 import com.dandi.nyummy.mail.dto.RewardResponse
 import com.dandi.nyummy.mail.dto.TotalRewardResponse
@@ -71,8 +73,9 @@ class MailController(private val mailService: MailService) {
     @PostMapping("/{mailId}/claim")
     fun claimMail(
         @CurrentUser user: AuthUser,
+        @CurrentLanguage language: Language,
         @Parameter(description = "우편 ID") @PathVariable("mailId") mailId: Long,
-    ): RewardResponse = mailService.claimMail(user.userId, mailId)
+    ): RewardResponse = mailService.claimMail(user.userId, mailId, language)
 
     @Operation(
         summary = "우편 모두 받기",
@@ -84,7 +87,8 @@ class MailController(private val mailService: MailService) {
     )
     @ApiErrorCodes(common = [CommonErrorCode.REQUEST_CONFLICT])
     @PostMapping("/claim-all")
-    fun claimMails(@CurrentUser user: AuthUser): TotalRewardResponse = mailService.claimMails(user.userId)
+    fun claimMails(@CurrentUser user: AuthUser, @CurrentLanguage language: Language): TotalRewardResponse =
+        mailService.claimMails(user.userId, language)
 
     @Operation(
         summary = "받은 우편 삭제",

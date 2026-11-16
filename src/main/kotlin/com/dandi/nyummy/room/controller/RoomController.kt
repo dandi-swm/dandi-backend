@@ -69,6 +69,7 @@ class RoomController(private val roomService: RoomService) {
     @GetMapping("/owned-items")
     fun getOwnedRoomItems(
         @CurrentUser user: AuthUser,
+        @CurrentLanguage language: Language,
         @Parameter(description = "아이템 카테고리") @RequestParam("category") category: RoomItemCategory,
         @Parameter(description = "직전 응답의 nextCursor. 첫 요청에서는 생략한다.") @RequestParam(required = false) cursor: Long?,
         @Parameter(description = "한 번에 조회할 개수 (1~50, 기본 10)")
@@ -76,7 +77,7 @@ class RoomController(private val roomService: RoomService) {
         @Min(1)
         @Max(50)
         size: Int,
-    ): OwnedRoomItemsResponse = roomService.getOwnedRoomItems(user.userId, category, cursor, size)
+    ): OwnedRoomItemsResponse = roomService.getOwnedRoomItems(user.userId, category, cursor, size, language)
 
     @Operation(
         summary = "꾸민 방 저장",
