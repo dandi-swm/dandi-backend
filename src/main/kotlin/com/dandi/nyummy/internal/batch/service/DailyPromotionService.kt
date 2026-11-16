@@ -6,7 +6,6 @@ import com.dandi.nyummy.shop.entity.Product
 import com.dandi.nyummy.shop.entity.Promotion
 import com.dandi.nyummy.shop.entity.PromotionProduct
 import com.dandi.nyummy.shop.enum.PromotionCategory
-import com.dandi.nyummy.shop.enum.ShopTab
 import com.dandi.nyummy.shop.repository.ProductRepository
 import com.dandi.nyummy.shop.repository.PromotionProductRepository
 import com.dandi.nyummy.shop.repository.PromotionRepository
@@ -92,11 +91,10 @@ class DailyPromotionService(
         )
     }
 
-    // 그날 내내 판매 중인 인테리어 상품. 방 배경은 이미 가진 사용자가 살 수 없고, 기간 한정은 그 자체가 판매 방식이라 뺀다.
+    // 그날 내내 판매 중인 상품. 방 배경·기간 한정도 넣는다.
+    // 방 배경을 이미 가진 사용자에게는 방 배경 탭처럼 보유 카드로 보이고, 담기·구매에서 막힌다.
     private fun getCandidates(startsAt: Instant, endsAt: Instant): List<Product> =
         productRepository.findOnSaleProducts(startsAt).filter { product ->
-            ShopTab.INTERIOR.contains(product.category) &&
-                !product.isLimited &&
-                product.saleEndsAt?.isBefore(endsAt) != true
+            product.saleEndsAt?.isBefore(endsAt) != true
         }
 }
