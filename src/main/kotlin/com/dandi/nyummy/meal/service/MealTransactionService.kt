@@ -82,7 +82,7 @@ class MealTransactionService(
     }
 
     /**
-     * v2 식사와 인식 결과에 딸린 행들, 보상 상자 우편을 한 트랜잭션으로 저장하고 연속 기록을 갱신한다.
+     * v2 식사와 인식 결과에 딸린 행들, 줄 보상 상자가 있으면 그 우편을 한 트랜잭션으로 저장하고 연속 기록을 갱신한다.
      * 하루 시도 횟수를 다시 세는 방식과 프로필 행을 잠그는 이유는 [createMeal]과 같다.
      *
      * 인식 결과에 따라 저장하는 것이 다르다.
@@ -91,10 +91,12 @@ class MealTransactionService(
      * - 음식이 아니면 식사만 남긴다. 작업이 없으므로 Worker는 이 식사를 건드리지 않는다.
      * - 요청 안에서 인식을 끝내지 못했으면 바로 가져갈 인식 작업을 만든다. 음식 줄은 Worker가 인식한 뒤에 생긴다.
      *
-     * 보상 상자와 연속 기록은 인식 결과와 상관없이 기록한 것으로 인정한다.
+     * 연속 기록은 인식 결과와 상관없이 기록한 것으로 인정한다. 보상 상자 우편은 [rewardBox]가 있을 때만 만든다.
      *
      * @param meal 저장할 식사. 상태·대표 이름·입력 유형은 [outcome]에 맞춰 채워져 있어야 한다
      * @param outcome 식사 기록 요청 안에서 음식 인식을 시도한 결과
+     * @param rewardBox 이 식사의 보상으로 뽑은 상자. 요청 안에서 음식으로 인식하지 못해 지금 주지 않으면 null
+     * @param rewardMailExpiresAt 보상 상자 우편의 만료 시각
      * @param nutritionDelay 영양 작업을 가져가기까지 기다리는 시간
      * @param language 식사를 기록한 요청의 앱 언어. 보상 상자 우편의 문구를 이 언어로 저장하고, 작업에 실어 결과를 이 언어로 만든다
      * @return 저장한 음식 줄(순서대로). 음식으로 인식하지 못했으면 빈 목록
@@ -105,7 +107,7 @@ class MealTransactionService(
     fun createMealV2(
         meal: Meal,
         outcome: MealRecognitionOutcome,
-        rewardBox: RewardBoxResult,
+        rewardBox: RewardBoxResult?,
         rewardMailExpiresAt: Instant,
         nutritionDelay: Duration,
         language: Language,
@@ -148,13 +150,15 @@ class MealTransactionService(
                 emptyList()
             }
         }
-        mailService.createMealRewardMail(
-            userId = meal.userId,
-            rewardBoxCategory = rewardBox.category,
-            coinQuantity = rewardBox.coinQuantity,
-            expiresAt = rewardMailExpiresAt,
-            language = language,
-        )
+        if (rewardBox != null) {
+            mailService.createMealRewardMail(
+                userId = meal.userId,
+                rewardBoxCategory = rewardBox.category,
+                coinQuantity = rewardBox.coinQuantity,
+                expiresAt = rewardMailExpiresAt,
+                language = language,
+            )
+        }
         streakService.updateStreak(meal.userId)
 
         return mealFoods

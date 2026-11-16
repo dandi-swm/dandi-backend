@@ -58,7 +58,9 @@ class MealV2Controller(
             "음식이 아니면 status는 FAILED이고 name은 빈 문자열, foods는 null이다. " +
             "기한 안에 인식을 끝내지 못하면 status는 RECOGNIZING이고 name과 foods는 null이다. 서버가 이어서 인식하므로 " +
             "영양 분석 상태 조회 API로 CONFIRMING이 되는지 확인한다. " +
-            "어느 경우든 기록 횟수에 들어가고 보상 상자 우편이 하나 생기며, 응답의 rewardBoxCategory에 그 상자의 등급을 담는다.",
+            "어느 경우든 기록 횟수에 들어간다. 보상 상자 우편은 음식으로 인식한 식사에만 하나 생긴다. " +
+            "CONFIRMING이면 응답의 rewardBoxCategory에 그 상자의 등급을 담고, FAILED와 RECOGNIZING이면 null이다. " +
+            "RECOGNIZING인 식사는 서버가 음식으로 인식했을 때 우편이 생기고, 음식이 아니면 생기지 않는다.",
     )
     @ApiErrorCodes(
         meal = [MealErrorCode.DUPLICATE_IMAGE_KEY, MealErrorCode.DAILY_COUNT_EXCEEDED, MealErrorCode.STALE_IMAGE],

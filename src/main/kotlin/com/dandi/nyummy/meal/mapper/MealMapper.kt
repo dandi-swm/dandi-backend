@@ -101,15 +101,17 @@ fun Meal.toCreateMealResponse(rewardBoxCategory: RewardBoxCategory) = CreateMeal
  * v2 식사 기록 응답. 대표 이름과 음식 줄은 음식으로 인식한 식사에만 있다.
  * 아직 인식하지 못한 식사(RECOGNIZING)는 이름이 null이고, 음식이 아닌 식사는 빈 문자열이다.
  *
+ * @param rewardBoxCategory 이 기록으로 준 보상 상자의 등급. 주지 않았으면 null
  * @param mealFoods 저장한 음식 줄(순서대로). 음식으로 인식하지 못했으면 빈 목록
  */
-fun Meal.toCreateMealV2Response(rewardBoxCategory: RewardBoxCategory, mealFoods: List<MealFood>) = CreateMealV2Response(
-    id = this.id,
-    status = this.status,
-    rewardBoxCategory = rewardBoxCategory,
-    name = this.name.takeIf { this.status != MealStatus.RECOGNIZING },
-    foods = mealFoods.takeIf { it.isNotEmpty() }?.map { it.toMealFoodResponse() },
-)
+fun Meal.toCreateMealV2Response(rewardBoxCategory: RewardBoxCategory?, mealFoods: List<MealFood>) =
+    CreateMealV2Response(
+        id = this.id,
+        status = this.status,
+        rewardBoxCategory = rewardBoxCategory,
+        name = this.name.takeIf { this.status != MealStatus.RECOGNIZING },
+        foods = mealFoods.takeIf { it.isNotEmpty() }?.map { it.toMealFoodResponse() },
+    )
 
 /** 음식 한 줄. 줄 영양은 1인분 × 인분이고, 1인분 값을 아직 구하지 않은 줄은 null이다. */
 fun MealFood.toMealFoodResponse() = MealFoodResponse(

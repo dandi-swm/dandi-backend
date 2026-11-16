@@ -2,7 +2,9 @@ package com.dandi.nyummy.meal.service
 
 import com.dandi.nyummy.auth.enum.AuthProvider
 import com.dandi.nyummy.language.enum.Language
+import com.dandi.nyummy.mail.enum.MailCategory
 import com.dandi.nyummy.mail.enum.RewardBoxCategory
+import com.dandi.nyummy.mail.repository.MailRepository
 import com.dandi.nyummy.meal.dto.MealFoodRecognitionResult
 import com.dandi.nyummy.meal.dto.MealRecognitionOutcome
 import com.dandi.nyummy.meal.dto.MealRecognitionResult
@@ -56,6 +58,7 @@ class MealTransactionServiceV2IntegrationTest @Autowired constructor(
     private val mealFoodSnapshotRepository: MealFoodSnapshotRepository,
     private val mealFoodRepository: MealFoodRepository,
     private val mealAnalysisJobRepository: MealAnalysisJobRepository,
+    private val mailRepository: MailRepository,
     private val clock: Clock,
 ) {
     companion object {
@@ -81,7 +84,14 @@ class MealTransactionServiceV2IntegrationTest @Autowired constructor(
         promptVersion = "v1",
     )
 
-    private fun createMealV2(email: String, status: MealStatus, outcome: MealRecognitionOutcome): Meal {
+    private val rewardBox = RewardBoxResult(RewardBoxCategory.GOLD, 412)
+
+    private fun createMealV2(
+        email: String,
+        status: MealStatus,
+        outcome: MealRecognitionOutcome,
+        rewardBox: RewardBoxResult? = this.rewardBox,
+    ): Meal {
         val userId = userRepository.save(User(provider = AuthProvider.EMAIL, email = email)).id
         profileRepository.save(Profile(userId = userId))
         val now = Instant.now(clock)
@@ -96,7 +106,7 @@ class MealTransactionServiceV2IntegrationTest @Autowired constructor(
         mealTransactionService.createMealV2(
             meal = meal,
             outcome = outcome,
-            rewardBox = RewardBoxResult(RewardBoxCategory.GOLD, 412),
+            rewardBox = rewardBox,
             rewardMailExpiresAt = now.plus(Duration.ofDays(7)),
             nutritionDelay = NUTRITION_DELAY,
             language = Language.KO,
@@ -141,6 +151,12 @@ class MealTransactionServiceV2IntegrationTest @Autowired constructor(
         assertTrue(leaseExpiresAt > Instant.now().plus(NUTRITION_DELAY).minus(Duration.ofMinutes(1)))
         // 지표가 기다린 시간을 셀 기준으로, 가져갈 수 있게 되는 시각을 따로 남긴다.
         assertEquals(leaseExpiresAt, job.availableAt)
+
+        // 요청 안에서 음식으로 인식한 식사는 보상 상자 우편이 함께 남는다.
+        val mail = mailRepository.findAll().single { it.userId == meal.userId }
+        assertEquals(MailCategory.REWARD_BOX, mail.category)
+        assertEquals(RewardBoxCategory.GOLD, mail.rewardBoxCategory)
+        assertEquals(412, mail.coinQuantity)
     }
 
     @Test
@@ -149,6 +165,7 @@ class MealTransactionServiceV2IntegrationTest @Autowired constructor(
             "deferred@nyummy.co.kr",
             MealStatus.RECOGNIZING,
             MealRecognitionOutcome.Deferred(MealRecognitionDeferralCategory.TIMEOUT),
+            rewardBox = null,
         )
 
         assertEquals(MealStatus.RECOGNIZING, mealRepository.findById(meal.id).orElseThrow().status)
@@ -159,6 +176,23 @@ class MealTransactionServiceV2IntegrationTest @Autowired constructor(
         assertEquals(MealAnalysisJobCategory.RECOGNITION, job.category)
         assertNull(job.leaseExpiresAt)
         assertNull(job.availableAt)
+        // 보상 상자는 Worker가 음식으로 인식했을 때 준다. 기록할 때는 우편이 없다.
+        assertTrue(mailRepository.findAll().none { it.userId == meal.userId })
+    }
+
+    @Test
+    fun `음식이 아닌 식사는 식사만 남고 작업도 보상 상자 우편도 없다`() {
+        val meal = createMealV2(
+            "not-food@nyummy.co.kr",
+            MealStatus.FAILED,
+            MealRecognitionOutcome.NotFood,
+            rewardBox = null,
+        )
+
+        assertEquals(MealStatus.FAILED, mealRepository.findById(meal.id).orElseThrow().status)
+        assertTrue(mealAnalysisJobRepository.findAll().none { it.mealId == meal.id })
+        assertTrue(mealFoodRepository.findAll().none { it.mealId == meal.id })
+        assertTrue(mailRepository.findAll().none { it.userId == meal.userId })
     }
 
     @Test

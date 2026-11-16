@@ -331,8 +331,25 @@ class MealServiceTest {
         assertEquals("", response.name)
         assertNull(response.foods)
         assertEquals(MealInputCategory.NOT_FOOD, savedMeal.captured.inputCategory)
-        // 음식이 아니어도 보상 상자는 준다.
-        assertEquals(RewardBoxCategory.GOLD, response.rewardBoxCategory)
+    }
+
+    @Test
+    fun `음식으로 인식하지 못한 식사는 보상 상자 없이 저장하고 응답에도 상자 등급이 없다`() {
+        val outcomes = listOf(
+            MealRecognitionOutcome.NotFood,
+            MealRecognitionOutcome.Deferred(MealRecognitionDeferralCategory.TIMEOUT),
+        )
+
+        outcomes.forEach { outcome ->
+            givenMealV2(outcome)
+
+            val response = mealService.createMealV2(userId, request, Language.KO)
+
+            assertNull(response.rewardBoxCategory)
+            verify(exactly = 1) {
+                mealTransactionService.createMealV2(any(), outcome, rewardBox = isNull(), any(), any(), any())
+            }
+        }
     }
 
     @Test

@@ -24,6 +24,7 @@ import com.dandi.nyummy.meal.dto.DailyMealsResponse
 import com.dandi.nyummy.meal.dto.DailyMealsV2Response
 import com.dandi.nyummy.meal.dto.DailyNutritionResponse
 import com.dandi.nyummy.meal.dto.MealFoodResponse
+import com.dandi.nyummy.meal.dto.MealRecognitionOutcome
 import com.dandi.nyummy.meal.dto.MealResponse
 import com.dandi.nyummy.meal.dto.MealStatusResponse
 import com.dandi.nyummy.meal.dto.MealV2Response
@@ -162,7 +163,7 @@ class MealService(
     /**
      * v2 식사 기록. 업로드된 이미지를 확정하고, 응답 기한 안에서 음식을 인식해 식사를 저장한다.
      *
-     * 중복 검사·하루 횟수 검사·이미지 확정·촬영 시각 처리·보상 상자는 [createMeal]과 같다. 다른 점은 응답 전에 음식을
+     * 중복 검사·하루 횟수 검사·이미지 확정·촬영 시각 처리는 [createMeal]과 같다. 다른 점은 응답 전에 음식을
      * 인식한다는 것이다. 이미지 확정 때 내려받은 바이트를 그대로 인식에 쓰고, 응답 기한은 이 메서드에 들어온 때부터 센다.
      *
      * 인식을 시도한 결과에 따라 셋 중 하나로 응답한다.
@@ -171,12 +172,15 @@ class MealService(
      * - 음식이 아니면 FAILED이고 이름은 빈 문자열이다.
      * - 응답 기한 안에 인식을 끝내지 못했으면 RECOGNIZING이고, Worker가 이어서 인식한다. 이름과 음식 줄은 없다.
      *
-     * 하루 기록 횟수, 보상 상자, 연속 기록은 인식 결과와 상관없이 기록한 것으로 센다.
+     * 하루 기록 횟수와 연속 기록은 인식 결과와 상관없이 기록한 것으로 센다.
+     *
+     * 보상 상자는 [createMeal]과 달리 음식으로 인식한 식사에만 준다. 요청 안에서 인식했으면 여기서 뽑아 식사와 함께 저장하고,
+     * 인식을 넘겼으면 Worker가 음식으로 인식했을 때 준다. 음식이 아니면 주지 않는다.
      *
      * @param userId 식사를 등록하는 사용자 ID
      * @param request 식사 생성 정보를 담은 [CreateMealRequest] (이미지 키)
      * @param language 식사를 기록한 요청의 앱 언어. 대표 이름과 음식 이름을 이 언어로 받는다
-     * @return 식사 ID, 상태, 보상 상자 등급, 인식한 대표 이름과 음식 줄을 담은 [CreateMealV2Response]
+     * @return 식사 ID, 상태, 인식한 대표 이름과 음식 줄을 담은 [CreateMealV2Response]. 보상 상자 등급은 요청 안에서 음식으로 인식했을 때만 있다
      * @throws BusinessException [MealErrorCode.DUPLICATE_IMAGE_KEY] 이미 식사 기록에 사용된 imageKey인 경우.
      *   같은 imageKey의 요청이 동시에 와서 저장할 때 겹친 경우도 같다
      * @throws BusinessException [MealErrorCode.DAILY_COUNT_EXCEEDED] 오늘 시도 횟수가 상한인 경우
@@ -211,7 +215,11 @@ class MealService(
         )
 
         val meal = request.toEntity(userId, mealAt, uploadedImage.imageKey, outcome)
-        val rewardBox = pickRewardBox(mealProperties.rewardBoxes, random)
+        val rewardBox = if (outcome is MealRecognitionOutcome.Recognized) {
+            pickRewardBox(mealProperties.rewardBoxes, random)
+        } else {
+            null
+        }
         val rewardMailExpiresAt = Instant.now(clock).plus(mealProperties.rewardMailTimeToLive)
 
         val mealFoods = try {
@@ -232,7 +240,7 @@ class MealService(
             throw BusinessException(MealErrorCode.DUPLICATE_IMAGE_KEY)
         }
 
-        return meal.toCreateMealV2Response(rewardBox.category, mealFoods)
+        return meal.toCreateMealV2Response(rewardBox?.category, mealFoods)
     }
 
     /**
