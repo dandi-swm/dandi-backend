@@ -263,8 +263,8 @@ class MealServiceTest {
         inputCategory = MealInputCategory.FOOD_PHOTO,
         name = "불고기 백반",
         foods = listOf(
-            MealFoodRecognitionResult(name = "불고기", portion = BigDecimal("1.5")),
-            MealFoodRecognitionResult(name = "잡곡밥", portion = BigDecimal("1.0")),
+            MealFoodRecognitionResult(name = "불고기"),
+            MealFoodRecognitionResult(name = "잡곡밥"),
         ),
         model = "gemini-recognition-test",
         promptVersion = "v1",

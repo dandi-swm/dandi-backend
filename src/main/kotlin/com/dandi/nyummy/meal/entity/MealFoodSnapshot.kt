@@ -13,10 +13,10 @@ import java.math.BigDecimal
 import java.time.Instant
 
 /**
- * AI가 처음 인식한 음식 한 줄. 첫 인식의 이름과 인분만 담고, 한 번 쓰면 바꾸지 않는다.
+ * AI가 처음 인식한 음식 한 줄. 첫 인식의 이름을 담고, 한 번 쓰면 바꾸지 않는다.
  *
  * @property displayOrder 인식이 낸 순서. 1이 대표 음식이다
- * @property portion 인분
+ * @property portion 인분. 인식이 인분을 내던 때의 행에만 있고, 그 뒤의 행은 null이다
  */
 @Entity
 @EntityListeners(AuditingEntityListener::class)
@@ -31,8 +31,8 @@ class MealFoodSnapshot(
     @Column(name = "name", nullable = false, length = 30)
     val name: String,
 
-    @Column(name = "portion", nullable = false, precision = 2, scale = 1)
-    val portion: BigDecimal,
+    @Column(name = "portion", precision = 2, scale = 1)
+    val portion: BigDecimal? = null,
 ) {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

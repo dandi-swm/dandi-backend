@@ -74,8 +74,8 @@ class MealTransactionServiceV2IntegrationTest @Autowired constructor(
         inputCategory = MealInputCategory.FOOD_PHOTO,
         name = "불고기 백반",
         foods = listOf(
-            MealFoodRecognitionResult(name = "불고기", portion = BigDecimal("1.5")),
-            MealFoodRecognitionResult(name = "잡곡밥", portion = BigDecimal("1.0")),
+            MealFoodRecognitionResult(name = "불고기"),
+            MealFoodRecognitionResult(name = "잡곡밥"),
         ),
         model = "gemini-recognition-test",
         promptVersion = "v1",
@@ -127,7 +127,8 @@ class MealTransactionServiceV2IntegrationTest @Autowired constructor(
             .sortedBy { it.displayOrder }
         val mealFoods = mealFoodRepository.findAll().filter { it.mealId == meal.id }.sortedBy { it.displayOrder }
         assertEquals(listOf("불고기", "잡곡밥"), mealFoods.map { it.name })
-        assertEquals(listOf(BigDecimal("1.5"), BigDecimal("1.0")), mealFoods.map { it.portion })
+        // 음식 사진의 줄은 인분을 비워 두고 영양을 계산할 때 채운다.
+        assertEquals(listOf<BigDecimal?>(null, null), mealFoods.map { it.portion })
         // 음식 줄은 짝이 되는 스냅샷 줄을 가리키고, 영양은 아직 구하지 않았다.
         assertEquals(mealFoodSnapshots.map { it.id }, mealFoods.map { it.mealFoodSnapshotId })
         assertTrue(mealFoods.all { it.servingNutrition == null && !it.isNutritionFixed && it.iconId == null })

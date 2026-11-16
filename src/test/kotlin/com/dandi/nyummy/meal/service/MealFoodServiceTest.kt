@@ -8,6 +8,7 @@ import com.dandi.nyummy.meal.dto.MealFoodNutritionRequest
 import com.dandi.nyummy.meal.dto.MealFoodRecognitionResult
 import com.dandi.nyummy.meal.dto.MealFoodRequest
 import com.dandi.nyummy.meal.dto.MealRecognitionResult
+import com.dandi.nyummy.meal.dto.NutritionHint
 import com.dandi.nyummy.meal.dto.ServingNutrition
 import com.dandi.nyummy.meal.dto.ServingNutritionResult
 import com.dandi.nyummy.meal.dto.UpdateMealFoodRequest
@@ -44,8 +45,8 @@ class MealFoodServiceTest {
         inputCategory = MealInputCategory.FOOD_PHOTO,
         name = "불고기 백반",
         foods = listOf(
-            MealFoodRecognitionResult(name = "불고기", portion = BigDecimal("1.5")),
-            MealFoodRecognitionResult(name = "잡곡밥", portion = BigDecimal("1.0")),
+            MealFoodRecognitionResult(name = "불고기"),
+            MealFoodRecognitionResult(name = "잡곡밥"),
         ),
         model = "gemini-recognition-test",
         promptVersion = "v1",
@@ -97,14 +98,83 @@ class MealFoodServiceTest {
         val mealFoods = mealFoodService.createMealFoods(mealId, recognition, MealRecognitionCategory.SYNC)
 
         assertEquals(
-            listOf(Triple(1, "불고기", BigDecimal("1.5")), Triple(2, "잡곡밥", BigDecimal("1.0"))),
-            mealFoodSnapshots.captured.map { Triple(it.displayOrder, it.name, it.portion) },
+            listOf(1 to "불고기", 2 to "잡곡밥"),
+            mealFoodSnapshots.captured.map { it.displayOrder to it.name },
         )
-        assertEquals(
-            listOf(Triple(1, "불고기", BigDecimal("1.5")), Triple(2, "잡곡밥", BigDecimal("1.0"))),
-            mealFoods.map { Triple(it.displayOrder, it.name, it.portion) },
-        )
+        assertEquals(listOf(1 to "불고기", 2 to "잡곡밥"), mealFoods.map { it.displayOrder to it.name })
         assertTrue(mealFoods.all { it.mealId == mealId })
+    }
+
+    @Test
+    fun `음식 사진의 힌트 없는 줄은 인분을 비워 두고 스냅샷 줄에도 인분을 남기지 않는다`() {
+        val mealFoods = mealFoodService.createMealFoods(mealId, recognition, MealRecognitionCategory.SYNC)
+
+        assertTrue(mealFoods.all { it.portion == null })
+        assertTrue(mealFoodSnapshots.captured.all { it.portion == null })
+    }
+
+    @Test
+    fun `힌트가 넷 다 있는 줄은 힌트를 1인분 영양으로 적고 인분을 1로 두며 고정하지는 않는다`() {
+        val nutritionHint =
+            NutritionHint(BigDecimal("320.00"), BigDecimal("12.50"), BigDecimal("35.00"), BigDecimal("9.00"))
+        val recognitionWithNutritionHint = recognition.copy(
+            foods = listOf(
+                MealFoodRecognitionResult(name = "닭가슴살 샐러드", nutritionHint = nutritionHint),
+                MealFoodRecognitionResult(name = "아메리카노"),
+            ),
+        )
+
+        val (salad, coffee) = mealFoodService.createMealFoods(
+            mealId,
+            recognitionWithNutritionHint,
+            MealRecognitionCategory.SYNC,
+        )
+
+        assertEquals(
+            ServingNutrition(BigDecimal("320.00"), BigDecimal("12.50"), BigDecimal("35.00"), BigDecimal("9.00")),
+            salad.servingNutrition,
+        )
+        assertEquals(MealFood.DEFAULT_PORTION, salad.portion)
+        // 이름을 고치면 새 이름으로 다시 구해야 하므로 고정하지 않는다.
+        assertFalse(salad.isNutritionFixed)
+        // 같은 식사의 힌트 없는 줄은 그대로 인분을 비운다.
+        assertNull(coffee.portion)
+        assertNull(coffee.servingNutrition)
+    }
+
+    @Test
+    fun `힌트가 일부만 있는 줄은 적힌 항목만 채우고 인분을 1로 둔다`() {
+        val recognitionWithNutritionHint = recognition.copy(
+            foods = listOf(
+                MealFoodRecognitionResult(name = "제육덮밥", nutritionHint = NutritionHint(calory = BigDecimal("780.00"))),
+            ),
+        )
+
+        val mealFood = mealFoodService.createMealFoods(
+            mealId,
+            recognitionWithNutritionHint,
+            MealRecognitionCategory.SYNC,
+        ).single()
+
+        assertEquals(BigDecimal("780.00"), mealFood.servingCalory)
+        assertNull(mealFood.servingCarbs)
+        // 넷이 다 차야 1인분 영양이 있는 줄이다. 빈 항목은 영양을 계산할 때 채운다.
+        assertNull(mealFood.servingNutrition)
+        assertEquals(MealFood.DEFAULT_PORTION, mealFood.portion)
+    }
+
+    @Test
+    fun `음식 사진이 아닌 유형의 줄은 힌트가 없어도 인분을 1로 둔다`() {
+        listOf(MealInputCategory.TEXT_RECORD, MealInputCategory.ILLUSTRATION, MealInputCategory.PACKAGE)
+            .forEach { inputCategory ->
+                val mealFoods = mealFoodService.createMealFoods(
+                    mealId,
+                    recognition.copy(inputCategory = inputCategory),
+                    MealRecognitionCategory.SYNC,
+                )
+
+                assertTrue(mealFoods.all { it.portion == MealFood.DEFAULT_PORTION }, "$inputCategory")
+            }
     }
 
     @Test

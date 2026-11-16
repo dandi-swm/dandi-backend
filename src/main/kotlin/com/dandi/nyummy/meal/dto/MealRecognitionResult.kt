@@ -21,8 +21,20 @@ data class MealRecognitionResult(
 )
 
 /**
- * 인식한 음식 한 줄.
+ * 인식한 음식 한 줄. 인분은 인식이 정하지 않는다.
  *
- * @property portion 인분
+ * @property nutritionHint 사진에 이 음식의 값으로 적혀 있던 영양. 적힌 것이 없으면 null
  */
-data class MealFoodRecognitionResult(val name: String, val portion: BigDecimal)
+data class MealFoodRecognitionResult(val name: String, val nutritionHint: NutritionHint? = null)
+
+/**
+ * 사진에 적혀 있어 인식이 읽은 음식 하나의 영양 값(힌트). 음식 옆에 직접 적은 숫자, 메뉴판의 숫자 같은 것이다.
+ * 모델이 짐작한 값이 아니라 적힌 값이라, 있으면 그 줄의 1인분 영양으로 그대로 쓴다.
+ * 일부만 적혀 있을 수 있어 항목마다 null일 수 있고, 넷 중 하나는 값이 있다.
+ */
+data class NutritionHint(
+    val calory: BigDecimal? = null,
+    val carbs: BigDecimal? = null,
+    val protein: BigDecimal? = null,
+    val fat: BigDecimal? = null,
+)
