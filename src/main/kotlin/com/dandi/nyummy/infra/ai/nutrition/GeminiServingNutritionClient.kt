@@ -163,7 +163,7 @@ class GeminiServingNutritionClient(
         )
     }
 
-    override fun getServingNutritions(
+    override fun getNamedServingNutritions(
         names: List<String>,
         inputCategory: MealInputCategory,
     ): List<ServingNutritionResult> {
@@ -173,7 +173,7 @@ class GeminiServingNutritionClient(
         val icons = getIcons()
 
         val resultJson = geminiClient.createContent(
-            model = aiProperties.servingNutritionModel,
+            model = aiProperties.namedNutritionModel,
             parts = listOf(createGeminiTextPart(createPrompt(names, inputCategory, icons))),
             responseSchema = RESPONSE_SCHEMA,
         )

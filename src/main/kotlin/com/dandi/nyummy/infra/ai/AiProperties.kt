@@ -11,7 +11,7 @@ class AiProperties(
     val apiKey: String,
     val model: String,
     val recognitionModel: String,
-    val servingNutritionModel: String,
+    val namedNutritionModel: String,
     val photoNutritionModel: String,
     val catCommentModel: String,
     val baseUrl: String,

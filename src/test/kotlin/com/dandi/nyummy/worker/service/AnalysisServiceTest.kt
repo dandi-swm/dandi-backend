@@ -662,7 +662,7 @@ class AnalysisServiceTest {
         results: List<ServingNutritionResult>,
         inputCategory: MealInputCategory = MealInputCategory.FOOD_PHOTO,
     ) {
-        every { servingNutritionClient.getServingNutritions(names, inputCategory) } returns results
+        every { servingNutritionClient.getNamedServingNutritions(names, inputCategory) } returns results
     }
 
     @Test
@@ -728,7 +728,7 @@ class AnalysisServiceTest {
                 any(),
             )
         }
-        verify(exactly = 0) { servingNutritionClient.getServingNutritions(any(), any()) }
+        verify(exactly = 0) { servingNutritionClient.getNamedServingNutritions(any(), any()) }
     }
 
     @Test
@@ -915,7 +915,7 @@ class AnalysisServiceTest {
 
         analysisService.analyzeMealAnalysisJob(nutritionJob)
 
-        verify(exactly = 1) { servingNutritionClient.getServingNutritions(listOf("불고기"), any()) }
+        verify(exactly = 1) { servingNutritionClient.getNamedServingNutritions(listOf("불고기"), any()) }
         verify(exactly = 1) {
             mealAnalysisJobTransactionService.confirmMealNutrition(
                 nutritionJob,
@@ -938,7 +938,7 @@ class AnalysisServiceTest {
 
         analysisService.analyzeMealAnalysisJob(nutritionJob)
 
-        verify(exactly = 1) { servingNutritionClient.getServingNutritions(listOf("불고기"), any()) }
+        verify(exactly = 1) { servingNutritionClient.getNamedServingNutritions(listOf("불고기"), any()) }
     }
 
     @Test
@@ -954,7 +954,7 @@ class AnalysisServiceTest {
 
         analysisService.analyzeMealAnalysisJob(nutritionJob)
 
-        verify(exactly = 0) { servingNutritionClient.getServingNutritions(any(), any()) }
+        verify(exactly = 0) { servingNutritionClient.getNamedServingNutritions(any(), any()) }
         verify(exactly = 1) {
             mealAnalysisJobTransactionService.confirmMealNutrition(nutritionJob, emptyMap(), any())
         }
@@ -975,7 +975,7 @@ class AnalysisServiceTest {
         analysisService.analyzeMealAnalysisJob(nutritionJob)
 
         verify(exactly = 1) {
-            servingNutritionClient.getServingNutritions(listOf("불고기", "잡곡밥"), MealInputCategory.PACKAGE)
+            servingNutritionClient.getNamedServingNutritions(listOf("불고기", "잡곡밥"), MealInputCategory.PACKAGE)
         }
     }
 
@@ -1063,7 +1063,7 @@ class AnalysisServiceTest {
     @Test
     fun `다시 계산이 실패하면 완료였던 식사가 FAILED가 되므로 실패 알림은 보낸다`() {
         givenAnalysisMeal(createAnalysisMeal(hasCatComment = true))
-        every { servingNutritionClient.getServingNutritions(any(), any()) } throws
+        every { servingNutritionClient.getNamedServingNutritions(any(), any()) } throws
             AnalysisFailureException(AnalysisFailureCategory.INVALID_RESPONSE, "실패")
 
         analysisService.analyzeMealAnalysisJob(nutritionJob)
@@ -1101,7 +1101,7 @@ class AnalysisServiceTest {
     @Test
     fun `1인분 조회가 일시적으로 실패하고 다시 시도할 수 있으면 코멘트를 만들지 않고 대기로 되돌린다`() {
         givenAnalysisMeal(createAnalysisMeal())
-        every { servingNutritionClient.getServingNutritions(any(), any()) } throws
+        every { servingNutritionClient.getNamedServingNutritions(any(), any()) } throws
             AnalysisFailureException(AnalysisFailureCategory.UNAVAILABLE, "실패")
 
         analysisService.analyzeMealAnalysisJob(nutritionJob)
@@ -1115,7 +1115,7 @@ class AnalysisServiceTest {
     @Test
     fun `1인분 조회 결과를 해석하지 못하면 FAILED로 끝내고 알린다`() {
         givenAnalysisMeal(createAnalysisMeal())
-        every { servingNutritionClient.getServingNutritions(any(), any()) } throws
+        every { servingNutritionClient.getNamedServingNutritions(any(), any()) } throws
             AnalysisFailureException(AnalysisFailureCategory.INVALID_RESPONSE, "실패")
 
         analysisService.analyzeMealAnalysisJob(nutritionJob)
@@ -1130,7 +1130,7 @@ class AnalysisServiceTest {
 
         analysisService.analyzeMealAnalysisJob(nutritionJob)
 
-        verify(exactly = 0) { servingNutritionClient.getServingNutritions(any(), any()) }
+        verify(exactly = 0) { servingNutritionClient.getNamedServingNutritions(any(), any()) }
         verify(exactly = 1) { mealAnalysisJobTransactionService.failMealAnalysis(nutritionJob) }
         assertEquals(1, countAnalysis("failed", "invalid_request"))
     }
@@ -1141,7 +1141,7 @@ class AnalysisServiceTest {
 
         analysisService.analyzeMealAnalysisJob(nutritionJob)
 
-        verify(exactly = 0) { servingNutritionClient.getServingNutritions(any(), any()) }
+        verify(exactly = 0) { servingNutritionClient.getNamedServingNutritions(any(), any()) }
         verify(exactly = 0) { mealAnalysisJobTransactionService.confirmMealNutrition(any(), any(), any()) }
         verify(exactly = 0) { mealAnalysisJobTransactionService.failMealAnalysis(any()) }
     }

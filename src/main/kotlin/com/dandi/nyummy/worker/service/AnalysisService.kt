@@ -261,7 +261,7 @@ class AnalysisService(
             return emptyMap()
         }
         val servingNutritionResults =
-            servingNutritionClient.getServingNutritions(mealFoods.map { it.name }, meal.inputCategory)
+            servingNutritionClient.getNamedServingNutritions(mealFoods.map { it.name }, meal.inputCategory)
 
         return mealFoods.zip(servingNutritionResults).associate { (mealFood, servingNutritionResult) ->
             val nutritionHint = mealFood.nutritionHint

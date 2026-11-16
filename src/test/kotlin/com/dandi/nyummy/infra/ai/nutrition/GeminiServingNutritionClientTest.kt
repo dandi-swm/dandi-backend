@@ -37,7 +37,7 @@ class GeminiServingNutritionClientTest {
         apiKey = "test-api-key",
         model = "gemini-test",
         recognitionModel = "gemini-recognition-test",
-        servingNutritionModel = "gemini-serving-nutrition-test",
+        namedNutritionModel = "gemini-named-nutrition-test",
         photoNutritionModel = "gemini-photo-nutrition-test",
         catCommentModel = "gemini-cat-comment-test",
         baseUrl = "https://gemini.test",
@@ -89,7 +89,7 @@ class GeminiServingNutritionClientTest {
         every { geminiClient.createContent(any(), capture(parts), any(), any()) } returns
             objectMapper.writeValueAsString(mapOf("foods" to names.indices.map { createServing(index = it + 1) }))
 
-        client.getServingNutritions(names, inputCategory)
+        client.getNamedServingNutritions(names, inputCategory)
 
         return parts.captured.single().getValue("text") as String
     }
@@ -101,7 +101,7 @@ class GeminiServingNutritionClientTest {
             createServing(index = 1, calory = 350, carbs = 15, protein = 25, fat = 20, iconId = 12L),
         )
 
-        val results = client.getServingNutritions(listOf("불고기", "잡곡밥"), MealInputCategory.FOOD_PHOTO)
+        val results = client.getNamedServingNutritions(listOf("불고기", "잡곡밥"), MealInputCategory.FOOD_PHOTO)
 
         assertEquals(
             listOf(
@@ -117,7 +117,7 @@ class GeminiServingNutritionClientTest {
     fun `1인분 값을 소수 둘째 자리로 맞춘다`() {
         givenServings(createServing(index = 1, calory = 276.666, carbs = 15.004, protein = 25.005, fat = 20))
 
-        val result = client.getServingNutritions(listOf("불고기"), MealInputCategory.FOOD_PHOTO).single()
+        val result = client.getNamedServingNutritions(listOf("불고기"), MealInputCategory.FOOD_PHOTO).single()
 
         assertEquals(
             ServingNutrition(BigDecimal("276.67"), BigDecimal("15.00"), BigDecimal("25.01"), BigDecimal("20.00")),
@@ -130,7 +130,7 @@ class GeminiServingNutritionClientTest {
         givenServings(createServing(index = 1))
 
         assertAnalysisFailure(AnalysisFailureCategory.INVALID_RESPONSE) {
-            client.getServingNutritions(listOf("불고기", "잡곡밥"), MealInputCategory.FOOD_PHOTO)
+            client.getNamedServingNutritions(listOf("불고기", "잡곡밥"), MealInputCategory.FOOD_PHOTO)
         }
     }
 
@@ -139,7 +139,7 @@ class GeminiServingNutritionClientTest {
         givenServings(createServing(index = 1, fat = -1))
 
         assertAnalysisFailure(AnalysisFailureCategory.INVALID_RESPONSE) {
-            client.getServingNutritions(listOf("불고기"), MealInputCategory.FOOD_PHOTO)
+            client.getNamedServingNutritions(listOf("불고기"), MealInputCategory.FOOD_PHOTO)
         }
     }
 
@@ -148,7 +148,7 @@ class GeminiServingNutritionClientTest {
         givenServings(createServing(index = 1, calory = 100000))
 
         assertAnalysisFailure(AnalysisFailureCategory.INVALID_RESPONSE) {
-            client.getServingNutritions(listOf("불고기"), MealInputCategory.FOOD_PHOTO)
+            client.getNamedServingNutritions(listOf("불고기"), MealInputCategory.FOOD_PHOTO)
         }
     }
 
@@ -156,7 +156,7 @@ class GeminiServingNutritionClientTest {
     fun `아이콘이 목록에 없으면 기본 아이콘으로 바꾼다`() {
         givenServings(createServing(index = 1, iconId = 999L))
 
-        val result = client.getServingNutritions(listOf("불고기"), MealInputCategory.FOOD_PHOTO).single()
+        val result = client.getNamedServingNutritions(listOf("불고기"), MealInputCategory.FOOD_PHOTO).single()
 
         assertEquals(5L, result.iconId)
     }
@@ -166,13 +166,13 @@ class GeminiServingNutritionClientTest {
         every { geminiClient.createContent(any(), any(), any(), any()) } returns "JSON이 아님"
 
         assertAnalysisFailure(AnalysisFailureCategory.INVALID_RESPONSE) {
-            client.getServingNutritions(listOf("불고기"), MealInputCategory.FOOD_PHOTO)
+            client.getNamedServingNutritions(listOf("불고기"), MealInputCategory.FOOD_PHOTO)
         }
     }
 
     @Test
     fun `음식 이름이 없으면 Gemini를 부르지 않는다`() {
-        val results = client.getServingNutritions(emptyList(), MealInputCategory.FOOD_PHOTO)
+        val results = client.getNamedServingNutritions(emptyList(), MealInputCategory.FOOD_PHOTO)
 
         assertTrue(results.isEmpty())
         verify(exactly = 0) { geminiClient.createContent(any(), any(), any(), any()) }
@@ -183,7 +183,7 @@ class GeminiServingNutritionClientTest {
         every { iconService.getIcons() } throws QueryTimeoutException("조회 시간 초과")
 
         assertAnalysisFailure(AnalysisFailureCategory.UNAVAILABLE) {
-            client.getServingNutritions(listOf("불고기"), MealInputCategory.FOOD_PHOTO)
+            client.getNamedServingNutritions(listOf("불고기"), MealInputCategory.FOOD_PHOTO)
         }
     }
 
@@ -219,7 +219,7 @@ class GeminiServingNutritionClientTest {
             createServing(index = 2, calory = 300, iconId = 5L) + mapOf("isFood" to true),
         )
 
-        val results = client.getServingNutritions(listOf("의자", "잡곡밥"), MealInputCategory.TEXT_RECORD)
+        val results = client.getNamedServingNutritions(listOf("의자", "잡곡밥"), MealInputCategory.TEXT_RECORD)
 
         val notFood = results.first()
         val zero = BigDecimal("0.00")
@@ -234,7 +234,7 @@ class GeminiServingNutritionClientTest {
     fun `음식이 아닌 이름은 값이 저장할 수 없는 값이어도 실패하지 않는다`() {
         givenServings(createServing(index = 1, calory = -1) + mapOf("isFood" to false))
 
-        val result = client.getServingNutritions(listOf("asdf"), MealInputCategory.TEXT_RECORD).single()
+        val result = client.getNamedServingNutritions(listOf("asdf"), MealInputCategory.TEXT_RECORD).single()
 
         assertFalse(result.isFood)
     }
@@ -243,7 +243,7 @@ class GeminiServingNutritionClientTest {
     fun `결과에 isFood가 없으면 음식으로 본다`() {
         givenServings(createServing(index = 1))
 
-        val result = client.getServingNutritions(listOf("불고기"), MealInputCategory.FOOD_PHOTO).single()
+        val result = client.getNamedServingNutritions(listOf("불고기"), MealInputCategory.FOOD_PHOTO).single()
 
         assertTrue(result.isFood)
     }
@@ -254,7 +254,7 @@ class GeminiServingNutritionClientTest {
         every { geminiClient.createContent(any(), any(), capture(responseSchema), any()) } returns
             objectMapper.writeValueAsString(mapOf("foods" to listOf(createServing(index = 1))))
 
-        client.getServingNutritions(listOf("불고기"), MealInputCategory.FOOD_PHOTO)
+        client.getNamedServingNutritions(listOf("불고기"), MealInputCategory.FOOD_PHOTO)
 
         val foods = (responseSchema.captured["properties"] as Map<*, *>)["foods"] as Map<*, *>
         val foodSchema = foods["items"] as Map<*, *>
