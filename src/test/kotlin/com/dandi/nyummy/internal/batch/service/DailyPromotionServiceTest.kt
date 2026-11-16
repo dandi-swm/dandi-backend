@@ -120,23 +120,33 @@ class DailyPromotionServiceTest {
     }
 
     @Test
-    fun `방 배경과 기간 한정, 그날 중에 판매가 끝나는 상품은 고르지 않는다`() {
+    fun `방 배경과 기간 한정 상품도 고른다`() {
         givenProducts(
             product(id = 1, category = RoomItemCategory.BACKGROUND),
             product(id = 2, isLimited = true),
-            product(id = 3, saleEndsAt = endsAt.minusSeconds(1)),
-            product(id = 4, saleEndsAt = endsAt),
+        )
+
+        service.createDailyPromotion()
+
+        assertEquals(setOf(1L, 2L), promotionProductsSlot.captured.map { it.productId }.toSet())
+    }
+
+    @Test
+    fun `그날 중에 판매가 끝나는 상품은 고르지 않는다`() {
+        givenProducts(
+            product(id = 1, saleEndsAt = endsAt.minusSeconds(1)),
+            product(id = 2, saleEndsAt = endsAt),
         )
 
         service.createDailyPromotion()
 
         // 판매가 그날 자정에 끝나는 상품은 그날 내내 판매 중이다
-        assertEquals(listOf(4L), promotionProductsSlot.captured.map { it.productId })
+        assertEquals(listOf(2L), promotionProductsSlot.captured.map { it.productId })
     }
 
     @Test
     fun `고를 상품이 없으면 만들지 않는다`() {
-        givenProducts(product(id = 1, category = RoomItemCategory.BACKGROUND))
+        givenProducts(product(id = 1, saleEndsAt = endsAt.minusSeconds(1)))
 
         service.createDailyPromotion()
 
