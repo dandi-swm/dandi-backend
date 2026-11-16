@@ -17,6 +17,7 @@ import com.dandi.nyummy.meal.calculator.calculateHintedServingNutrition
 import com.dandi.nyummy.meal.calculator.calculateMealFoodNutrition
 import com.dandi.nyummy.meal.calculator.calculateTotalAdjustedServingNutritions
 import com.dandi.nyummy.meal.calculator.calculateTotalNutrition
+import com.dandi.nyummy.meal.calculator.pickRewardBox
 import com.dandi.nyummy.meal.config.MealProperties
 import com.dandi.nyummy.meal.dto.CatCommentMealFoodInput
 import com.dandi.nyummy.meal.dto.PhotoServingNutritionInput
@@ -43,6 +44,7 @@ import java.math.BigDecimal
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
+import kotlin.random.Random
 
 @Service
 @ConditionalOnAnalysisWorkerEnabled
@@ -61,6 +63,7 @@ class AnalysisService(
     private val meterRegistry: MeterRegistry,
     private val clock: Clock,
     private val messageSource: MessageSource,
+    private val random: Random,
 ) {
     companion object {
         private val logger = LoggerFactory.getLogger(AnalysisService::class.java)
@@ -132,6 +135,9 @@ class AnalysisService(
     /**
      * 식사 기록 요청 안에서 끝내지 못한 음식 인식을 한다. 사진을 받아 인식하고, 음식 줄을 저장한 뒤 영양 작업으로 넘긴다.
      *
+     * 식사 기록 보상 상자를 뽑아 함께 넘긴다. 기록할 때는 음식인지 몰라 주지 않았으므로, 음식으로 인식한 지금 준다.
+     * 이미 받은 식사인지는 식사를 잠가 읽는 [MealAnalysisJobTransactionService.confirmMealRecognition]이 가린다.
+     *
      * 인식이 끝났다는 알림은 보내지 않는다. 사용자는 대기 화면에서 상태를 조회하다 음식 목록으로 넘어간다.
      * 음식이 아니거나 인식에 실패한 것은 [handleAnalysisFailure]가 다른 작업과 같은 규칙으로 다루고 알린다.
      */
@@ -143,6 +149,8 @@ class AnalysisService(
             job = job,
             recognition = recognition,
             nutritionDelay = mealProperties.recognition.nutritionDelay,
+            rewardBox = pickRewardBox(mealProperties.rewardBoxes, random),
+            rewardMailExpiresAt = Instant.now(clock).plus(mealProperties.rewardMailTimeToLive),
         )
         if (isConfirmed) {
             recordAnalysis(job, AnalysisOutcome.RECOGNIZED, null, analyzedAt)

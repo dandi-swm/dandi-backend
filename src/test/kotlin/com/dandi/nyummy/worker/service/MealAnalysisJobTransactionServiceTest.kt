@@ -3,11 +3,15 @@ package com.dandi.nyummy.worker.service
 import com.dandi.nyummy.cat.repository.CatRepository
 import com.dandi.nyummy.cat.service.CatService
 import com.dandi.nyummy.language.enum.Language
+import com.dandi.nyummy.mail.entity.Mail
+import com.dandi.nyummy.mail.enum.RewardBoxCategory
+import com.dandi.nyummy.mail.service.MailService
 import com.dandi.nyummy.meal.dto.MealFoodRecognitionResult
 import com.dandi.nyummy.meal.dto.MealRecognitionResult
 import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.dto.NutritionAnalysisResult
 import com.dandi.nyummy.meal.dto.NutritionHint
+import com.dandi.nyummy.meal.dto.RewardBoxResult
 import com.dandi.nyummy.meal.dto.ServingNutrition
 import com.dandi.nyummy.meal.dto.ServingNutritionResult
 import com.dandi.nyummy.meal.entity.Meal
@@ -67,6 +71,7 @@ class MealAnalysisJobTransactionServiceTest {
     private val mealAnalysisJobRepository = mockk<MealAnalysisJobRepository>()
     private val mealRepository = mockk<MealRepository>()
     private val mealFoodService = mockk<MealFoodService>()
+    private val mailService = mockk<MailService>()
     private val catRepository = mockk<CatRepository>()
     private val catService = mockk<CatService>()
 
@@ -74,6 +79,7 @@ class MealAnalysisJobTransactionServiceTest {
         mealAnalysisJobRepository = mealAnalysisJobRepository,
         mealRepository = mealRepository,
         mealFoodService = mealFoodService,
+        mailService = mailService,
         catRepository = catRepository,
         catService = catService,
         workerProperties = WorkerProperties(
@@ -431,6 +437,8 @@ class MealAnalysisJobTransactionServiceTest {
     // confirmMealRecognition
 
     private val nutritionDelay = Duration.ofMinutes(5)
+    private val rewardBox = RewardBoxResult(RewardBoxCategory.GOLD, 412)
+    private val rewardMailExpiresAt = now.plus(Duration.ofDays(7))
     private val recognitionJob = leasedJob.copy(category = MealAnalysisJobCategory.RECOGNITION, language = Language.JA)
     private val recognition = MealRecognitionResult(
         inputCategory = MealInputCategory.PACKAGE,
@@ -440,7 +448,8 @@ class MealAnalysisJobTransactionServiceTest {
         promptVersion = "v1",
     )
 
-    private fun createRecognizingMeal(deletedAt: Instant? = null) = Meal(
+    /** 인식을 기다리는 식사. [inputCategory]는 전에 판정된 입력 유형이고, 기록할 때 인식을 넘긴 식사는 null이다. */
+    private fun createRecognizingMeal(deletedAt: Instant? = null, inputCategory: MealInputCategory? = null) = Meal(
         status = MealStatus.RECOGNIZING,
         imageKey = recognitionJob.imageKey,
         mealAt = mealAt,
@@ -448,7 +457,17 @@ class MealAnalysisJobTransactionServiceTest {
         analysisVersion = MealAnalysisVersion.V2,
     ).apply {
         if (deletedAt != null) updateDeletedAt(deletedAt)
+        if (inputCategory != null) updateInputCategory(inputCategory)
     }
+
+    private fun confirmMealRecognition(nutritionDelay: Duration = this.nutritionDelay) =
+        mealAnalysisJobTransactionService.confirmMealRecognition(
+            job = recognitionJob,
+            recognition = recognition,
+            nutritionDelay = nutritionDelay,
+            rewardBox = rewardBox,
+            rewardMailExpiresAt = rewardMailExpiresAt,
+        )
 
     /** 인식 작업이 아직 이 Worker의 것이고, 잠가 읽은 식사가 [meal]이다. */
     private fun givenOwnedRecognitionJob(meal: Meal) {
@@ -456,19 +475,20 @@ class MealAnalysisJobTransactionServiceTest {
         every { mealFoodService.createMealFoods(any(), any(), any()) } returns emptyList()
         every { mealAnalysisJobRepository.save(any()) } answers { firstArg() }
         every { mealAnalysisJobRepository.updateAvailableAt(any(), any()) } returns 1
+        every { mailService.createMealRewardMail(any(), any(), any(), any(), any()) } returns mockk<Mail>()
     }
 
     @Test
     fun `인식을 확정할 때 다른 Worker가 가져간 작업이면 아무것도 쓰지 않고 false를 돌려준다`() {
         givenLostJob()
 
-        val isConfirmed =
-            mealAnalysisJobTransactionService.confirmMealRecognition(recognitionJob, recognition, nutritionDelay)
+        val isConfirmed = confirmMealRecognition()
 
         assertFalse(isConfirmed)
         verify(exactly = 0) { mealRepository.findMealWithLockById(any()) }
         verify(exactly = 0) { mealFoodService.createMealFoods(any(), any(), any()) }
         verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
+        verify(exactly = 0) { mailService.createMealRewardMail(any(), any(), any(), any(), any()) }
     }
 
     @Test
@@ -476,8 +496,7 @@ class MealAnalysisJobTransactionServiceTest {
         val meal = createRecognizingMeal()
         givenOwnedRecognitionJob(meal)
 
-        val isConfirmed =
-            mealAnalysisJobTransactionService.confirmMealRecognition(recognitionJob, recognition, nutritionDelay)
+        val isConfirmed = confirmMealRecognition()
 
         assertTrue(isConfirmed)
         assertEquals("불고기 백반", meal.name)
@@ -490,7 +509,7 @@ class MealAnalysisJobTransactionServiceTest {
         val meal = createRecognizingMeal()
         givenOwnedRecognitionJob(meal)
 
-        mealAnalysisJobTransactionService.confirmMealRecognition(recognitionJob, recognition, nutritionDelay)
+        confirmMealRecognition()
 
         verify(exactly = 1) { mealFoodService.createMealFoods(meal.id, recognition, MealRecognitionCategory.WORKER) }
     }
@@ -500,7 +519,7 @@ class MealAnalysisJobTransactionServiceTest {
         val meal = createRecognizingMeal()
         givenOwnedRecognitionJob(meal)
 
-        mealAnalysisJobTransactionService.confirmMealRecognition(recognitionJob, recognition, nutritionDelay)
+        confirmMealRecognition()
 
         // 식사 하나에 작업은 하나라(유니크 제약) 인식 작업을 먼저 지워야 영양 작업을 만들 수 있다.
         verifyOrder {
@@ -520,7 +539,7 @@ class MealAnalysisJobTransactionServiceTest {
     fun `지연 시간이 0이면 영양 작업을 미루지 않는다`() {
         givenOwnedRecognitionJob(createRecognizingMeal())
 
-        mealAnalysisJobTransactionService.confirmMealRecognition(recognitionJob, recognition, Duration.ZERO)
+        confirmMealRecognition(nutritionDelay = Duration.ZERO)
 
         verify(exactly = 1) { mealAnalysisJobRepository.save(any()) }
         verify(exactly = 0) { mealAnalysisJobRepository.updateAvailableAt(any(), any()) }
@@ -531,8 +550,7 @@ class MealAnalysisJobTransactionServiceTest {
         val meal = createRecognizingMeal(deletedAt = now.minusSeconds(5))
         givenOwnedRecognitionJob(meal)
 
-        val isConfirmed =
-            mealAnalysisJobTransactionService.confirmMealRecognition(recognitionJob, recognition, nutritionDelay)
+        val isConfirmed = confirmMealRecognition()
 
         // 작업은 이 Worker가 끝냈으므로 true다.
         assertTrue(isConfirmed)
@@ -543,6 +561,47 @@ class MealAnalysisJobTransactionServiceTest {
         }
         verify(exactly = 0) { mealFoodService.createMealFoods(any(), any(), any()) }
         verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
+        verify(exactly = 0) { mailService.createMealRewardMail(any(), any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `기록할 때 인식을 넘겨 입력 유형이 없는 식사는 인식을 확정하며 작업의 언어로 보상 상자 우편을 만든다`() {
+        givenOwnedRecognitionJob(createRecognizingMeal())
+
+        confirmMealRecognition()
+
+        verify(exactly = 1) {
+            mailService.createMealRewardMail(userId, RewardBoxCategory.GOLD, 412, rewardMailExpiresAt, Language.JA)
+        }
+    }
+
+    @Test
+    fun `음식이 아니라고 판정됐던 식사는 다시 인식을 확정하며 보상 상자 우편을 만든다`() {
+        givenOwnedRecognitionJob(createRecognizingMeal(inputCategory = MealInputCategory.NOT_FOOD))
+
+        confirmMealRecognition()
+
+        verify(exactly = 1) {
+            mailService.createMealRewardMail(userId, RewardBoxCategory.GOLD, 412, rewardMailExpiresAt, Language.JA)
+        }
+    }
+
+    @Test
+    fun `이미 음식으로 인식됐던 식사는 다시 인식을 확정해도 보상 상자 우편을 만들지 않는다`() {
+        // 음식으로 인식돼 보상 상자를 받은 뒤 영양 계산에서 실패해 다시 분석하는 식사다. 입력 유형이 음식 유형으로 남아 있다.
+        val foodCategories = MealInputCategory.entries - MealInputCategory.NOT_FOOD
+
+        foodCategories.forEach { inputCategory ->
+            val meal = createRecognizingMeal(inputCategory = inputCategory)
+            givenOwnedRecognitionJob(meal)
+
+            assertTrue(confirmMealRecognition())
+
+            // 보상만 건너뛰고 인식 결과는 그대로 확정한다.
+            assertEquals(MealStatus.CONFIRMING, meal.status)
+            assertEquals(MealInputCategory.PACKAGE, meal.inputCategory)
+        }
+        verify(exactly = 0) { mailService.createMealRewardMail(any(), any(), any(), any(), any()) }
     }
 
     // getAnalysisMeal·confirmMealNutrition
