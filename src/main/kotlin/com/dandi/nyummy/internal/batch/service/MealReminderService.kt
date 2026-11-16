@@ -118,9 +118,13 @@ class MealReminderService(
         // 최근 한 시간 안에 음식을 기록했으면 리마인드하지 않는다. 영양 계산이 끝났는지는 보지 않는다.
         // 알림의 뜻이 "아직 안 찍었으면 찍어라"라, 인식 중이거나 계산을 기다리는 식사도 기록한 것으로 본다.
         // 실패한 식사만 뺀다. 음식이 아닌 사진만 올린 사용자는 아직 기록하지 않은 것이다.
-        val targets = page.filterNot {
-            mealRepository.existsMealAfter(it.userId, MealStatus.FAILED, oneHourAgo)
-        }
+        // 묶음의 사용자를 한 번에 확인한다(page는 비어 있지 않다)
+        val recentMealUserIds = mealRepository.findUserIdsWithMealAfter(
+            userIds = page.map { it.userId },
+            excludedStatus = MealStatus.FAILED,
+            mealAt = oneHourAgo,
+        ).toSet()
+        val targets = page.filterNot { it.userId in recentMealUserIds }
 
         val messagesByToken = targets.mapNotNull { target ->
             val mealTime = target.convertMealTime(targetHour)

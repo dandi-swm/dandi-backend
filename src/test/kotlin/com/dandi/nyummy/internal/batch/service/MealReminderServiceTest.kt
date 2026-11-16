@@ -38,7 +38,7 @@ class MealReminderServiceTest {
 
     private val profileRepository = mockk<ProfileRepository>()
     private val mealRepository = mockk<MealRepository> {
-        every { existsMealAfter(any(), any(), any()) } returns false
+        every { findUserIdsWithMealAfter(any(), any(), any()) } returns emptyList()
     }
     private val pushDeduplicationRepository = mockk<PushDeduplicationRepository> {
         every { createSentMark(any(), any()) } returns true
@@ -118,7 +118,9 @@ class MealReminderServiceTest {
     fun `최근 기록으로 걸러진 사용자가 묶음의 마지막이어도 그 userId를 커서로 다음 묶음을 조회한다`() {
         givenUserIdPage(cursor = 0, listOf(1, 2), hasNext = true)
         givenUserIdPage(cursor = 2, listOf(3), hasNext = false)
-        every { mealRepository.existsMealAfter(2, MealStatus.FAILED, any()) } returns true
+        every {
+            mealRepository.findUserIdsWithMealAfter(listOf(1L, 2L), MealStatus.FAILED, any())
+        } returns listOf(2L)
 
         mealReminderService.sendMealReminders(LUNCH_HOUR)
 
@@ -130,7 +132,8 @@ class MealReminderServiceTest {
     fun `최근 한 시간 안에 실패하지 않은 식사가 있는 사용자에게는 보내지 않는다`() {
         // 지금은 12:00 KST(03:00Z)이고 한 시간 전은 02:00Z다. 실패한 식사만 빼고 본다.
         val oneHourAgo = Instant.parse("2026-11-02T02:00:00Z")
-        every { mealRepository.existsMealAfter(1L, MealStatus.FAILED, oneHourAgo) } returns true
+        every { mealRepository.findUserIdsWithMealAfter(listOf(1L, 2L), MealStatus.FAILED, oneHourAgo) } returns
+            listOf(1L)
 
         val messagesByToken = sendLunchReminders(
             createTarget(1L, "recorded-token", Language.KO),
@@ -138,6 +141,21 @@ class MealReminderServiceTest {
         )
 
         assertEquals(setOf("not-recorded-token"), messagesByToken.keys)
+    }
+
+    @Test
+    fun `최근 기록은 묶음마다 한 번에 1시간 전 이후 실패하지 않은 식사로 확인한다`() {
+        givenUserIdPage(cursor = 0, listOf(1, 2), hasNext = true)
+        givenUserIdPage(cursor = 2, listOf(3), hasNext = false)
+
+        mealReminderService.sendMealReminders(LUNCH_HOUR)
+
+        val oneHourAgo = Instant.parse("2026-11-02T11:00:00+09:00")
+        verifyOrder {
+            mealRepository.findUserIdsWithMealAfter(listOf(1L, 2L), MealStatus.FAILED, oneHourAgo)
+            mealRepository.findUserIdsWithMealAfter(listOf(3L), MealStatus.FAILED, oneHourAgo)
+        }
+        verify(exactly = 2) { mealRepository.findUserIdsWithMealAfter(any(), any(), any()) }
     }
 
     @Test
