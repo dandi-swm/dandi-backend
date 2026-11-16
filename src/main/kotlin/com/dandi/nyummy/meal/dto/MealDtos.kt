@@ -78,7 +78,7 @@ data class CreateMealV2Response(
 /**
  * 식사 안의 음식 한 줄. 기록 응답과 단건 조회가 같은 모양을 쓴다. 목록의 맨 위 줄이 대표 음식이다.
  *
- * @property portion 인분(0.5~5.0, 0.5 단위). 1.0이 1인분이다
+ * @property portion 인분(0.5~5.0, 0.5 단위). 1.0이 1인분이다. 아직 구하지 않은 줄은 null이고 영양 계산 때 채워진다
  * @property nutrition 이 줄의 영양(1인분 영양 × 인분). 계산 전이면 null
  * @property isNutritionFixed 사용자가 영양을 직접 고친 줄. 다시 계산할 때 덮어쓰지 않는다
  * @property iconId 이 줄의 아이콘. 영양 계산 때 함께 정해지므로 계산 전이면 null. 맨 위 줄의 아이콘이 식사 아이콘이다
@@ -86,7 +86,7 @@ data class CreateMealV2Response(
 data class MealFoodResponse(
     val mealFoodId: Long,
     val name: String,
-    val portion: BigDecimal,
+    val portion: BigDecimal?,
     val nutrition: Nutrition?,
     val isNutritionFixed: Boolean,
     val iconId: Long?,

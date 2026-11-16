@@ -6,6 +6,7 @@ import com.dandi.nyummy.exception.errorcode.MealErrorCode
 import com.dandi.nyummy.meal.calculator.calculateServingNutrition
 import com.dandi.nyummy.meal.dto.MealFoodRequest
 import com.dandi.nyummy.meal.dto.MealRecognitionResult
+import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.dto.ServingNutritionResult
 import com.dandi.nyummy.meal.dto.UpdateMealFoodRequest
 import com.dandi.nyummy.meal.entity.MealFood
@@ -45,6 +46,8 @@ class MealFoodService(
      * 1인분 영양이 이미 있는 줄(사용자가 영양을 고쳐 고정한 줄, 앞서 구한 줄)의 영양과, 아이콘이 이미 있는 줄(사용자가 고른 줄,
      * 앞서 구한 줄)의 아이콘은 조회 결과가 있어도 덮지 않는다. 다시 구해야 하는 값은 음식 목록을 고칠 때 비워 둔다.
      *
+     * 인분이 빈 줄은 [MealFood.DEFAULT_PORTION]으로 채운다. 조회 결과가 없는 줄도 채우고, 사용자가 정한 인분은 덮지 않는다.
+     *
      * 변경 감지로 저장하므로 호출하는 쪽 트랜잭션에 합류한다.
      *
      * @param mealId 영양을 계산하는 식사 ID
@@ -55,6 +58,10 @@ class MealFoodService(
     fun updateServingNutritions(mealId: Long, servingNutritions: Map<Long, ServingNutritionResult>): List<MealFood> {
         val mealFoods = mealFoodRepository.findAllByMealIdOrderByDisplayOrderAsc(mealId)
         mealFoods.forEach { mealFood ->
+            // 1인분 영양과 아이콘이 이미 있어 조회하지 않은 줄도 인분은 비어 있을 수 있어, 조회 결과를 보기 전에 채운다.
+            if (mealFood.portion == null) {
+                mealFood.updatePortion(MealFood.DEFAULT_PORTION)
+            }
             val servingNutritionResult = servingNutritions[mealFood.id] ?: return@forEach
             if (mealFood.servingNutrition == null) {
                 mealFood.updateServingNutrition(servingNutritionResult.servingNutrition)
@@ -73,7 +80,7 @@ class MealFoodService(
      * - [MealFoodRequest.mealFoodId]가 있으면 그 줄을 고치고, 없으면 새 줄을 만든다. 요청에 없는 기존 줄은 지운다.
      * - 이름이 바뀐 줄은 고정하지 않은 1인분 영양과 아이콘을 비운다([MealFood.updateName]). Worker가 새 이름으로 다시 구한다.
      * - 인분만 바뀐 줄은 1인분 영양을 그대로 둔다. 줄 영양은 1인분 × 새 인분이 된다.
-     * - [MealFoodRequest.nutrition]을 채운 줄은 그 값을 인분으로 나눠 1인분으로 저장하고 고정한다.
+     * - [MealFoodRequest.nutrition]을 채운 줄은 그 값을 인분으로 나눠 1인분으로 저장하고 고정한다([updateFixedNutrition]).
      * - [MealFoodRequest.iconId]를 채운 줄은 그 아이콘으로 고정한다.
      *
      * 영양을 다시 계산할 작업을 만들고 식사 상태를 바꾸는 일과 함께 커밋돼야 하므로 호출하는 쪽 트랜잭션에 합류한다.
@@ -111,9 +118,7 @@ class MealFoodService(
             mealFood.updateDisplayOrder(index + 1)
             mealFood.updateName(request.name)
             mealFood.updatePortion(request.portion)
-            request.nutrition?.let {
-                mealFood.updateFixedServingNutrition(calculateServingNutrition(it.toNutrition(), request.portion))
-            }
+            request.nutrition?.let { updateFixedNutrition(mealFood, it.toNutrition()) }
             request.iconId?.let { mealFood.updateFixedIconId(it) }
 
             mealFood
@@ -127,7 +132,7 @@ class MealFoodService(
      *
      * - 이름을 바꾸면 고정하지 않은 1인분 영양과 아이콘을 비운다([MealFood.updateName]). Worker가 새 이름으로 다시 구한다.
      * - 인분만 바꾸면 1인분 영양을 그대로 둔다. 줄 영양은 1인분 × 새 인분이 된다.
-     * - [UpdateMealFoodRequest.nutrition]은 고친 뒤의 인분으로 나눠 1인분으로 저장하고 고정한다.
+     * - [UpdateMealFoodRequest.nutrition]은 고친 뒤의 인분으로 나눠 1인분으로 저장하고 고정한다([updateFixedNutrition]).
      * - [UpdateMealFoodRequest.iconId]는 그 아이콘으로 고정한다.
      *
      * 식사의 합계를 다시 계산하는 일과 함께 커밋돼야 하므로 호출하는 쪽 트랜잭션에 합류한다.
@@ -148,9 +153,7 @@ class MealFoodService(
 
         request.name?.let { mealFood.updateName(it) }
         request.portion?.let { mealFood.updatePortion(it) }
-        request.nutrition?.let {
-            mealFood.updateFixedServingNutrition(calculateServingNutrition(it.toNutrition(), mealFood.portion))
-        }
+        request.nutrition?.let { updateFixedNutrition(mealFood, it.toNutrition()) }
         request.iconId?.let { mealFood.updateFixedIconId(it) }
 
         return mealFoods
@@ -186,6 +189,16 @@ class MealFoodService(
         }
 
         return remainingMealFoods
+    }
+
+    /**
+     * 사용자가 직접 적은 줄 영양을 1인분으로 바꿔 저장하고 고정한다. 1인분 = 적은 값 ÷ 그 줄의 인분이다.
+     * 인분을 아직 구하지 않은 줄은 적은 값이 그 줄 전체의 값이므로 인분을 [MealFood.DEFAULT_PORTION]으로 둔다.
+     */
+    private fun updateFixedNutrition(mealFood: MealFood, nutrition: Nutrition) {
+        val portion = mealFood.portion ?: MealFood.DEFAULT_PORTION.also { mealFood.updatePortion(it) }
+
+        mealFood.updateFixedServingNutrition(calculateServingNutrition(nutrition, portion))
     }
 
     /** 사용자가 고른 아이콘이 모두 있는 아이콘인지 본다. 없는 id는 음식 줄에 저장할 수 없다. */

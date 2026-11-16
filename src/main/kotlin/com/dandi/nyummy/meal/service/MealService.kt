@@ -435,7 +435,7 @@ class MealService(
 
     /**
      * 음식 줄이 바뀐 식사의 영양을 다시 계산하게 한다. 값을 새로 구해야 하는지에 따라 갈린다.
-     * - 1인분 영양이나 아이콘이 빈 줄이 있으면 바로 가져갈 영양 작업을 만들고, 식사의 합계와 아이콘을 비워 WAITING으로 둔다.
+     * - 1인분 영양이나 아이콘, 인분이 빈 줄이 있으면 바로 가져갈 영양 작업을 만들고, 식사의 합계와 아이콘을 비워 WAITING으로 둔다.
      *   아직 한 번도 계산이 끝나지 않은 식사(코멘트 없음)도 코멘트를 만들어야 하므로 작업을 만든다.
      * - 모든 줄에 값이 있고 한 번 계산이 끝났던 식사면 이 요청 안에서 합계와 맨 위 줄의 아이콘을 식사에 넣고 COMPLETED로 둔다.
      *
@@ -445,8 +445,8 @@ class MealService(
      */
     private fun recalculateMealNutrition(meal: Meal, mealFoods: List<MealFood>, language: Language) {
         val topMealFoodIconId = mealFoods.firstOrNull()?.iconId
-        val hasAllServingNutritions = mealFoods.all { it.servingNutrition != null && it.iconId != null }
-        if (meal.catComment != null && topMealFoodIconId != null && hasAllServingNutritions) {
+        val hasAllValues = mealFoods.all { it.servingNutrition != null && it.iconId != null && it.portion != null }
+        if (meal.catComment != null && topMealFoodIconId != null && hasAllValues) {
             meal.updateNutrition(calculateMealNutrition(mealFoods))
             meal.updateIconId(topMealFoodIconId)
             meal.updateStatus(MealStatus.COMPLETED)

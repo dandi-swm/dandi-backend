@@ -191,7 +191,9 @@ class MealServiceV2IntegrationTest @Autowired constructor(
         mealAnalysisJobRepository.findAll().singleOrNull { it.mealId == mealId }
 
     private fun createSameFoodsRequest(mealFoods: List<MealFood>) = UpdateMealFoodsRequest(
-        foods = mealFoods.map { MealFoodRequest(mealFoodId = it.id, name = it.name, portion = it.portion) },
+        foods = mealFoods.map {
+            MealFoodRequest(mealFoodId = it.id, name = it.name, portion = checkNotNull(it.portion))
+        },
     )
 
     @Test
@@ -355,7 +357,7 @@ class MealServiceV2IntegrationTest @Autowired constructor(
             val requests = (1..8).map { createCompletedMeal("gap-$round-$it@nyummy.co.kr") }.map { (meal, mealFoods) ->
                 meal to UpdateMealFoodsRequest(
                     foods = mealFoods.map {
-                        MealFoodRequest(mealFoodId = it.id, name = "${it.name} 큰 것", portion = it.portion)
+                        MealFoodRequest(mealFoodId = it.id, name = "${it.name} 큰 것", portion = checkNotNull(it.portion))
                     },
                 )
             }

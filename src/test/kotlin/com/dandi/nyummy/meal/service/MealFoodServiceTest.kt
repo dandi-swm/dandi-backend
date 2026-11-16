@@ -156,13 +156,14 @@ class MealFoodServiceTest {
         id: Long = displayOrder.toLong(),
         servingNutrition: ServingNutrition? = null,
         iconId: Long? = null,
+        portion: BigDecimal? = BigDecimal("1.0"),
     ): MealFood = spyk(
         MealFood(
             mealId = mealId,
             mealFoodSnapshotId = null,
             displayOrder = displayOrder,
             name = name,
-            portion = BigDecimal("1.0"),
+            portion = portion,
         ),
     ).apply {
         every { this@apply.id } returns id
@@ -237,6 +238,46 @@ class MealFoodServiceTest {
         )
 
         assertEquals(listOf(first, second), mealFoods)
+    }
+
+    @Test
+    fun `인분이 빈 줄은 조회 결과와 함께 1인분으로 채운다`() {
+        val mealFood = createMealFood(displayOrder = 1, name = "불고기", portion = null)
+        givenMealFoods(mealFood)
+
+        mealFoodService.updateServingNutritions(mealId, mapOf(1L to ServingNutritionResult(newServingNutrition, 12L)))
+
+        assertEquals(MealFood.DEFAULT_PORTION, mealFood.portion)
+        assertEquals(newServingNutrition, mealFood.servingNutrition)
+    }
+
+    @Test
+    fun `조회 결과가 없는 줄도 빈 인분은 1인분으로 채우고 1인분 영양과 아이콘은 그대로 둔다`() {
+        // 사용자가 영양과 아이콘을 직접 정해 조회할 것이 없지만 인분은 정하지 않은 줄
+        val mealFood = createMealFood(
+            displayOrder = 1,
+            name = "불고기",
+            servingNutrition = oldServingNutrition,
+            iconId = 5L,
+            portion = null,
+        )
+        givenMealFoods(mealFood)
+
+        mealFoodService.updateServingNutritions(mealId, emptyMap())
+
+        assertEquals(MealFood.DEFAULT_PORTION, mealFood.portion)
+        assertEquals(oldServingNutrition, mealFood.servingNutrition)
+        assertEquals(5L, mealFood.iconId)
+    }
+
+    @Test
+    fun `인분이 이미 있는 줄은 인분을 덮지 않는다`() {
+        val mealFood = createMealFood(displayOrder = 1, name = "불고기", portion = BigDecimal("2.5"))
+        givenMealFoods(mealFood)
+
+        mealFoodService.updateServingNutritions(mealId, mapOf(1L to ServingNutritionResult(newServingNutrition, 12L)))
+
+        assertEquals(BigDecimal("2.5"), mealFood.portion)
     }
 
     // updateMealFoods
@@ -524,6 +565,28 @@ class MealFoodServiceTest {
         // 700 ÷ 2.0 = 350.00. 고치기 전 인분(1.0)으로 나누면 700이 된다.
         assertEquals(BigDecimal("2.0"), bulgogi.portion)
         assertEquals(BigDecimal("350.00"), bulgogi.servingNutrition?.calory)
+    }
+
+    @Test
+    fun `인분이 빈 줄의 영양을 고치면 인분을 1로 두고 고친 값을 그대로 1인분으로 저장해 고정한다`() {
+        val bulgogi = createMealFood(displayOrder = 1, name = "불고기", portion = null)
+        givenMealFoods(bulgogi)
+
+        mealFoodService.updateMealFood(
+            mealId,
+            1L,
+            UpdateMealFoodRequest(
+                nutrition = MealFoodNutritionRequest(calory = 415, carbs = 30, protein = 27, fat = 21),
+            ),
+        )
+
+        // 인분을 모르는 줄에 적은 값은 그 줄 전체의 값이다.
+        assertEquals(MealFood.DEFAULT_PORTION, bulgogi.portion)
+        assertEquals(
+            ServingNutrition(BigDecimal("415.00"), BigDecimal("30.00"), BigDecimal("27.00"), BigDecimal("21.00")),
+            bulgogi.servingNutrition,
+        )
+        assertTrue(bulgogi.isNutritionFixed)
     }
 
     @Test

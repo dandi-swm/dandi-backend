@@ -24,14 +24,14 @@ data class AnalysisMealResult(
 /**
  * 영양을 계산할 식사의 음식 한 줄.
  *
- * @property portion 인분
+ * @property portion 지금 저장된 인분. 아직 구하지 않았으면 null
  * @property servingNutrition 지금 저장된 1인분 영양. 아직 구하지 않았거나 다시 구해야 하면 null
  * @property iconId 지금 저장된 아이콘. 아직 구하지 않았거나 다시 구해야 하면 null
  */
 data class AnalysisMealFoodResult(
     val mealFoodId: Long,
     val name: String,
-    val portion: BigDecimal,
+    val portion: BigDecimal?,
     val servingNutrition: ServingNutrition?,
     val iconId: Long?,
 )
