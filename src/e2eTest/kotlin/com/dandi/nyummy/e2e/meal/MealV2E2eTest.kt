@@ -47,7 +47,6 @@ class MealV2E2eTest {
             // 서버는 응답 기한 안에 인식하면 CONFIRMING, 못 끝내면 RECOGNIZING으로 응답한다. 어느 쪽이 될지는 그때의 Gemini 응답 시간에 달렸다.
             // FAILED면 테스트 사진을 음식이 아니라고 본 것이다.
             body("status", oneOf("CONFIRMING", "RECOGNIZING"))
-            body("rewardBoxCategory", oneOf("BRONZE", "SILVER", "GOLD"))
         } Extract {
             jsonPath()
         }
@@ -55,16 +54,30 @@ class MealV2E2eTest {
         var rewardBoxMailId: Long? = null
 
         try {
-            // 1. 기록 응답의 대표 이름과 음식 줄
+            // 1. 기록 응답의 대표 이름과 음식 줄, 보상 상자 등급
             if (created.getString("status") == "CONFIRMING") {
                 assertRecognizedFoods(created.getString("name"), created.getList("foods"))
+                assertTrue(
+                    created.getString("rewardBoxCategory") in setOf("BRONZE", "SILVER", "GOLD"),
+                    "음식으로 인식한 식사의 응답에 보상 상자 등급이 없습니다",
+                )
             } else {
-                // 인식 전이라 이름과 음식 줄이 없다.
+                // 인식 전이라 이름과 음식 줄이 없다. 보상 상자도 음식으로 인식된 뒤에 받으므로 아직 등급이 없다.
                 assertNull(created.getString("name"), "인식 중인 식사에 이름이 있습니다")
                 assertNull(created.getList<Any>("foods"), "인식 중인 식사에 음식 줄이 있습니다")
+                assertNull(created.getString("rewardBoxCategory"), "인식 중인 식사에 보상 상자 등급이 있습니다")
             }
 
-            // 2. 기록 보상 상자 우편이 하나 생긴다.
+            // 2. 인식이 끝나 음식 목록이 준비된다. 기한 안에 인식하지 못했으면 Worker가 인식할 때까지 기다린다.
+            // 영양 계산은 음식 목록을 보내거나 5분이 지나야 시작하므로 여기서는 사용자의 확인을 기다리는 CONFIRMING에 머문다.
+            assertEquals(
+                "CONFIRMING",
+                waitForStatus(mealId, setOf("CONFIRMING", "FAILED")),
+                "음식 인식이 끝나지 않았거나 실패했습니다(mealId=$mealId). dev Worker 로그를 확인하세요.",
+            )
+
+            // 3. 음식으로 인식된 식사에 기록 보상 상자 우편이 하나 생긴다. 요청 안에서 인식했으면 기록할 때,
+            // Worker가 인식했으면 그 인식과 함께 생긴다. 어느 쪽이든 CONFIRMING이 된 지금은 있어야 한다.
             rewardBoxMailId = Given {
                 spec(RequestSpecs.createAuthorizedSpec())
                 queryParam("size", 1)
@@ -77,9 +90,9 @@ class MealV2E2eTest {
             } Extract {
                 jsonPath().getLong("mails[0].mailId")
             }
-            assertTrue(rewardBoxMailId != latestMailIdBefore, "식사를 기록했는데 새 보상 상자 우편이 없습니다")
+            assertTrue(rewardBoxMailId != latestMailIdBefore, "음식으로 인식된 식사에 새 보상 상자 우편이 없습니다")
 
-            // 3. 같은 사진으로는 다시 기록할 수 없다.
+            // 4. 같은 사진으로는 다시 기록할 수 없다.
             val attemptCountBefore = getTodayAttemptCount()
             Given {
                 spec(RequestSpecs.createAuthorizedSpec())
@@ -94,13 +107,6 @@ class MealV2E2eTest {
             assertEquals(attemptCountBefore, getTodayAttemptCount(), "거부된 기록이 시도 횟수에 들어갔습니다")
             assertEquals(rewardBoxMailId, getLatestMailId(), "거부된 기록에 보상 상자 우편이 생겼습니다")
 
-            // 4. 인식이 끝나 음식 목록이 준비된다. 기한 안에 인식하지 못했으면 Worker가 인식할 때까지 기다린다.
-            // 영양 계산은 음식 목록을 보내거나 5분이 지나야 시작하므로 여기서는 사용자의 확인을 기다리는 CONFIRMING에 머문다.
-            assertEquals(
-                "CONFIRMING",
-                waitForStatus(mealId, setOf("CONFIRMING", "FAILED")),
-                "음식 인식이 끝나지 않았거나 실패했습니다(mealId=$mealId). dev Worker 로그를 확인하세요.",
-            )
             val confirmingMeal = getMeal(mealId)
             assertEquals("V2", confirmingMeal.getString("analysisVersion"))
             assertEquals(0, confirmingMeal.getInt("nutrition.calory"), "계산 전 식사에 칼로리가 있습니다")
