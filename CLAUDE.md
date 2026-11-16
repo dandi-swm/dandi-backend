@@ -150,11 +150,13 @@
 - Worker가 가져갈 영양 분석 작업 한 건 `MealAnalysisJob`(테이블 `meal_analysis_jobs`, Task 금지 — ECS task와 혼동)
 - 영양 분석 작업을 가져가 처리하는 별도 서비스 `Worker`(패키지 worker, 설정 `app.worker.enabled`, Consumer 금지)
 - 작업 종류 `MealAnalysisJobCategory`(`category`), 작업을 가져갈 수 있게 되는 시각 `availableAt` — lease 만료 시각 `leaseExpiresAt`, 쌓인 시각 `createdAt`과 다른 것
-- 식사 안의 음식 한 줄 `MealFood`(테이블 `meal_foods`, `mealFoodId`, 요청·응답 필드만 `foods`) — 음식 DB의 음식 `Food`와 다른 것. 한 줄을 Item·Line이라 부르지 않는다(게임 아이템 `Item`, 구매 구성품 `ItemPurchaseLine`과 충돌). 목록 순서 `displayOrder`
+- 식사 안의 음식 한 줄 `MealFood`(테이블 `meal_foods`, `mealFoodId`, 요청·응답 필드만 `foods`) — 음식 이름별 1인분 영양 `FoodNutrition`과 다른 것. 한 줄을 Item·Line이라 부르지 않는다(게임 아이템 `Item`, 구매 구성품 `ItemPurchaseLine`과 충돌). 목록 순서 `displayOrder`
 - 인분 `portion`(Serving·Quantity·Amount 금지 — Quantity는 지급 개수), 음식 1인분의 영양 `Serving`(`servingCalory`, 값 객체 `ServingNutrition`) — 줄 영양과 식사 합계 `Nutrition`과 다른 것
 - 사용자가 직접 정해 다시 구하지 않는 값 `Fixed`(`isNutritionFixed`·`isIconFixed`, Locked·Manual·Custom 금지)
 - 사진에서 입력 유형·대표 이름·음식 줄을 알아내는 것 `Recognition`(동사 recognize, Detection·Classification 금지) — 영양을 구하는 `Analysis`와 다른 단계
 - 사진에 적혀 있어 인식이 읽은 음식 하나의 영양 값 `NutritionHint`(`nutritionHint`, Hint 단독 금지) — 모델이 구한 1인분 `Serving`, 사용자가 직접 정한 값 `Fixed`와 다른 것
+- 음식 이름별로 저장해 두고 다시 쓰는 1인분 영양 `FoodNutrition`(테이블 `food_nutritions`, Food 단독 금지) — 식사 안의 음식 한 줄 `MealFood`, 1인분 값 객체 `ServingNutrition`과 다른 것
+- 음식 이름만으로 구하는 1인분 조회 `Named`(`getNamedServingNutritions`, 설정 `named-nutrition-model`, Text·String 금지 — Text는 입력 유형 글씨 `TEXT_RECORD`와 혼동) — 사진을 함께 보내 구하는 `Photo`(`getPhotoServingNutritions`)와 짝
 - AI가 처음 인식한 결과 `MealSnapshot`·`MealFoodSnapshot`(History·Original 금지) — 사용자가 고치는 지금 값 `Meal.name`·`MealFood`와 다른 것
 - 식사를 만든 분석의 버전 `MealAnalysisVersion`(`analysisVersion`), 인식이 판정한 입력 유형 `MealInputCategory`(`inputCategory`), 인식한 곳 `MealRecognitionCategory`
 - 식사 기록 요청 안에서 한 인식 시도의 결과 `MealRecognitionOutcome`, 요청 안에서 끝내지 못해 Worker로 넘긴 것 `Deferred`(`MealRecognitionDeferralCategory`, Delayed·Postponed 금지 — 지표의 `delayed`는 설정 오류로 미룬 작업)

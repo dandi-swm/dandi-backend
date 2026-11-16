@@ -269,7 +269,7 @@ class AnalysisService(
             return emptyMap()
         }
         val names = mealFoods.map { it.name }
-        val servingNutritionResults = if (meal.inputCategory.isProduct) {
+        val servingNutritionResults = if (meal.inputCategory.isPackage) {
             servingNutritionClient.getNamedServingNutritions(names, meal.inputCategory)
         } else {
             getFoodNutritions(names, meal.inputCategory)
