@@ -93,6 +93,20 @@ class MealFood(
             )
         }
 
+    /**
+     * 사진에 적혀 있어 1인분 컬럼에 일부만 차 있는 값. 넷이 다 찼거나 하나도 없으면 null이다.
+     * 영양을 계산할 때 이 값은 그대로 두고 빈 항목만 채운다.
+     */
+    val nutritionHint: NutritionHint?
+        get() {
+            val filledCount = listOfNotNull(servingCalory, servingCarbs, servingProtein, servingFat).size
+            if (filledCount == 0 || filledCount == SERVING_NUTRIENT_COUNT) {
+                return null
+            }
+
+            return NutritionHint(servingCalory, servingCarbs, servingProtein, servingFat)
+        }
+
     fun updateDisplayOrder(displayOrder: Int) {
         this.displayOrder = displayOrder
     }
@@ -145,6 +159,17 @@ class MealFood(
         nutritionHint.fat?.let { this.servingFat = it }
     }
 
+    /**
+     * 구한 1인분 영양으로 비어 있는 항목만 채운다. 사진에 적혀 있어 이미 차 있는 항목은 덮지 않는다.
+     * 넷이 다 비어 있던 줄에는 [servingNutrition]이 그대로 들어간다.
+     */
+    fun updateEmptyServingNutrition(servingNutrition: ServingNutrition) {
+        this.servingCalory = this.servingCalory ?: servingNutrition.calory
+        this.servingCarbs = this.servingCarbs ?: servingNutrition.carbs
+        this.servingProtein = this.servingProtein ?: servingNutrition.protein
+        this.servingFat = this.servingFat ?: servingNutrition.fat
+    }
+
     fun updateServingNutrition(servingNutrition: ServingNutrition) {
         this.servingCalory = servingNutrition.calory
         this.servingCarbs = servingNutrition.carbs
@@ -166,6 +191,9 @@ class MealFood(
         val MIN_PORTION: BigDecimal = BigDecimal("0.5")
         val MAX_PORTION: BigDecimal = BigDecimal("5.0")
         val PORTION_STEP: BigDecimal = BigDecimal("0.5")
+
+        /** 1인분 영양의 항목 수(칼로리·탄수화물·단백질·지방) */
+        private const val SERVING_NUTRIENT_COUNT = 4
 
         /** 인분을 따로 구하지 않는 줄에 넣는 인분(1인분) */
         val DEFAULT_PORTION: BigDecimal = BigDecimal("1.0")

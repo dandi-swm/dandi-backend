@@ -47,7 +47,10 @@ class MealFoodService(
      * 1인분 영양이 이미 있는 줄(사용자가 영양을 고쳐 고정한 줄, 앞서 구한 줄)의 영양과, 아이콘이 이미 있는 줄(사용자가 고른 줄,
      * 앞서 구한 줄)의 아이콘은 조회 결과가 있어도 덮지 않는다. 다시 구해야 하는 값은 음식 목록을 고칠 때 비워 둔다.
      *
-     * 인분이 빈 줄은 [MealFood.DEFAULT_PORTION]으로 채운다. 조회 결과가 없는 줄도 채우고, 사용자가 정한 인분은 덮지 않는다.
+     * 1인분 영양은 항목 단위로 채운다. 사진에 일부 값이 적혀 있던 줄은 그 값을 그대로 두고 빈 항목만 채운다.
+     *
+     * 인분이 빈 줄은 조회 결과의 인분(사진을 함께 보낸 조회만 준다)으로, 없으면 [MealFood.DEFAULT_PORTION]으로 채운다.
+     * 조회 결과가 없는 줄도 채우고, 사용자가 정했거나 인식 때 정해 둔 인분은 덮지 않는다.
      *
      * 변경 감지로 저장하므로 호출하는 쪽 트랜잭션에 합류한다.
      *
@@ -59,13 +62,16 @@ class MealFoodService(
     fun updateServingNutritions(mealId: Long, servingNutritions: Map<Long, ServingNutritionResult>): List<MealFood> {
         val mealFoods = mealFoodRepository.findAllByMealIdOrderByDisplayOrderAsc(mealId)
         mealFoods.forEach { mealFood ->
-            // 1인분 영양과 아이콘이 이미 있어 조회하지 않은 줄도 인분은 비어 있을 수 있어, 조회 결과를 보기 전에 채운다.
+            val servingNutritionResult = servingNutritions[mealFood.id]
+            // 1인분 영양과 아이콘이 이미 있어 조회하지 않은 줄도 인분은 비어 있을 수 있어, 조회 결과가 없어도 채운다.
             if (mealFood.portion == null) {
-                mealFood.updatePortion(MealFood.DEFAULT_PORTION)
+                mealFood.updatePortion(servingNutritionResult?.portion ?: MealFood.DEFAULT_PORTION)
             }
-            val servingNutritionResult = servingNutritions[mealFood.id] ?: return@forEach
+            if (servingNutritionResult == null) {
+                return@forEach
+            }
             if (mealFood.servingNutrition == null) {
-                mealFood.updateServingNutrition(servingNutritionResult.servingNutrition)
+                mealFood.updateEmptyServingNutrition(servingNutritionResult.servingNutrition)
             }
             if (mealFood.iconId == null) {
                 mealFood.updateIconId(servingNutritionResult.iconId)

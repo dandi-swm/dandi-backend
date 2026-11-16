@@ -1,6 +1,7 @@
 package com.dandi.nyummy.meal.calculator
 
 import com.dandi.nyummy.meal.dto.Nutrition
+import com.dandi.nyummy.meal.dto.NutritionHint
 import com.dandi.nyummy.meal.dto.ServingNutrition
 import com.dandi.nyummy.meal.entity.MealFood
 import java.math.BigDecimal
@@ -8,6 +9,9 @@ import java.math.RoundingMode
 
 // 1인분 컬럼(DECIMAL(7,2))의 소수 자릿수
 private const val SERVING_SCALE = 2
+
+// 적힌 값에 맞출 때 곱하는 비율의 소수 자릿수. 맞춘 값을 다시 더했을 때 적힌 값에서 벗어나지 않을 만큼 둔다.
+private const val RATE_SCALE = 8
 
 /**
  * 음식 한 줄의 영양. 1인분 × 인분을 정수로 반올림한 값이라 응답에 그대로 쓴다.
@@ -58,6 +62,80 @@ fun calculateServingNutrition(nutrition: Nutrition, portion: BigDecimal): Servin
     protein = BigDecimal(nutrition.protein).divide(portion, SERVING_SCALE, RoundingMode.HALF_UP),
     fat = BigDecimal(nutrition.fat).divide(portion, SERVING_SCALE, RoundingMode.HALF_UP),
 )
+
+/**
+ * 사진에 일부만 적혀 있던 값과 이름으로 구한 1인분으로, 그 줄의 1인분을 구한다. 적혀 있던 값은 그대로 둔다.
+ *
+ * 칼로리가 적혀 있으면 구한 1인분의 탄수화물·단백질·지방을 "적힌 칼로리 ÷ 구한 칼로리" 비율로 맞춘다.
+ * 같은 음식이라도 적힌 칼로리만큼의 양을 먹은 것으로 보는 것이다(적힌 520kcal, 구한 650kcal이면 0.8배).
+ * 칼로리가 적혀 있지 않거나 구한 칼로리가 0이면 빈 항목을 구한 값 그대로 채운다.
+ *
+ * @param nutritionHint 사진에 적혀 있던 값. 일부 항목만 있다
+ * @param servingNutrition 이름으로 구한 그 음식의 1인분
+ */
+fun calculateHintedServingNutrition(
+    nutritionHint: NutritionHint,
+    servingNutrition: ServingNutrition,
+): ServingNutrition {
+    val hintCalory = nutritionHint.calory
+    val rate = if (hintCalory != null && servingNutrition.calory.signum() > 0) {
+        hintCalory.divide(servingNutrition.calory, RATE_SCALE, RoundingMode.HALF_UP)
+    } else {
+        BigDecimal.ONE
+    }
+
+    fun calculateNutrient(hint: BigDecimal?, serving: BigDecimal): BigDecimal =
+        hint ?: (serving * rate).setScale(SERVING_SCALE, RoundingMode.HALF_UP)
+
+    return ServingNutrition(
+        calory = calculateNutrient(nutritionHint.calory, servingNutrition.calory),
+        carbs = calculateNutrient(nutritionHint.carbs, servingNutrition.carbs),
+        protein = calculateNutrient(nutritionHint.protein, servingNutrition.protein),
+        fat = calculateNutrient(nutritionHint.fat, servingNutrition.fat),
+    )
+}
+
+/**
+ * 사진에 적혀 있던 식사 전체의 값에 음식 줄들의 1인분을 맞춘다. 영양소마다 줄들의 (1인분 × 인분) 합이 적힌 값과 같아지게
+ * 1인분을 같은 비율로 늘리거나 줄인다. 음식별 비율은 구한 값 그대로다.
+ *
+ * 영양소마다 따로 맞춘다. 아래 경우에는 그 영양소를 건드리지 않는다.
+ * - 전체 값에 그 영양소가 없거나 0이다. 0은 적혀 있지 않은 것과 구분할 수 없고, 0에 맞추면 그 영양소가 통째로 사라진다.
+ * - 줄들의 합이 0이다. 나눌 비율이 없다.
+ *
+ * 인분은 바꾸지 않는다. 1인분은 소수 둘째 자리에서 반올림하므로 합이 적힌 값과 소수점 아래에서 조금 다를 수 있다.
+ *
+ * @param servings 줄마다의 (1인분, 인분)
+ * @param totalNutritionHint 사진에 적혀 있던 식사 전체의 값
+ * @return [servings]와 같은 순서의 맞춘 1인분
+ */
+fun calculateTotalAdjustedServingNutritions(
+    servings: List<Pair<ServingNutrition, BigDecimal>>,
+    totalNutritionHint: NutritionHint,
+): List<ServingNutrition> {
+    fun calculateRate(total: BigDecimal?, nutrient: (ServingNutrition) -> BigDecimal): BigDecimal {
+        val sum = servings.sumOf { (servingNutrition, portion) -> nutrient(servingNutrition) * portion }
+        if (total == null || total.signum() <= 0 || sum.signum() <= 0) {
+            return BigDecimal.ONE
+        }
+
+        return total.divide(sum, RATE_SCALE, RoundingMode.HALF_UP)
+    }
+
+    val caloryRate = calculateRate(totalNutritionHint.calory, ServingNutrition::calory)
+    val carbsRate = calculateRate(totalNutritionHint.carbs, ServingNutrition::carbs)
+    val proteinRate = calculateRate(totalNutritionHint.protein, ServingNutrition::protein)
+    val fatRate = calculateRate(totalNutritionHint.fat, ServingNutrition::fat)
+
+    return servings.map { (servingNutrition, _) ->
+        ServingNutrition(
+            calory = (servingNutrition.calory * caloryRate).setScale(SERVING_SCALE, RoundingMode.HALF_UP),
+            carbs = (servingNutrition.carbs * carbsRate).setScale(SERVING_SCALE, RoundingMode.HALF_UP),
+            protein = (servingNutrition.protein * proteinRate).setScale(SERVING_SCALE, RoundingMode.HALF_UP),
+            fat = (servingNutrition.fat * fatRate).setScale(SERVING_SCALE, RoundingMode.HALF_UP),
+        )
+    }
+}
 
 /**
  * (1인분, 인분) 쌍들의 1인분 × 인분을 영양소별로 소수로 더한 뒤 정수로 반올림한다.

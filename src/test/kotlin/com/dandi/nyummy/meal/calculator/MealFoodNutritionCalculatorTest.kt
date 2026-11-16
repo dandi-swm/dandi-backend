@@ -1,6 +1,7 @@
 package com.dandi.nyummy.meal.calculator
 
 import com.dandi.nyummy.meal.dto.Nutrition
+import com.dandi.nyummy.meal.dto.NutritionHint
 import com.dandi.nyummy.meal.dto.ServingNutrition
 import com.dandi.nyummy.meal.entity.MealFood
 import java.math.BigDecimal
@@ -142,5 +143,91 @@ class MealFoodNutritionCalculatorTest {
             ),
             calculateTotalNutrition(listOf(first to BigDecimal("1.5"), second to BigDecimal("1.0"))),
         )
+    }
+
+    // calculateHintedServingNutrition
+
+    @Test
+    fun `칼로리가 적혀 있으면 그 값은 그대로 두고 나머지를 적힌 칼로리 비율로 맞춘다`() {
+        // 적힌 520kcal ÷ 구한 650kcal = 0.8배
+        val servingNutrition = calculateHintedServingNutrition(
+            NutritionHint(calory = BigDecimal("520.00")),
+            createServingNutrition("650", "80", "25", "20"),
+        )
+
+        assertEquals(createServingNutrition("520.00", "64.00", "20.00", "16.00"), servingNutrition)
+    }
+
+    @Test
+    fun `칼로리와 함께 적혀 있던 다른 항목도 그대로 두고 빈 항목만 맞춘다`() {
+        val servingNutrition = calculateHintedServingNutrition(
+            NutritionHint(calory = BigDecimal("100.00"), protein = BigDecimal("20.00")),
+            createServingNutrition("200", "10", "30", "4"),
+        )
+
+        // 100 ÷ 200 = 0.5배. 단백질은 적힌 20을 쓴다.
+        assertEquals(createServingNutrition("100.00", "5.00", "20.00", "2.00"), servingNutrition)
+    }
+
+    @Test
+    fun `칼로리가 적혀 있지 않으면 적힌 항목은 그대로 두고 빈 항목을 구한 값 그대로 채운다`() {
+        val servingNutrition = calculateHintedServingNutrition(
+            NutritionHint(protein = BigDecimal("20.00")),
+            createServingNutrition("200", "10", "30", "4"),
+        )
+
+        assertEquals(createServingNutrition("200.00", "10.00", "20.00", "4.00"), servingNutrition)
+    }
+
+    @Test
+    fun `구한 칼로리가 0이면 비율을 낼 수 없어 빈 항목을 구한 값 그대로 채운다`() {
+        val servingNutrition = calculateHintedServingNutrition(
+            NutritionHint(calory = BigDecimal("5.00")),
+            createServingNutrition("0", "1", "0", "0"),
+        )
+
+        assertEquals(createServingNutrition("5.00", "1.00", "0.00", "0.00"), servingNutrition)
+    }
+
+    // calculateTotalAdjustedServingNutritions
+
+    @Test
+    fun `식사 전체의 값이 적혀 있으면 줄들의 합이 그 값과 같아지게 1인분을 같은 비율로 맞춘다`() {
+        // 닭안심살 132kcal × 1.5인분 + 쌀밥 272kcal × 1인분 = 470kcal → 적힌 409kcal
+        val servings = listOf(
+            createServingNutrition("132", "0", "30", "1.2") to BigDecimal("1.5"),
+            createServingNutrition("272", "60", "6", "0.8") to BigDecimal("1.0"),
+        )
+        val total = NutritionHint(BigDecimal("409"), BigDecimal("62"), BigDecimal("32.7"), BigDecimal("2.2"))
+
+        val adjusted = calculateTotalAdjustedServingNutritions(servings, total)
+
+        assertEquals(
+            Nutrition(calory = 409, carbs = 62, protein = 33, fat = 2),
+            calculateTotalNutrition(adjusted.zip(servings.map { it.second })),
+        )
+        // 음식별 비율은 구한 값 그대로다: 닭 198 : 밥 272
+        assertEquals(BigDecimal("114.87"), adjusted[0].calory)
+        assertEquals(BigDecimal("236.70"), adjusted[1].calory)
+    }
+
+    @Test
+    fun `식사 전체의 값에 없는 영양소와 0으로 적힌 영양소는 맞추지 않는다`() {
+        val servings = listOf(createServingNutrition("300", "40", "20", "10") to BigDecimal("1.0"))
+        val total = NutritionHint(calory = BigDecimal("600"), protein = BigDecimal("0"))
+
+        val adjusted = calculateTotalAdjustedServingNutritions(servings, total).single()
+
+        assertEquals(createServingNutrition("600.00", "40.00", "20.00", "10.00"), adjusted)
+    }
+
+    @Test
+    fun `줄들의 합이 0인 영양소는 나눌 비율이 없어 맞추지 않는다`() {
+        val servings = listOf(createServingNutrition("100", "0", "20", "2") to BigDecimal("1.0"))
+        val total = NutritionHint(carbs = BigDecimal("50"))
+
+        val adjusted = calculateTotalAdjustedServingNutritions(servings, total).single()
+
+        assertEquals(BigDecimal("0.00"), adjusted.carbs)
     }
 }

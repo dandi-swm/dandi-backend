@@ -341,6 +341,47 @@ class MealFoodServiceTest {
     }
 
     @Test
+    fun `인분이 빈 줄은 조회 결과에 인분이 있으면 그 값으로 채운다`() {
+        // 사진을 함께 보낸 조회가 사진에 보이는 양을 인분으로 돌려준 경우
+        val mealFood = createMealFood(displayOrder = 1, name = "불고기", portion = null)
+        givenMealFoods(mealFood)
+
+        mealFoodService.updateServingNutritions(
+            mealId,
+            mapOf(1L to ServingNutritionResult(newServingNutrition, 12L, portion = BigDecimal("1.5"))),
+        )
+
+        assertEquals(BigDecimal("1.5"), mealFood.portion)
+    }
+
+    @Test
+    fun `인분이 이미 있는 줄은 조회 결과에 인분이 있어도 덮지 않는다`() {
+        val mealFood = createMealFood(displayOrder = 1, name = "불고기", portion = BigDecimal("2.5"))
+        givenMealFoods(mealFood)
+
+        mealFoodService.updateServingNutritions(
+            mealId,
+            mapOf(1L to ServingNutritionResult(newServingNutrition, 12L, portion = BigDecimal("1.5"))),
+        )
+
+        assertEquals(BigDecimal("2.5"), mealFood.portion)
+    }
+
+    @Test
+    fun `사진에 일부 값이 적혀 있던 줄은 그 값을 그대로 두고 빈 항목만 조회 결과로 채운다`() {
+        val mealFood = createMealFood(displayOrder = 1, name = "제육덮밥")
+            .apply { updateNutritionHint(NutritionHint(calory = BigDecimal("780.00"))) }
+        givenMealFoods(mealFood)
+
+        mealFoodService.updateServingNutritions(mealId, mapOf(1L to ServingNutritionResult(newServingNutrition, 12L)))
+
+        assertEquals(BigDecimal("780.00"), mealFood.servingCalory)
+        assertEquals(newServingNutrition.carbs, mealFood.servingCarbs)
+        assertEquals(newServingNutrition.protein, mealFood.servingProtein)
+        assertEquals(newServingNutrition.fat, mealFood.servingFat)
+    }
+
+    @Test
     fun `인분이 이미 있는 줄은 인분을 덮지 않는다`() {
         val mealFood = createMealFood(displayOrder = 1, name = "불고기", portion = BigDecimal("2.5"))
         givenMealFoods(mealFood)
