@@ -11,7 +11,7 @@ import com.dandi.nyummy.meal.enum.MacroNutrient
 const val CALORY_SHARE_TOLERANCE = 0.2
 
 // 1g당 칼로리
-private val CALORY_PER_GRAM = mapOf(MacroNutrient.CARBS to 4, MacroNutrient.PROTEIN to 4, MacroNutrient.FAT to 9)
+internal val CALORY_PER_GRAM = mapOf(MacroNutrient.CARBS to 4, MacroNutrient.PROTEIN to 4, MacroNutrient.FAT to 9)
 
 /**
  * 탄단지 각각이 탄단지 칼로리 합에서 차지하는 비율(0~1). 합이 0이면 모두 0이다.

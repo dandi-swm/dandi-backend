@@ -28,6 +28,7 @@ class MealPropertiesTest {
             maxThreads = 30,
             nutritionDelay = Duration.ofMinutes(5),
         ),
+        foodNutrition = FoodNutritionProperties(timeToLive = Duration.ofDays(7), caloryTolerance = 0.1),
     )
 
     // rewardBoxes

@@ -5,6 +5,7 @@ import com.dandi.nyummy.infra.ai.nutrition.AnalysisFailureException
 import com.dandi.nyummy.infra.ai.recognition.MealRecognitionClient
 import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.mail.enum.RewardBoxCategory
+import com.dandi.nyummy.meal.config.FoodNutritionProperties
 import com.dandi.nyummy.meal.config.MealProperties
 import com.dandi.nyummy.meal.config.MealRecognitionProperties
 import com.dandi.nyummy.meal.config.RewardBoxProperties
@@ -72,6 +73,7 @@ class MealRecognitionServiceTest {
             maxThreads = 30,
             nutritionDelay = Duration.ofMinutes(5),
         ),
+        foodNutrition = FoodNutritionProperties(timeToLive = Duration.ofDays(7), caloryTolerance = 0.1),
     )
 
     private val mealRecognitionClient = mockk<MealRecognitionClient>()

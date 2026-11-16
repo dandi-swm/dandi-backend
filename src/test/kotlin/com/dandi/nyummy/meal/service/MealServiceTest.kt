@@ -14,6 +14,7 @@ import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.mail.entity.Mail
 import com.dandi.nyummy.mail.enum.RewardBoxCategory
 import com.dandi.nyummy.mail.service.MailService
+import com.dandi.nyummy.meal.config.FoodNutritionProperties
 import com.dandi.nyummy.meal.config.MealProperties
 import com.dandi.nyummy.meal.config.MealRecognitionProperties
 import com.dandi.nyummy.meal.config.RewardBoxProperties
@@ -121,6 +122,7 @@ class MealServiceTest {
                 maxThreads = 30,
                 nutritionDelay = Duration.ofMinutes(5),
             ),
+            foodNutrition = FoodNutritionProperties(timeToLive = Duration.ofDays(7), caloryTolerance = 0.1),
         ),
         analysisFeedbackService = analysisFeedbackService,
         mealTransactionService = mealTransactionService,

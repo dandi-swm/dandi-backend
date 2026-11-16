@@ -14,6 +14,7 @@ data class MealProperties(
     val rewardMailTimeToLive: Duration,
     val tutorialRewardBox: TutorialRewardBoxProperties,
     val recognition: MealRecognitionProperties,
+    val foodNutrition: FoodNutritionProperties,
 ) {
     // 설정이 틀린 채로 상자를 나눠 주지 않도록 앱이 뜰 때 막는다.
     init {

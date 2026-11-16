@@ -8,7 +8,9 @@ import java.math.BigDecimal
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class MealFoodNutritionCalculatorTest {
 
@@ -229,5 +231,38 @@ class MealFoodNutritionCalculatorTest {
         val adjusted = calculateTotalAdjustedServingNutritions(servings, total).single()
 
         assertEquals(BigDecimal("0.00"), adjusted.carbs)
+    }
+
+    // matchesMacroNutrientCalory
+
+    @Test
+    fun `칼로리가 탄단지로 계산한 칼로리와 같으면 맞는 값이다`() {
+        // 15×4 + 15×4 + 20×9 = 300
+        assertTrue(matchesMacroNutrientCalory(createServingNutrition("300", "15", "15", "20"), 0.1))
+    }
+
+    @Test
+    fun `칼로리와 탄단지 칼로리의 차이가 허용 오차까지면 맞는 값이고 넘으면 아니다`() {
+        // 탄단지 칼로리 270. 칼로리 300의 10%는 30이다.
+        assertTrue(matchesMacroNutrientCalory(createServingNutrition("300", "15", "15", "16.67"), 0.1))
+        assertTrue(matchesMacroNutrientCalory(createServingNutrition("300", "30", "37.5", "0"), 0.1))
+        assertFalse(matchesMacroNutrientCalory(createServingNutrition("300", "30", "37", "0"), 0.1))
+    }
+
+    @Test
+    fun `탄단지 칼로리가 칼로리보다 커도 같은 허용 오차로 본다`() {
+        // 탄단지 칼로리 330(+10%)과 334
+        assertTrue(matchesMacroNutrientCalory(createServingNutrition("300", "37.5", "45", "0"), 0.1))
+        assertFalse(matchesMacroNutrientCalory(createServingNutrition("300", "38.5", "45", "0"), 0.1))
+    }
+
+    @Test
+    fun `모두 0이면 맞는 값이다`() {
+        assertTrue(matchesMacroNutrientCalory(createServingNutrition("0", "0", "0", "0"), 0.1))
+    }
+
+    @Test
+    fun `칼로리가 0인데 탄단지가 있으면 맞지 않는 값이다`() {
+        assertFalse(matchesMacroNutrientCalory(createServingNutrition("0", "5", "0", "0"), 0.1))
     }
 }

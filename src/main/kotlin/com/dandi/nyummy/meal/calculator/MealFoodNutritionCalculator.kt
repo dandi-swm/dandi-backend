@@ -4,6 +4,7 @@ import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.dto.NutritionHint
 import com.dandi.nyummy.meal.dto.ServingNutrition
 import com.dandi.nyummy.meal.entity.MealFood
+import com.dandi.nyummy.meal.enum.MacroNutrient
 import java.math.BigDecimal
 import java.math.RoundingMode
 
@@ -135,6 +136,22 @@ fun calculateTotalAdjustedServingNutritions(
             fat = (servingNutrition.fat * fatRate).setScale(SERVING_SCALE, RoundingMode.HALF_UP),
         )
     }
+}
+
+/**
+ * 1인분의 칼로리가 탄단지로 계산한 칼로리(탄수화물×4 + 단백질×4 + 지방×9)와 허용 오차 안에서 맞는지.
+ * 모델이 낸 값의 앞뒤가 맞는지 보는 검사다. 맞지 않는 값은 다른 식사에 다시 쓰지 않는다.
+ *
+ * @param tolerance 적힌 칼로리 대비 벗어나도 되는 비율(0.1 = ±10%)
+ */
+fun matchesMacroNutrientCalory(servingNutrition: ServingNutrition, tolerance: Double): Boolean {
+    val macroNutrientCalory =
+        servingNutrition.carbs * BigDecimal(CALORY_PER_GRAM.getValue(MacroNutrient.CARBS)) +
+            servingNutrition.protein * BigDecimal(CALORY_PER_GRAM.getValue(MacroNutrient.PROTEIN)) +
+            servingNutrition.fat * BigDecimal(CALORY_PER_GRAM.getValue(MacroNutrient.FAT))
+    val difference = (servingNutrition.calory - macroNutrientCalory).abs()
+
+    return difference <= servingNutrition.calory * BigDecimal.valueOf(tolerance)
 }
 
 /**

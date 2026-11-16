@@ -5,6 +5,7 @@ import com.dandi.nyummy.exception.errorcode.ErrorCode
 import com.dandi.nyummy.exception.errorcode.MealErrorCode
 import com.dandi.nyummy.image.dto.UploadedImageResult
 import com.dandi.nyummy.mail.enum.RewardBoxCategory
+import com.dandi.nyummy.meal.config.FoodNutritionProperties
 import com.dandi.nyummy.meal.config.MealProperties
 import com.dandi.nyummy.meal.config.MealRecognitionProperties
 import com.dandi.nyummy.meal.config.RewardBoxProperties
@@ -53,6 +54,7 @@ class MealAttemptServiceTest {
             maxThreads = 30,
             nutritionDelay = Duration.ofMinutes(5),
         ),
+        foodNutrition = FoodNutritionProperties(timeToLive = Duration.ofDays(7), caloryTolerance = 0.1),
     )
     private val mealAttemptService = MealAttemptService(mealRepository, mealProperties, clock)
 
