@@ -7,11 +7,13 @@ import java.math.BigDecimal
  *
  * @property iconId 이 음식에 맞는 아이콘
  * @property portion 사진에 보이는 양이 1인분의 몇 배인지. 사진을 함께 보낸 조회만 채우고, 이름만으로 구한 조회는 null이다
+ * @property isFood 그 이름이 먹거나 마시는 것인지. 아니면 1인분은 모두 0이고 아이콘은 기본 아이콘이다
  */
 data class ServingNutritionResult(
     val servingNutrition: ServingNutrition,
     val iconId: Long,
     val portion: BigDecimal? = null,
+    val isFood: Boolean = true,
 )
 
 /**

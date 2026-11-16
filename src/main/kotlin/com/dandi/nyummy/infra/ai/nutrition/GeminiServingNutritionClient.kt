@@ -40,6 +40,15 @@ class GeminiServingNutritionClient(
         // 1인분 컬럼(DECIMAL(7,2))에 담을 수 있는 가장 큰 값
         private val MAX_SERVING_VALUE = BigDecimal("99999.99")
 
+        // 음식이 아닌 이름의 결과. 값을 지어내지 않고 0으로 채워, 식사는 그대로 끝나고 그 줄만 0으로 보이게 한다.
+        // 모델이 0이 아닌 값을 함께 적어도 쓰지 않는다.
+        private val NOT_FOOD_VALUE = BigDecimal("0.00")
+        private val NOT_FOOD_RESULT = ServingNutritionResult(
+            servingNutrition = ServingNutrition(NOT_FOOD_VALUE, NOT_FOOD_VALUE, NOT_FOOD_VALUE, NOT_FOOD_VALUE),
+            iconId = Icon.DEFAULT_ID,
+            isFood = false,
+        )
+
         private const val FOOD_PROMPT =
             """
         다음 음식들의 일반적인 1인분 영양 정보를 JSON으로 답해.
@@ -50,6 +59,7 @@ class GeminiServingNutritionClient(
         - 음식마다 일반적인 1인분의 칼로리(kcal)와 탄수화물·단백질·지방(g)을 실제 값에 가깝게 적어.
         - calory ≈ carbs*4 + protein*4 + fat*9 를 만족시켜.
         - index는 위 목록의 번호를 그대로 적고, 모든 음식을 한 번씩 적어.
+        - isFood는 그 이름이 사람이 먹거나 마시는 것이면 true, 아니면(물건, 뜻 없는 글자 등) false야. false면 값을 모두 0으로 적어.
         - iconId는 아래 아이콘 목록에서 그 음식에 가장 맞는 것을 골라. 뚜렷하게 맞는 것이 없으면 ${Icon.DEFAULT_ID}(밥)를 골라.
 
         음식 아이콘 목록: {icons}
@@ -65,6 +75,7 @@ class GeminiServingNutritionClient(
         - 제품마다 칼로리(kcal)와 탄수화물·단백질·지방(g)을 적어. 한 번에 다 먹는 제품은 총 내용량 기준으로 적어. 모르는 제품이면 비슷한 제품의 일반적인 값을 적어.
         - calory ≈ carbs*4 + protein*4 + fat*9 를 만족시켜.
         - index는 위 목록의 번호를 그대로 적고, 모든 제품을 한 번씩 적어.
+        - isFood는 그 이름이 사람이 먹거나 마시는 것이면 true, 아니면(물건, 뜻 없는 글자 등) false야. false면 값을 모두 0으로 적어.
         - iconId는 아래 아이콘 목록에서 그 제품에 가장 맞는 것을 골라. 뚜렷하게 맞는 것이 없으면 ${Icon.DEFAULT_ID}(밥)를 골라.
 
         음식 아이콘 목록: {icons}
@@ -91,6 +102,7 @@ class GeminiServingNutritionClient(
         - portion은 사진에 보이는 그 음식의 양 전체가 방금 적은 1인분의 몇 배인지야. 여러 사람이 나눠 먹을 양이면 그만큼 크게 적어(큰 접시에 2인분쯤 담겨 있으면 2).
         - 목록에 "사진에 적힌 값"이 붙은 음식은 그 값을 그대로 적고, 나머지 항목만 그 값에 어울리게 채워. 이 음식의 portion은 1이야.
         - 사진에서 찾을 수 없는 음식은 일반적인 1인분 값을 적고 portion은 1로 둬.
+        - isFood는 그 이름이 사람이 먹거나 마시는 것이면 true, 아니면(물건, 뜻 없는 글자 등) false야. false면 값을 모두 0으로 적어.
         - iconId는 아래 아이콘 목록에서 그 음식에 가장 맞는 것을 골라. 뚜렷하게 맞는 것이 없으면 ${Icon.DEFAULT_ID}(밥)를 골라.
 
         [total] 사진에 음식 하나가 아니라 식사 전체의 합계로 적혀 있는 값(예: "총 칼로리 650")이 있으면 그 숫자를 그대로 옮겨 적어.
@@ -112,9 +124,10 @@ class GeminiServingNutritionClient(
                             NUTRIENT_FIELDS.associateWith { mapOf("type" to "NUMBER") } +
                             mapOf(
                                 "portion" to mapOf("type" to "STRING", "enum" to PORTIONS),
+                                "isFood" to mapOf("type" to "BOOLEAN"),
                                 "iconId" to mapOf("type" to "INTEGER"),
                             ),
-                        "required" to listOf("index") + NUTRIENT_FIELDS + listOf("portion", "iconId"),
+                        "required" to listOf("index") + NUTRIENT_FIELDS + listOf("portion", "isFood", "iconId"),
                     ),
                 ),
                 "total" to mapOf(
@@ -139,9 +152,10 @@ class GeminiServingNutritionClient(
                             "carbs" to mapOf("type" to "NUMBER"),
                             "protein" to mapOf("type" to "NUMBER"),
                             "fat" to mapOf("type" to "NUMBER"),
+                            "isFood" to mapOf("type" to "BOOLEAN"),
                             "iconId" to mapOf("type" to "INTEGER"),
                         ),
-                        "required" to listOf("index", "calory", "carbs", "protein", "fat", "iconId"),
+                        "required" to listOf("index", "calory", "carbs", "protein", "fat", "isFood", "iconId"),
                     ),
                 ),
             ),
@@ -173,6 +187,10 @@ class GeminiServingNutritionClient(
                     AnalysisFailureCategory.INVALID_RESPONSE,
                     "1인분 조회 결과에 ${order + 1}번 음식이 없습니다.",
                 )
+
+            if (!serving.isFood) {
+                return@map NOT_FOOD_RESULT
+            }
 
             ServingNutritionResult(
                 servingNutrition = ServingNutrition(
@@ -221,6 +239,10 @@ class GeminiServingNutritionClient(
                         AnalysisFailureCategory.INVALID_RESPONSE,
                         "1인분 조회 결과에 ${order + 1}번 음식이 없습니다.",
                     )
+
+                if (!serving.isFood) {
+                    return@map NOT_FOOD_RESULT.copy(portion = MealFood.DEFAULT_PORTION)
+                }
 
                 ServingNutritionResult(
                     servingNutrition = ServingNutrition(
@@ -339,6 +361,7 @@ private data class GeminiServingNutrition(
     val protein: BigDecimal,
     val fat: BigDecimal,
     val iconId: Long,
+    val isFood: Boolean = true,
 )
 
 private data class GeminiPhotoServingNutritionResponse(
@@ -354,6 +377,7 @@ private data class GeminiPhotoServingNutrition(
     val fat: BigDecimal,
     val portion: String,
     val iconId: Long,
+    val isFood: Boolean = true,
 )
 
 private data class GeminiTotalNutrition(
