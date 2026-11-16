@@ -34,9 +34,6 @@ class GeminiServingNutritionClient(
 
     companion object {
 
-        // 이 유형의 식사는 음식 줄 이름이 제품 이름이다. 일반적인 1인분이 아니라 그 제품의 영양성분표 값을 묻는다.
-        private val PRODUCT_INPUT_CATEGORIES = setOf(MealInputCategory.PACKAGE, MealInputCategory.NUTRITION_LABEL)
-
         // 1인분 컬럼(DECIMAL(7,2))에 담을 수 있는 가장 큰 값
         private val MAX_SERVING_VALUE = BigDecimal("99999.99")
 
@@ -317,7 +314,8 @@ class GeminiServingNutritionClient(
         inputCategory: MealInputCategory,
         icons: List<IconSummaryResult>,
     ): String {
-        val prompt = if (inputCategory in PRODUCT_INPUT_CATEGORIES) PRODUCT_PROMPT else FOOD_PROMPT
+        // 제품 유형의 식사는 음식 줄 이름이 제품 이름이다. 일반적인 1인분이 아니라 그 제품의 영양성분표 값을 묻는다.
+        val prompt = if (inputCategory.isProduct) PRODUCT_PROMPT else FOOD_PROMPT
         // 이름은 사용자가 고칠 수 있는 글이다. 줄바꿈이 목록 모양을 깨지 않게 한 줄로 편다.
         val foods = names.withIndex().joinToString("\n") { (order, name) ->
             "${order + 1}. ${name.replace(Regex("\\s+"), " ").trim()}"

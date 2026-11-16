@@ -26,6 +26,7 @@ import com.dandi.nyummy.meal.entity.MealFood
 import com.dandi.nyummy.meal.enum.MealAnalysisJobCategory
 import com.dandi.nyummy.meal.enum.MealInputCategory
 import com.dandi.nyummy.meal.enum.MealStatus
+import com.dandi.nyummy.meal.service.FoodNutritionService
 import com.dandi.nyummy.notification.NotificationId
 import com.dandi.nyummy.notification.service.NotificationService
 import com.dandi.nyummy.worker.config.ConditionalOnAnalysisWorkerEnabled
@@ -50,6 +51,7 @@ class AnalysisService(
     private val analysisImageClient: AnalysisImageClient,
     private val mealRecognitionClient: MealRecognitionClient,
     private val servingNutritionClient: ServingNutritionClient,
+    private val foodNutritionService: FoodNutritionService,
     private val catService: CatService,
     private val mealAnalysisJobTransactionService: MealAnalysisJobTransactionService,
     private val mealProperties: MealProperties,
@@ -252,6 +254,9 @@ class AnalysisService(
     /**
      * 이름만으로 줄마다 1인분과 아이콘을 구한다. 사진에 칼로리가 적혀 있던 줄은 구한 값을 그 칼로리에 맞춘다
      * ([calculateHintedServingNutrition]).
+     *
+     * 제품 유형이 아니면 저장해 둔 값을 먼저 찾는다([getFoodNutritions]). 제품 유형은 이름이 제품 이름이라
+     * 음식 이름으로 저장한 값을 쓰지 않고 늘 모델에 묻는다.
      */
     private fun getNamedServingNutritions(
         meal: AnalysisMealResult,
@@ -260,8 +265,12 @@ class AnalysisService(
         if (mealFoods.isEmpty()) {
             return emptyMap()
         }
-        val servingNutritionResults =
-            servingNutritionClient.getNamedServingNutritions(mealFoods.map { it.name }, meal.inputCategory)
+        val names = mealFoods.map { it.name }
+        val servingNutritionResults = if (meal.inputCategory.isProduct) {
+            servingNutritionClient.getNamedServingNutritions(names, meal.inputCategory)
+        } else {
+            getFoodNutritions(names, meal.inputCategory)
+        }
 
         return mealFoods.zip(servingNutritionResults).associate { (mealFood, servingNutritionResult) ->
             val nutritionHint = mealFood.nutritionHint
@@ -273,6 +282,31 @@ class AnalysisService(
 
             mealFood.mealFoodId to servingNutritionResult.copy(servingNutrition = servingNutrition)
         }
+    }
+
+    /**
+     * 이름마다 저장해 둔 1인분과 아이콘을 먼저 찾고, 없는 이름만 모아 모델에 물은 뒤 그 값을 저장한다.
+     * 저장해 둔 이름은 모델을 부르지 않으므로, 같은 이름은 유효 기간 동안 어느 식사에서나 같은 값이 나온다.
+     *
+     * 같은 이름의 줄이 여럿이면 한 번만 찾고 한 번만 묻는다. 따로 물으면 같은 식사 안에서 같은 이름의 값이 달라질 수 있다.
+     * 저장하는 값은 모델이 낸 그대로다. 사진에 적혀 있던 칼로리에 맞추는 것은 줄마다 다른 값이라 저장한 뒤에 한다.
+     *
+     * @return [names]와 같은 순서, 같은 개수의 결과
+     */
+    private fun getFoodNutritions(
+        names: List<String>,
+        inputCategory: MealInputCategory,
+    ): List<ServingNutritionResult> {
+        val savedResults = names.distinct().associateWith { foodNutritionService.getFoodNutrition(it) }
+        val missingNames = savedResults.filterValues { it == null }.keys.toList()
+        val createdResults = if (missingNames.isEmpty()) {
+            emptyMap()
+        } else {
+            missingNames.zip(servingNutritionClient.getNamedServingNutritions(missingNames, inputCategory)).toMap()
+        }
+        createdResults.forEach { (name, result) -> foodNutritionService.createFoodNutrition(name, result) }
+
+        return names.map { savedResults[it] ?: createdResults.getValue(it) }
     }
 
     /** 분석할 사진을 받는다. 콘텐츠 타입이 없으면 모델에 넘길 수 없다. */
