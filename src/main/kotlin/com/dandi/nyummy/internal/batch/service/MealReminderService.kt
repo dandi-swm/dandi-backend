@@ -126,14 +126,20 @@ class MealReminderService(
         ).toSet()
         val targets = page.filterNot { it.userId in recentMealUserIds }
 
-        val messagesByToken = targets.mapNotNull { target ->
-            val mealTime = target.convertMealTime(targetHour)
-            val notificationId = NotificationId.createMealReminderId(target.userId, today, mealTime)
+        val notificationIds = targets.map { target ->
+            NotificationId.createMealReminderId(target.userId, today, target.convertMealTime(targetHour))
+        }
 
-            // 젠킨스 재시도나 잡 중복 실행에서 알림이 두 번 가는 것을 방지
-            if (!pushDeduplicationRepository.createSentMark(notificationId, DEDUPLICATION_TIME_TO_LIVE)) {
+        // 젠킨스 재시도나 잡 중복 실행에서 알림이 두 번 가는 것을 방지. 묶음의 표시를 한 번에 만든다
+        val markedNotificationIds =
+            pushDeduplicationRepository.createSentMarks(notificationIds, DEDUPLICATION_TIME_TO_LIVE)
+
+        val messagesByToken = targets.zip(notificationIds).mapNotNull { (target, notificationId) ->
+            // 이미 표시가 있던 대상은 건너뛴다
+            if (notificationId !in markedNotificationIds) {
                 return@mapNotNull null
             }
+            val mealTime = target.convertMealTime(targetHour)
 
             val language = target.language ?: Language.ORIGINAL_LANGUAGE
             val mealTimeLabel = messageSource.getMessage("mealTime.${mealTime.name}", language)

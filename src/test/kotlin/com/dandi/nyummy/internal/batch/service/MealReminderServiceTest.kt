@@ -25,6 +25,7 @@ import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Slice
 import org.springframework.data.domain.SliceImpl
 import java.time.Clock
+import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -41,7 +42,7 @@ class MealReminderServiceTest {
         every { findUserIdsWithMealAfter(any(), any(), any()) } returns emptyList()
     }
     private val pushDeduplicationRepository = mockk<PushDeduplicationRepository> {
-        every { createSentMark(any(), any()) } returns true
+        every { createSentMarks(any(), any()) } answers { firstArg<List<String>>().toSet() }
         every { deleteSentMarks(any()) } just Runs
     }
     private val notificationService = mockk<NotificationService> {
@@ -182,16 +183,37 @@ class MealReminderServiceTest {
 
     @Test
     fun `이미 발송 표시가 있는 사용자는 보내지 않는다`() {
-        every {
-            pushDeduplicationRepository.createSentMark(
-                NotificationId.createMealReminderId(1, TODAY, MealTime.LUNCH),
-                any(),
-            )
-        } returns false
+        val alreadyMarkedId = NotificationId.createMealReminderId(1, TODAY, MealTime.LUNCH)
+        every { pushDeduplicationRepository.createSentMarks(any(), any()) } answers
+            { firstArg<List<String>>().toSet() - alreadyMarkedId }
 
         val messagesByToken = sendLunchReminders(createTarget(1), createTarget(2))
 
         assertEquals(setOf("token-2"), messagesByToken.keys)
+    }
+
+    @Test
+    fun `발송 표시는 묶음마다 최근 기록으로 거른 대상만 한 번에 만든다`() {
+        givenUserIdPage(cursor = 0, listOf(1, 2), hasNext = true)
+        givenUserIdPage(cursor = 2, listOf(3), hasNext = false)
+        every {
+            mealRepository.findUserIdsWithMealAfter(listOf(1L, 2L), MealStatus.FAILED, any())
+        } returns listOf(2L)
+
+        mealReminderService.sendMealReminders(LUNCH_HOUR)
+
+        verifyOrder {
+            pushDeduplicationRepository.createSentMarks(
+                listOf(NotificationId.createMealReminderId(1, TODAY, MealTime.LUNCH)),
+                Duration.ofHours(25),
+            )
+            pushDeduplicationRepository.createSentMarks(
+                listOf(NotificationId.createMealReminderId(3, TODAY, MealTime.LUNCH)),
+                Duration.ofHours(25),
+            )
+        }
+        verify(exactly = 2) { pushDeduplicationRepository.createSentMarks(any(), any()) }
+        verify(exactly = 0) { pushDeduplicationRepository.createSentMark(any(), any()) }
     }
 
     @Test

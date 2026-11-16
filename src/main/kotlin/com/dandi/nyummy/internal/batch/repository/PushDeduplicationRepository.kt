@@ -2,7 +2,10 @@ package com.dandi.nyummy.internal.batch.repository
 
 import org.slf4j.LoggerFactory
 import org.springframework.dao.DataAccessException
+import org.springframework.data.redis.connection.SetCondition
+import org.springframework.data.redis.core.RedisCallback
 import org.springframework.data.redis.core.StringRedisTemplate
+import org.springframework.data.redis.core.types.Expiration
 import org.springframework.stereotype.Repository
 import java.time.Duration
 
@@ -10,6 +13,7 @@ import java.time.Duration
 class PushDeduplicationRepository(private val redisTemplate: StringRedisTemplate) {
     companion object {
         private const val KEY_PREFIX = "push-sent:"
+        private const val SENT_MARK_VALUE = "1"
         private val logger = LoggerFactory.getLogger(PushDeduplicationRepository::class.java)
     }
 
@@ -23,10 +27,57 @@ class PushDeduplicationRepository(private val redisTemplate: StringRedisTemplate
      * 드물게 중복되는 것이 낫다.
      */
     fun createSentMark(key: String, timeToLive: Duration): Boolean = try {
-        redisTemplate.opsForValue().setIfAbsent("$KEY_PREFIX$key", "1", timeToLive) == true
+        redisTemplate.opsForValue().setIfAbsent("$KEY_PREFIX$key", SENT_MARK_VALUE, timeToLive) == true
     } catch (e: DataAccessException) {
         logger.error("푸시 중복 발송 방지 실패, 발송은 그대로 진행: key={}", key, e)
         true
+    }
+
+    /**
+     * 여러 알림의 발송 표시를 파이프라인으로 한 번에 만든다. 처음 표시한 키만 돌려준다.
+     *
+     * 키마다 [createSentMark]와 같은 SET NX를 보내되, 응답을 기다리지 않고 연달아 보낸 뒤 결과를 모아 받는다.
+     * 키마다 하나씩 보내고 기다리면 키 수만큼 Redis를 왕복한다(식사 리마인더 10만 명에 약 5만 번).
+     *
+     * 키마다 따로 판정하므로 이미 표시된 키만 빠진다. 파이프라인은 여러 명령을 한 덩어리로 실행하지는 않지만
+     * 명령 하나하나(SET NX)는 원자적이라, 배치가 동시에 두 번 돌아도 키마다 한쪽만 통과한다.
+     *
+     * Redis 접근이 실패하면 모든 키를 돌려준다(fail-open). 어느 키에서 실패했는지 가리지 못해서,
+     * [createSentMark]처럼 못 보내는 것보다 드문 중복을 고른다.
+     */
+    fun createSentMarks(keys: List<String>, timeToLive: Duration): Set<String> {
+        if (keys.isEmpty()) {
+            return emptySet()
+        }
+
+        return try {
+            val expiration = Expiration.from(timeToLive)
+            val ifAbsent = SetCondition.ifAbsent()
+            // 콜백이 받는 연결은 바이트 명령만 받는다. 키와 값은 템플릿과 같은 직렬화(UTF-8 문자열)로 바꿔 보낸다
+            val serializer = redisTemplate.stringSerializer
+            val value = serializer.serialize(SENT_MARK_VALUE)
+
+            // 콜백 안에서 부른 명령은 바로 보내지 않고 모았다가 한꺼번에 보낸다. 결과는 보낸 순서대로 돌아온다
+            val results = redisTemplate.executePipelined(
+                RedisCallback<Any?> { connection ->
+                    keys.forEach { key ->
+                        connection.stringCommands().set(
+                            serializer.serialize("$KEY_PREFIX$key"),
+                            value,
+                            ifAbsent,
+                            expiration,
+                        )
+                    }
+                    // 파이프라인 안에서는 명령의 결과를 바로 받을 수 없어 null을 돌려준다
+                    null
+                },
+            )
+
+            keys.filterIndexed { index, _ -> results[index] == true }.toSet()
+        } catch (e: DataAccessException) {
+            logger.error("푸시 중복 발송 방지 실패, 발송은 그대로 진행: count={}", keys.size, e)
+            keys.toSet()
+        }
     }
 
     /**
