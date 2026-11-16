@@ -183,12 +183,13 @@ class MealV2E2eTest {
             assertEquals("CONFIRMING", untouchedMeal.getString("status"))
             assertEquals(recognizedFoods, untouchedMeal.getList<Map<String, Any?>>("foods"), "거부된 요청이 음식 줄을 바꿨습니다")
 
-            // 9. 음식 목록을 보낸다. 맨 위 줄의 인분을 바꾸고 김치 반 인분을 더한다.
+            // 9. 음식 목록을 보낸다. 맨 위 줄의 인분을 바꾸고, 나머지 줄은 인분을 생략하고, 김치를 인분 없이 더한다.
+            // 인분을 생략한 기존 줄은 인분이 그대로이고, 인분 없이 더한 줄은 영양을 계산할 때 채워진다.
             // 5분을 기다리던 계산 대신 바로 계산한다. 처음 계산이라 Worker가 1인분 영양과 아이콘을 구하고 코멘트를 만든다. 응답은 WAITING이다.
             val firstPortion = if (convertPortion(firstFood) == 1.0) 1.5 else 1.0
             val sentFoods = listOf(convertFoodBody(firstFood) + mapOf("portion" to firstPortion)) +
-                recognizedFoods.drop(1).map { convertFoodBody(it) } +
-                mapOf("mealFoodId" to null, "name" to ADDED_FOOD_NAME, "portion" to 0.5)
+                recognizedFoods.drop(1).map { convertFoodBody(it) - "portion" } +
+                mapOf("mealFoodId" to null, "name" to ADDED_FOOD_NAME)
             assertEquals("WAITING", updateMealFoods(mealId, sentFoods))
 
             // 10. 영양 계산이 끝난다.
@@ -203,7 +204,16 @@ class MealV2E2eTest {
             assertEquals(firstFood["mealFoodId"], completedFoods.first()["mealFoodId"])
             assertEquals(firstPortion, convertPortion(completedFoods.first()))
             assertEquals(ADDED_FOOD_NAME, completedFoods.last()["name"])
+            // 인분을 생략한 기존 줄은 인식된 인분 그대로다.
+            assertEquals(
+                recognizedFoods.drop(1).map { convertPortion(it) },
+                completedFoods.drop(1).dropLast(1).map { convertPortion(it) },
+                "인분을 생략한 줄의 인분이 바뀌었습니다",
+            )
+            // 인분 없이 더한 줄은 1인분으로 채워진다.
+            assertEquals(1.0, convertPortion(completedFoods.last()))
             completedFoods.forEach { food ->
+                assertNotNull(food["portion"], "계산이 끝났는데 인분이 없습니다: ${food["name"]}")
                 assertNotNull(food["nutrition"], "계산이 끝났는데 줄 영양이 없습니다: ${food["name"]}")
                 assertNotNull(food["iconId"], "계산이 끝났는데 줄 아이콘이 없습니다: ${food["name"]}")
             }
@@ -231,11 +241,11 @@ class MealV2E2eTest {
             // 12. 인분만 바꿔 다시 보낸다. 새로 구할 값이 없으므로 요청 안에서 계산이 끝나 응답이 COMPLETED다.
             val addedFood = completedFoods.last()
             val portionChangedFoods = completedFoods.dropLast(1).map { convertFoodBody(it) } +
-                (convertFoodBody(addedFood) + mapOf("portion" to 1.0))
+                (convertFoodBody(addedFood) + mapOf("portion" to 0.5))
             assertEquals("COMPLETED", updateMealFoods(mealId, portionChangedFoods))
             val portionChangedMeal = getMeal(mealId)
             assertEquals("COMPLETED", portionChangedMeal.getString("status"))
-            assertEquals(1.0, convertPortion(portionChangedMeal.getList<Map<String, Any?>>("foods").last()))
+            assertEquals(0.5, convertPortion(portionChangedMeal.getList<Map<String, Any?>>("foods").last()))
             // 코멘트는 처음 계산 때 만든 것이 그대로 남는다.
             assertEquals(catComment, portionChangedMeal.getString("catComment"))
 
