@@ -18,6 +18,7 @@ import com.dandi.nyummy.meal.entity.MealFoodSnapshot
 import com.dandi.nyummy.meal.entity.MealSnapshot
 import com.dandi.nyummy.meal.enum.MealInputCategory
 import com.dandi.nyummy.meal.enum.MealRecognitionCategory
+import com.dandi.nyummy.meal.enum.NetContentUnit
 import com.dandi.nyummy.meal.repository.IconRepository
 import com.dandi.nyummy.meal.repository.MealFoodRepository
 import com.dandi.nyummy.meal.repository.MealFoodSnapshotRepository
@@ -175,6 +176,32 @@ class MealFoodServiceTest {
 
                 assertTrue(mealFoods.all { it.portion == MealFood.DEFAULT_PORTION }, "$inputCategory")
             }
+    }
+
+    @Test
+    fun `인식이 읽은 제품의 용량을 음식 줄에 적고 용량이 없는 줄은 비워 둔다`() {
+        val packageRecognition = recognition.copy(
+            inputCategory = MealInputCategory.PACKAGE,
+            foods = listOf(
+                MealFoodRecognitionResult(
+                    name = "셀렉스 프로핏",
+                    netContent = BigDecimal("250.0"),
+                    netContentUnit = NetContentUnit.ML,
+                ),
+                MealFoodRecognitionResult(name = "삼각김밥"),
+            ),
+        )
+
+        val (drink, riceBall) = mealFoodService.createMealFoods(
+            mealId,
+            packageRecognition,
+            MealRecognitionCategory.SYNC,
+        )
+
+        assertEquals(BigDecimal("250.0"), drink.netContent)
+        assertEquals(NetContentUnit.ML, drink.netContentUnit)
+        assertNull(riceBall.netContent)
+        assertNull(riceBall.netContentUnit)
     }
 
     @Test

@@ -13,6 +13,7 @@ import com.dandi.nyummy.meal.dto.NutritionHint
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.entity.MealFood
 import com.dandi.nyummy.meal.enum.MealInputCategory
+import com.dandi.nyummy.meal.enum.NetContentUnit
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import tools.jackson.core.JacksonException
@@ -31,7 +32,7 @@ class GeminiMealRecognitionClient(
     companion object {
 
         // 프롬프트나 응답 스키마를 바꾸면 올린다. 스냅샷에 남겨 사용자가 고친 비율을 프롬프트별로 나눠 본다.
-        private const val PROMPT_VERSION = "v2"
+        private const val PROMPT_VERSION = "v3"
 
         // 영양성분표는 제품으로 판정한다. 값만 남겨 두는 것은 예전에 저장된 행을 읽기 위해서다.
         private val INPUT_CATEGORIES = MealInputCategory.entries - MealInputCategory.NUTRITION_LABEL
@@ -40,6 +41,17 @@ class GeminiMealRecognitionClient(
         private val MAX_NUTRITION_HINT_VALUE = BigDecimal("99999.99")
 
         private val NUTRITION_HINT_FIELDS = listOf("calory", "carbs", "protein", "fat")
+
+        // 용량 컬럼(DECIMAL(7,1))에 담을 수 있는 가장 큰 값
+        private val MAX_NET_CONTENT = BigDecimal("999999.9")
+
+        // 모델이 고를 수 있는 용량 단위와, 저장할 단위·그 단위로 바꾸는 배수. kg과 L는 g과 ml로 바꿔 저장한다.
+        private val NET_CONTENT_UNITS = mapOf(
+            "G" to (NetContentUnit.G to BigDecimal.ONE),
+            "ML" to (NetContentUnit.ML to BigDecimal.ONE),
+            "KG" to (NetContentUnit.G to BigDecimal("1000")),
+            "L" to (NetContentUnit.ML to BigDecimal("1000")),
+        )
 
         private const val PROMPT =
             """
@@ -66,6 +78,10 @@ class GeminiMealRecognitionClient(
           음식이 둘 이상인데 숫자가 음식마다 적혀 있지 않고 한 벌만 적혀 있으면(예: "총 칼로리 650"), 그것은 식사 전체의 값이야.
           식사 전체의 값은 어느 음식에도 적지 말고 모든 음식의 값을 null로 둬. 나눠서 적지도 마.
           음식이 하나뿐이면 적혀 있는 값이 그 음식의 값이니 그대로 적어.
+        - netContent·netContentUnit은 PACKAGE일 때만 적어. 포장이나 영양성분표에 적힌 그 제품의 총 내용량이야.
+          netContent는 숫자, netContentUnit은 단위(G, ML, KG, L)야. (예: "500ml"는 500과 ML, "1.5L"는 1.5와 L)
+          여러 개를 묶어 파는 제품(예: 200ml × 6)은 낱개 하나의 용량을 적어.
+          적혀 있지 않거나 단위가 g·ml·kg·L가 아니면(개, 정, 매 등) 둘 다 null로 둬. 짐작한 값은 절대 적지 마.
         - 이 식사를 대표하는 음식(주메뉴)을 맨 위에 적어.
         - 10개를 넘으면 양이 많은 것부터 10개만 적어.
 
@@ -99,10 +115,22 @@ class GeminiMealRecognitionClient(
                     "maxItems" to MealFood.MAX_COUNT,
                     "items" to mapOf(
                         "type" to "OBJECT",
-                        // 힌트는 적혀 있을 때만 오므로 필수가 아니고 null일 수 있다.
+                        // 힌트와 용량은 적혀 있을 때만 오므로 필수가 아니고 null일 수 있다.
                         "properties" to mapOf("name" to mapOf("type" to "STRING")) +
-                            NUTRITION_HINT_FIELDS.associateWith { mapOf("type" to "NUMBER", "nullable" to true) },
+                            NUTRITION_HINT_FIELDS.associateWith { mapOf("type" to "NUMBER", "nullable" to true) } +
+                            mapOf(
+                                "netContent" to mapOf("type" to "NUMBER", "nullable" to true),
+                                "netContentUnit" to mapOf(
+                                    "type" to "STRING",
+                                    "enum" to NET_CONTENT_UNITS.keys.toList(),
+                                    "nullable" to true,
+                                ),
+                            ),
                         "required" to listOf("name"),
+                        // 순서를 정해 두지 않으면 모델이 용량을 건너뛴 뒤 마지막 숫자를 끝없이 이어 쓰는 일이 있었다.
+                        // 영양성분표 맨 위에 적힌 총 내용량을 먼저 쓰게 하고, 그 뒤에 영양 값을 쓰게 한다.
+                        "propertyOrdering" to
+                            listOf("name", "netContent", "netContentUnit") + NUTRITION_HINT_FIELDS,
                     ),
                 ),
                 "name" to mapOf("type" to "STRING"),
@@ -130,7 +158,7 @@ class GeminiMealRecognitionClient(
             timeout = timeout,
         )
         val response = convertRecognitionResponse(resultJson)
-        val foods = convertFoods(response.foods)
+        val foods = convertFoods(response.foods, response.inputCategory)
 
         // 음식 줄이 하나도 없으면 입력 유형이 무엇이든 계산할 것이 없으므로 음식이 아닌 것으로 본다.
         if (response.inputCategory == MealInputCategory.NOT_FOOD || foods.isEmpty()) {
@@ -169,18 +197,40 @@ class GeminiMealRecognitionClient(
     /**
      * 모델이 낸 음식 줄을 저장할 수 있는 모양으로 맞춘다. 스키마로 묶어도 어길 수 있어 서버에서 한 번 더 맞춘다.
      * 이름이 빈 줄은 빼고, 이름은 [MealFood.NAME_MAX_LENGTH]자에서 자르고, [MealFood.MAX_COUNT]줄까지만 받는다.
-     * 힌트는 저장할 수 있는 값만 남긴다([convertNutritionHint]).
+     * 힌트는 저장할 수 있는 값만 남기고([convertNutritionHint]), 용량은 제품 유형일 때만 받는다([convertNetContent]).
      */
-    private fun convertFoods(foods: List<GeminiRecognizedFood>): List<MealFoodRecognitionResult> = foods
+    private fun convertFoods(
+        foods: List<GeminiRecognizedFood>,
+        inputCategory: MealInputCategory,
+    ): List<MealFoodRecognitionResult> = foods
         .map { it.copy(name = it.name.trim()) }
         .filter { it.name.isNotEmpty() }
         .take(MealFood.MAX_COUNT)
         .map {
+            val netContent = if (inputCategory.isPackage) convertNetContent(it) else null
+
             MealFoodRecognitionResult(
                 name = it.name.take(MealFood.NAME_MAX_LENGTH),
                 nutritionHint = convertNutritionHint(it),
+                netContent = netContent?.first,
+                netContentUnit = netContent?.second,
             )
         }
+
+    /**
+     * 모델이 읽은 용량을 저장할 단위(g, ml)와 자릿수(소수 첫째 자리)로 맞춘다. kg과 L는 1000을 곱해 g과 ml로 바꾼다.
+     * 숫자나 단위 하나만 왔거나, 모르는 단위이거나, 0 이하이거나 컬럼에 담을 수 없게 큰 값은 잘못 읽은 것으로 보고 버린다.
+     * 용량 때문에 인식 전체를 실패로 돌리지 않는다.
+     *
+     * @return 용량과 단위. 받을 수 없는 값이면 null
+     */
+    private fun convertNetContent(food: GeminiRecognizedFood): Pair<BigDecimal, NetContentUnit>? {
+        val value = food.netContent ?: return null
+        val (netContentUnit, multiplier) = NET_CONTENT_UNITS[food.netContentUnit?.trim()?.uppercase()] ?: return null
+        val netContent = (value * multiplier).setScale(1, RoundingMode.HALF_UP)
+
+        return (netContent to netContentUnit).takeIf { netContent > BigDecimal.ZERO && netContent <= MAX_NET_CONTENT }
+    }
 
     /**
      * 모델이 읽은 힌트를 1인분 컬럼에 담을 수 있는 값(소수 둘째 자리)으로 맞춘다.
@@ -216,4 +266,7 @@ private data class GeminiRecognizedFood(
     val carbs: BigDecimal? = null,
     val protein: BigDecimal? = null,
     val fat: BigDecimal? = null,
+    val netContent: BigDecimal? = null,
+    // 스키마로 묶어도 모르는 단위가 올 수 있어 문자열로 받는다. enum으로 받으면 단위 하나 때문에 결과 전체를 해석하지 못한다.
+    val netContentUnit: String? = null,
 )

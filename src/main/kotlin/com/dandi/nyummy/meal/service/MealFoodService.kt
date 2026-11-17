@@ -243,6 +243,7 @@ class MealFoodService(
      * 사진에 그 음식의 값이 적혀 있던 줄(힌트)은 그 값을 1인분 영양으로 적고 인분을 [MealFood.DEFAULT_PORTION]으로 둔다.
      * 인분을 따로 구하지 않는 유형(음식 사진이 아닌 것)의 줄도 인분을 [MealFood.DEFAULT_PORTION]으로 둔다.
      * 음식 사진 식사의 나머지 줄은 인분을 비워 두고, 영양을 계산할 때 채운다.
+     * 제품의 용량을 읽은 줄은 그 용량을 음식 줄에 적는다. 스냅샷 줄에는 남기지 않는다.
      *
      * 식사 기록 요청 안에서 인식했을 때와 Worker의 인식 작업이 인식했을 때 모두 이 메서드로 저장한다.
      * 식사의 상태·이름을 바꾸고 작업을 만드는 일과 함께 커밋돼야 하므로 호출하는 쪽 트랜잭션에 합류한다.
@@ -289,7 +290,12 @@ class MealFoodService(
                     displayOrder = mealFoodSnapshot.displayOrder,
                     name = mealFoodSnapshot.name,
                     portion = if (isPhotoMeal && food.nutritionHint == null) null else MealFood.DEFAULT_PORTION,
-                ).apply { food.nutritionHint?.let { updateNutritionHint(it) } }
+                ).apply {
+                    food.nutritionHint?.let { updateNutritionHint(it) }
+                    if (food.netContent != null && food.netContentUnit != null) {
+                        updateNetContent(food.netContent, food.netContentUnit)
+                    }
+                }
             },
         )
     }
