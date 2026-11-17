@@ -2,8 +2,12 @@ package com.dandi.nyummy.infra.ai.nutrition
 
 import com.dandi.nyummy.infra.ai.AiProperties
 import com.dandi.nyummy.infra.ai.GeminiClient
+import com.dandi.nyummy.infra.ai.createGeminiImagePart
 import com.dandi.nyummy.meal.dto.IconSummaryResult
+import com.dandi.nyummy.meal.dto.NutritionHint
+import com.dandi.nyummy.meal.dto.PhotoServingNutritionInput
 import com.dandi.nyummy.meal.dto.ServingNutrition
+import com.dandi.nyummy.meal.entity.Icon
 import com.dandi.nyummy.meal.enum.MealInputCategory
 import com.dandi.nyummy.meal.service.IconService
 import io.mockk.every
@@ -18,6 +22,7 @@ import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -31,6 +36,7 @@ class GeminiServingNutritionClientTest {
         model = "gemini-test",
         recognitionModel = "gemini-recognition-test",
         servingNutritionModel = "gemini-serving-nutrition-test",
+        photoNutritionModel = "gemini-photo-nutrition-test",
         catCommentModel = "gemini-cat-comment-test",
         baseUrl = "https://gemini.test",
         connectTimeout = Duration.ofSeconds(1),
@@ -201,5 +207,176 @@ class GeminiServingNutritionClientTest {
         inputCategories.forEach { inputCategory ->
             assertContains(capturePrompt(listOf("불고기"), inputCategory), "일반적인 1인분 영양 정보")
         }
+    }
+
+    // getPhotoServingNutritions
+
+    private val imageBytes = byteArrayOf(1, 2, 3)
+    private val contentType = "image/jpeg"
+
+    private fun createPhotoServing(index: Int, portion: String = "1", calory: Number = 350, iconId: Long = 12L) =
+        createServing(index = index, calory = calory, iconId = iconId) + mapOf("portion" to portion)
+
+    private fun givenPhotoServings(vararg servings: Map<String, Any>, total: Map<String, Any?> = emptyMap()) {
+        every { geminiClient.createContent(any(), any(), any(), any(), any()) } returns
+            objectMapper.writeValueAsString(mapOf("foods" to servings.toList(), "total" to total))
+    }
+
+    private fun getPhotoServingNutritions(vararg foods: PhotoServingNutritionInput) =
+        client.getPhotoServingNutritions(imageBytes, contentType, foods.toList())
+
+    @Test
+    fun `사진을 함께 보낸 조회는 음식마다 1인분과 인분과 아이콘을 요청한 순서대로 돌려준다`() {
+        // 모델이 순서를 바꿔 답해도 번호로 짝짓는다.
+        givenPhotoServings(
+            createPhotoServing(index = 2, portion = "1", calory = 300, iconId = 5L),
+            createPhotoServing(index = 1, portion = "1.5", calory = 350, iconId = 12L),
+        )
+
+        val result = getPhotoServingNutritions(PhotoServingNutritionInput("불고기"), PhotoServingNutritionInput("잡곡밥"))
+
+        assertEquals(
+            listOf(BigDecimal("350.00"), BigDecimal("300.00")),
+            result.servingNutritions.map {
+                it.servingNutrition.calory
+            },
+        )
+        assertEquals(listOf(BigDecimal("1.5"), BigDecimal("1.0")), result.servingNutritions.map { it.portion })
+        assertEquals(listOf(12L, 5L), result.servingNutritions.map { it.iconId })
+    }
+
+    @Test
+    fun `인분이 0_5 단위가 아니거나 범위를 벗어나면 가장 가까운 0_5 단위로 0_5에서 5 사이에 맞춘다`() {
+        givenPhotoServings(
+            createPhotoServing(index = 1, portion = "0.8"),
+            createPhotoServing(index = 2, portion = "0.1"),
+            createPhotoServing(index = 3, portion = "7"),
+        )
+
+        val result = getPhotoServingNutritions(
+            PhotoServingNutritionInput("불고기"),
+            PhotoServingNutritionInput("잡곡밥"),
+            PhotoServingNutritionInput("김치"),
+        )
+
+        assertEquals(
+            listOf(BigDecimal("1.0"), BigDecimal("0.5"), BigDecimal("5.0")),
+            result.servingNutritions.map { it.portion },
+        )
+    }
+
+    @Test
+    fun `인분이 숫자가 아니면 INVALID_RESPONSE다`() {
+        givenPhotoServings(createPhotoServing(index = 1, portion = "많이"))
+
+        assertAnalysisFailure(AnalysisFailureCategory.INVALID_RESPONSE) {
+            getPhotoServingNutritions(PhotoServingNutritionInput("불고기"))
+        }
+    }
+
+    @Test
+    fun `사진에 적힌 식사 전체의 값을 읽어 소수 둘째 자리로 돌려준다`() {
+        givenPhotoServings(
+            createPhotoServing(index = 1),
+            total = mapOf("calory" to 409, "carbs" to 62, "protein" to 32.7, "fat" to 2.2),
+        )
+
+        val result = getPhotoServingNutritions(PhotoServingNutritionInput("닭안심살"))
+
+        assertEquals(
+            NutritionHint(BigDecimal("409.00"), BigDecimal("62.00"), BigDecimal("32.70"), BigDecimal("2.20")),
+            result.totalNutritionHint,
+        )
+    }
+
+    @Test
+    fun `식사 전체의 값이 일부만 적혀 있으면 적힌 항목만 돌려주고 음수는 버린다`() {
+        givenPhotoServings(
+            createPhotoServing(index = 1),
+            total = mapOf("calory" to 650, "carbs" to null, "protein" to -3, "fat" to null),
+        )
+
+        val result = getPhotoServingNutritions(PhotoServingNutritionInput("불고기"))
+
+        assertEquals(NutritionHint(calory = BigDecimal("650.00")), result.totalNutritionHint)
+    }
+
+    @Test
+    fun `식사 전체의 값이 적혀 있지 않으면 null이다`() {
+        givenPhotoServings(
+            createPhotoServing(index = 1),
+            total = mapOf("calory" to null, "carbs" to null, "protein" to null, "fat" to null),
+        )
+
+        assertNull(getPhotoServingNutritions(PhotoServingNutritionInput("불고기")).totalNutritionHint)
+    }
+
+    @Test
+    fun `결과에 요청한 음식이 빠져 있으면 INVALID_RESPONSE다`() {
+        givenPhotoServings(createPhotoServing(index = 1))
+
+        assertAnalysisFailure(AnalysisFailureCategory.INVALID_RESPONSE) {
+            getPhotoServingNutritions(PhotoServingNutritionInput("불고기"), PhotoServingNutritionInput("잡곡밥"))
+        }
+    }
+
+    @Test
+    fun `목록에 없는 아이콘을 고르면 기본 아이콘으로 바꾼다`() {
+        givenPhotoServings(createPhotoServing(index = 1, iconId = 999L))
+
+        val result = getPhotoServingNutritions(PhotoServingNutritionInput("불고기"))
+
+        assertEquals(Icon.DEFAULT_ID, result.servingNutritions.single().iconId)
+    }
+
+    @Test
+    fun `구할 음식이 없으면 Gemini를 부르지 않는다`() {
+        val result = getPhotoServingNutritions()
+
+        assertTrue(result.servingNutritions.isEmpty())
+        assertNull(result.totalNutritionHint)
+        verify(exactly = 0) { geminiClient.createContent(any(), any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `사진과 사진 영양 모델과 LOW thinking으로 Gemini를 부른다`() {
+        val model = slot<String>()
+        val parts = slot<List<Map<String, Any>>>()
+        val thinkingLevel = slot<String>()
+        every {
+            geminiClient.createContent(capture(model), capture(parts), any(), any(), capture(thinkingLevel))
+        } returns
+            objectMapper.writeValueAsString(
+                mapOf(
+                    "foods" to listOf(createPhotoServing(index = 1)),
+                    "total" to emptyMap<String, Any>(),
+                ),
+            )
+
+        getPhotoServingNutritions(PhotoServingNutritionInput("불고기"))
+
+        assertEquals("gemini-photo-nutrition-test", model.captured)
+        assertEquals(createGeminiImagePart(imageBytes, contentType), parts.captured.first())
+        assertEquals(GeminiClient.LOW_THINKING_LEVEL, thinkingLevel.captured)
+    }
+
+    @Test
+    fun `사진에 일부 값이 적혀 있던 음식은 그 값을 목록에 함께 적어 보낸다`() {
+        val parts = slot<List<Map<String, Any>>>()
+        every { geminiClient.createContent(any(), capture(parts), any(), any(), any()) } returns
+            objectMapper.writeValueAsString(
+                mapOf(
+                    "foods" to listOf(createPhotoServing(index = 1), createPhotoServing(index = 2)),
+                    "total" to emptyMap<String, Any>(),
+                ),
+            )
+
+        getPhotoServingNutritions(
+            PhotoServingNutritionInput("제육덮밥", NutritionHint(calory = BigDecimal("780.00"))),
+            PhotoServingNutritionInput("된장\n찌개"),
+        )
+
+        val prompt = parts.captured.last().getValue("text") as String
+        assertContains(prompt, "1. 제육덮밥 (사진에 적힌 값: 칼로리 780.00kcal)\n2. 된장 찌개")
     }
 }

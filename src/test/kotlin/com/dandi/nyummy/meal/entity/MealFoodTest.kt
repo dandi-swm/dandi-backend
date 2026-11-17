@@ -1,5 +1,6 @@
 package com.dandi.nyummy.meal.entity
 
+import com.dandi.nyummy.meal.dto.NutritionHint
 import com.dandi.nyummy.meal.dto.ServingNutrition
 import java.math.BigDecimal
 import kotlin.test.Test
@@ -125,5 +126,52 @@ class MealFoodTest {
         assertEquals(3, mealFood.displayOrder)
         assertEquals(foundServingNutrition, mealFood.servingNutrition)
         assertEquals(12L, mealFood.iconId)
+    }
+
+    // updateNutritionHint, nutritionHint, updateEmptyServingNutrition
+
+    private fun createEmptyMealFood() = MealFood(
+        mealId = 1L,
+        mealFoodSnapshotId = 11L,
+        displayOrder = 1,
+        name = "제육덮밥",
+        portion = MealFood.DEFAULT_PORTION,
+    )
+
+    @Test
+    fun `사진에 일부만 적혀 있던 줄은 적힌 항목만 차 있고 그 값을 힌트로 돌려준다`() {
+        val mealFood = createEmptyMealFood().apply { updateNutritionHint(NutritionHint(calory = BigDecimal("780.00"))) }
+
+        assertNull(mealFood.servingNutrition)
+        assertEquals(NutritionHint(calory = BigDecimal("780.00")), mealFood.nutritionHint)
+    }
+
+    @Test
+    fun `값이 하나도 없거나 넷이 다 찬 줄은 힌트가 없다`() {
+        assertNull(createEmptyMealFood().nutritionHint)
+        assertNull(createMealFood().nutritionHint)
+    }
+
+    @Test
+    fun `빈 항목만 채우면 사진에 적혀 있던 값은 그대로이고 나머지만 구한 값이 된다`() {
+        val mealFood = createEmptyMealFood().apply { updateNutritionHint(NutritionHint(calory = BigDecimal("780.00"))) }
+
+        mealFood.updateEmptyServingNutrition(foundServingNutrition)
+
+        assertEquals(
+            ServingNutrition(BigDecimal("780.00"), BigDecimal("15.5"), BigDecimal("25.25"), BigDecimal("20")),
+            mealFood.servingNutrition,
+        )
+        assertNull(mealFood.nutritionHint)
+        assertFalse(mealFood.isNutritionFixed)
+    }
+
+    @Test
+    fun `넷이 다 비어 있던 줄에 빈 항목만 채우면 구한 값이 그대로 들어간다`() {
+        val mealFood = createEmptyMealFood()
+
+        mealFood.updateEmptyServingNutrition(foundServingNutrition)
+
+        assertEquals(foundServingNutrition, mealFood.servingNutrition)
     }
 }

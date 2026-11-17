@@ -1,5 +1,6 @@
 package com.dandi.nyummy.worker.dto
 
+import com.dandi.nyummy.meal.dto.NutritionHint
 import com.dandi.nyummy.meal.dto.ServingNutrition
 import com.dandi.nyummy.meal.enum.MealInputCategory
 import java.math.BigDecimal
@@ -27,6 +28,8 @@ data class AnalysisMealResult(
  * @property portion 지금 저장된 인분. 아직 구하지 않았으면 null
  * @property servingNutrition 지금 저장된 1인분 영양. 아직 구하지 않았거나 다시 구해야 하면 null
  * @property iconId 지금 저장된 아이콘. 아직 구하지 않았거나 다시 구해야 하면 null
+ * @property nutritionHint 사진에 적혀 있어 1인분 영양에 일부만 차 있는 값. 다 찼거나 하나도 없으면 null
+ * @property isRecognized 인식이 사진에서 찾은 줄인지. 사용자가 더한 줄은 false다
  */
 data class AnalysisMealFoodResult(
     val mealFoodId: Long,
@@ -34,4 +37,6 @@ data class AnalysisMealFoodResult(
     val portion: BigDecimal?,
     val servingNutrition: ServingNutrition?,
     val iconId: Long?,
+    val nutritionHint: NutritionHint? = null,
+    val isRecognized: Boolean = false,
 )

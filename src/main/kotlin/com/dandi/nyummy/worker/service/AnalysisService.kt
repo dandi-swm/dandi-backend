@@ -13,17 +13,23 @@ import com.dandi.nyummy.infra.push.dto.PushMessage
 import com.dandi.nyummy.infra.push.dto.PushType
 import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.language.getMessage
+import com.dandi.nyummy.meal.calculator.calculateHintedServingNutrition
 import com.dandi.nyummy.meal.calculator.calculateMealFoodNutrition
+import com.dandi.nyummy.meal.calculator.calculateTotalAdjustedServingNutritions
 import com.dandi.nyummy.meal.calculator.calculateTotalNutrition
 import com.dandi.nyummy.meal.config.MealProperties
 import com.dandi.nyummy.meal.dto.CatCommentMealFoodInput
+import com.dandi.nyummy.meal.dto.PhotoServingNutritionInput
+import com.dandi.nyummy.meal.dto.ServingNutrition
 import com.dandi.nyummy.meal.dto.ServingNutritionResult
 import com.dandi.nyummy.meal.entity.MealFood
 import com.dandi.nyummy.meal.enum.MealAnalysisJobCategory
+import com.dandi.nyummy.meal.enum.MealInputCategory
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.notification.NotificationId
 import com.dandi.nyummy.notification.service.NotificationService
 import com.dandi.nyummy.worker.config.ConditionalOnAnalysisWorkerEnabled
+import com.dandi.nyummy.worker.dto.AnalysisMealFoodResult
 import com.dandi.nyummy.worker.dto.AnalysisMealResult
 import com.dandi.nyummy.worker.dto.AnalysisPushResult
 import com.dandi.nyummy.worker.dto.MealAnalysisJobResult
@@ -32,6 +38,7 @@ import io.micrometer.core.instrument.Timer
 import org.slf4j.LoggerFactory
 import org.springframework.context.MessageSource
 import org.springframework.stereotype.Service
+import java.math.BigDecimal
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
@@ -127,14 +134,9 @@ class AnalysisService(
      * 음식이 아니거나 인식에 실패한 것은 [handleAnalysisFailure]가 다른 작업과 같은 규칙으로 다루고 알린다.
      */
     private fun recognizeMeal(job: MealAnalysisJobResult, analyzedAt: Instant) {
-        val image = analysisImageClient.downloadImage(job.imageKey)
-        val contentType = image.contentType
-            ?: throw AnalysisFailureException(
-                AnalysisFailureCategory.INVALID_REQUEST,
-                "인식할 이미지의 콘텐츠 타입이 없습니다: ${job.imageKey}",
-            )
+        val image = downloadImage(job)
 
-        val recognition = mealRecognitionClient.recognizeMeal(image.bytes, contentType, job.language)
+        val recognition = mealRecognitionClient.recognizeMeal(image.bytes, image.contentType, job.language)
         val isConfirmed = mealAnalysisJobTransactionService.confirmMealRecognition(
             job = job,
             recognition = recognition,
@@ -170,7 +172,7 @@ class AnalysisService(
             )
         }
 
-        val servingNutritions = getServingNutritions(meal)
+        val servingNutritions = getServingNutritions(job, meal)
         val catComment = if (meal.hasCatComment) null else createCatComment(meal, servingNutritions, job.language)
 
         val pushResult = mealAnalysisJobTransactionService.confirmMealNutrition(job, servingNutritions, catComment)
@@ -183,26 +185,142 @@ class AnalysisService(
     }
 
     /**
-     * 1인분 영양이나 아이콘이 비어 있는 줄만 모아 한 번에 조회한다. 비어 있는 줄이 없으면 모델을 부르지 않는다.
+     * 1인분 영양이나 아이콘이 비어 있는 줄만 모아 조회한다. 비어 있는 줄이 없으면 모델을 부르지 않는다.
      * 인분만 바꾼 식사나 사용자가 영양과 아이콘을 모두 정한 식사가 그렇다.
+     *
+     * 줄은 둘로 나눠 구한다.
+     * - 음식 사진 식사에서 인식이 사진에서 찾은 줄은 사진을 함께 보내 1인분과 인분을 구한다([getPhotoServingNutritions]).
+     *   사용자가 이름을 고친 줄도 사진에 있는 음식이므로 여기로 간다.
+     * - 그 밖의 줄(음식 사진이 아닌 유형의 줄, 사용자가 더한 줄)은 이름만으로 구한다([getNamedServingNutritions]).
      *
      * @return 음식 줄 ID별 조회 결과. 조회하지 않은 줄은 없다
      */
-    private fun getServingNutritions(meal: AnalysisMealResult): Map<Long, ServingNutritionResult> {
+    private fun getServingNutritions(
+        job: MealAnalysisJobResult,
+        meal: AnalysisMealResult,
+    ): Map<Long, ServingNutritionResult> {
         val mealFoods = meal.mealFoods.filter { it.servingNutrition == null || it.iconId == null }
+        val (photoMealFoods, namedMealFoods) = mealFoods.partition {
+            meal.inputCategory == MealInputCategory.FOOD_PHOTO && it.isRecognized
+        }
+
+        return getPhotoServingNutritions(job, meal, photoMealFoods) +
+            getNamedServingNutritions(meal, namedMealFoods)
+    }
+
+    /**
+     * 사진을 함께 보내 줄마다 1인분, 인분, 아이콘을 구한다.
+     *
+     * 사진에 식사 전체의 값이 적혀 있으면 줄들의 합이 그 값과 같아지게 1인분을 맞춘다
+     * ([calculateTotalAdjustedServingNutritions]). 식사에서 인식한 줄을 이번에 모두 구할 때만 맞춘다.
+     * 일부 줄만 다시 구할 때(계산이 끝난 식사에서 한 줄의 이름을 고친 경우)는 그 줄만 전체 값에 맞출 수 없어 구한 값 그대로 쓴다.
+     */
+    private fun getPhotoServingNutritions(
+        job: MealAnalysisJobResult,
+        meal: AnalysisMealResult,
+        mealFoods: List<AnalysisMealFoodResult>,
+    ): Map<Long, ServingNutritionResult> {
+        if (mealFoods.isEmpty()) {
+            return emptyMap()
+        }
+        val image = downloadImage(job)
+        val result = servingNutritionClient.getPhotoServingNutritions(
+            imageBytes = image.bytes,
+            contentType = image.contentType,
+            foods = mealFoods.map { PhotoServingNutritionInput(it.name, it.nutritionHint) },
+        )
+
+        val totalNutritionHint = result.totalNutritionHint
+        val hasAllRecognizedMealFoods = mealFoods.size == meal.mealFoods.count { it.isRecognized }
+        val servingNutritions = if (totalNutritionHint != null && hasAllRecognizedMealFoods) {
+            calculateTotalAdjustedServingNutritions(
+                servings = mealFoods.zip(result.servingNutritions) { mealFood, servingNutritionResult ->
+                    servingNutritionResult.servingNutrition to calculatePortion(mealFood, servingNutritionResult)
+                },
+                totalNutritionHint = totalNutritionHint,
+            )
+        } else {
+            result.servingNutritions.map { it.servingNutrition }
+        }
+
+        return mealFoods.indices.associate { index ->
+            mealFoods[index].mealFoodId to
+                result.servingNutritions[index].copy(servingNutrition = servingNutritions[index])
+        }
+    }
+
+    /**
+     * 이름만으로 줄마다 1인분과 아이콘을 구한다. 사진에 칼로리가 적혀 있던 줄은 구한 값을 그 칼로리에 맞춘다
+     * ([calculateHintedServingNutrition]).
+     */
+    private fun getNamedServingNutritions(
+        meal: AnalysisMealResult,
+        mealFoods: List<AnalysisMealFoodResult>,
+    ): Map<Long, ServingNutritionResult> {
         if (mealFoods.isEmpty()) {
             return emptyMap()
         }
         val servingNutritionResults =
             servingNutritionClient.getServingNutritions(mealFoods.map { it.name }, meal.inputCategory)
 
-        return mealFoods.map { it.mealFoodId }.zip(servingNutritionResults).toMap()
+        return mealFoods.zip(servingNutritionResults).associate { (mealFood, servingNutritionResult) ->
+            val nutritionHint = mealFood.nutritionHint
+            val servingNutrition = if (nutritionHint == null) {
+                servingNutritionResult.servingNutrition
+            } else {
+                calculateHintedServingNutrition(nutritionHint, servingNutritionResult.servingNutrition)
+            }
+
+            mealFood.mealFoodId to servingNutritionResult.copy(servingNutrition = servingNutrition)
+        }
+    }
+
+    /** 분석할 사진을 받는다. 콘텐츠 타입이 없으면 모델에 넘길 수 없다. */
+    private fun downloadImage(job: MealAnalysisJobResult): AnalysisImage {
+        val image = analysisImageClient.downloadImage(job.imageKey)
+        val contentType = image.contentType
+            ?: throw AnalysisFailureException(
+                AnalysisFailureCategory.INVALID_REQUEST,
+                "분석할 이미지의 콘텐츠 타입이 없습니다: ${job.imageKey}",
+            )
+
+        return AnalysisImage(image.bytes, contentType)
     }
 
     /**
-     * 저장하기 전의 값으로 줄 영양과 식사 합계를 먼저 구해 코멘트를 만든다.
-     * 줄에 이미 1인분 영양이 있으면 그 값을, 없으면 방금 조회한 값을 쓴다. 인분이 빈 줄은 [MealFood.DEFAULT_PORTION]으로 본다.
+     * 줄에 저장될 1인분. 이미 있으면 그 값이고, 없으면 조회한 값으로 빈 항목만 채운 값이다.
+     * 저장할 때 채우는 규칙(`MealFood.updateEmptyServingNutrition`)과 같다.
+     */
+    private fun calculateServingNutrition(
+        mealFood: AnalysisMealFoodResult,
+        servingNutritionResult: ServingNutritionResult?,
+    ): ServingNutrition {
+        mealFood.servingNutrition?.let { return it }
+        val servingNutrition = checkNotNull(servingNutritionResult) {
+            "1인분 값이 없는 음식 줄을 조회하지 않았습니다: mealFoodId=${mealFood.mealFoodId}"
+        }.servingNutrition
+        val nutritionHint = mealFood.nutritionHint ?: return servingNutrition
+
+        return ServingNutrition(
+            calory = nutritionHint.calory ?: servingNutrition.calory,
+            carbs = nutritionHint.carbs ?: servingNutrition.carbs,
+            protein = nutritionHint.protein ?: servingNutrition.protein,
+            fat = nutritionHint.fat ?: servingNutrition.fat,
+        )
+    }
+
+    /**
+     * 줄에 저장될 인분. 이미 있으면 그 값이고, 없으면 조회 결과의 인분, 그것도 없으면 [MealFood.DEFAULT_PORTION]이다.
      * 저장할 때 채우는 규칙(`MealFoodService.updateServingNutritions`)과 같다.
+     */
+    private fun calculatePortion(
+        mealFood: AnalysisMealFoodResult,
+        servingNutritionResult: ServingNutritionResult?,
+    ): BigDecimal = mealFood.portion ?: servingNutritionResult?.portion ?: MealFood.DEFAULT_PORTION
+
+    /**
+     * 저장하기 전의 값으로 줄 영양과 식사 합계를 먼저 구해 코멘트를 만든다.
+     * 1인분과 인분은 저장될 값 그대로 구한다([calculateServingNutrition], [calculatePortion]).
      */
     private fun createCatComment(
         meal: AnalysisMealResult,
@@ -210,9 +328,9 @@ class AnalysisService(
         language: Language,
     ): String {
         val servings = meal.mealFoods.map { mealFood ->
-            val servingNutrition = mealFood.servingNutrition
-                ?: servingNutritions.getValue(mealFood.mealFoodId).servingNutrition
-            servingNutrition to (mealFood.portion ?: MealFood.DEFAULT_PORTION)
+            val servingNutritionResult = servingNutritions[mealFood.mealFoodId]
+            calculateServingNutrition(mealFood, servingNutritionResult) to
+                calculatePortion(mealFood, servingNutritionResult)
         }
 
         return catService.createCatComment(
@@ -436,3 +554,6 @@ private enum class AnalysisOutcome(val tagValue: String, val isFinal: Boolean) {
     DELAYED("delayed", false),
     FAILED("failed", true),
 }
+
+/** 모델에 넘길 사진. 콘텐츠 타입이 있는 것만 넘긴다. */
+private class AnalysisImage(val bytes: ByteArray, val contentType: String)

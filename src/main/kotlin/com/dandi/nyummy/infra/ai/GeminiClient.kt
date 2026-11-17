@@ -32,8 +32,11 @@ class GeminiClient(
 ) {
 
     companion object {
-        // 식사 인식 v2의 호출은 모두 thinking을 가장 낮게 둔다. 응답이 가장 빠르다.
-        private const val THINKING_LEVEL = "MINIMAL"
+        // 식사 인식 v2의 호출은 따로 정하지 않으면 thinking을 가장 낮게 둔다. 응답이 가장 빠르다.
+        const val MINIMAL_THINKING_LEVEL = "MINIMAL"
+
+        // MINIMAL을 받지 않는 모델(gemini-3.8-flash 등)에 쓴다.
+        const val LOW_THINKING_LEVEL = "LOW"
     }
 
     /**
@@ -42,6 +45,7 @@ class GeminiClient(
      * @param responseSchema 결과 JSON의 스키마
      * @param timeout 응답을 기다릴 최대 시간. null이면 app.ai.read-timeout을 쓴다.
      *   다음 바이트를 기다리는 시간이라 호출 전체의 상한은 아니다. 전체 상한은 부르는 쪽이 따로 건다
+     * @param thinkingLevel 모델의 thinking 수준. 모델마다 받는 값이 다르다
      * @return 모델이 낸 결과 JSON 문자열
      * @throws AnalysisFailureException 실패를 [AnalysisFailureCategory]로 나눠 던진다
      */
@@ -50,13 +54,14 @@ class GeminiClient(
         parts: List<Map<String, Any>>,
         responseSchema: Map<String, Any>,
         timeout: Duration? = null,
+        thinkingLevel: String = MINIMAL_THINKING_LEVEL,
     ): String {
         val requestBody = mapOf(
             "contents" to listOf(mapOf("role" to "user", "parts" to parts)),
             "generationConfig" to mapOf(
                 "responseMimeType" to "application/json",
                 "responseSchema" to responseSchema,
-                "thinkingConfig" to mapOf("thinkingLevel" to THINKING_LEVEL),
+                "thinkingConfig" to mapOf("thinkingLevel" to thinkingLevel),
             ),
         )
 

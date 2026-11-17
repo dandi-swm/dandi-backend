@@ -7,6 +7,7 @@ import com.dandi.nyummy.meal.dto.MealFoodRecognitionResult
 import com.dandi.nyummy.meal.dto.MealRecognitionResult
 import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.dto.NutritionAnalysisResult
+import com.dandi.nyummy.meal.dto.NutritionHint
 import com.dandi.nyummy.meal.dto.ServingNutrition
 import com.dandi.nyummy.meal.dto.ServingNutritionResult
 import com.dandi.nyummy.meal.entity.Meal
@@ -613,6 +614,34 @@ class MealAnalysisJobTransactionServiceTest {
             ),
             analysisMeal,
         )
+    }
+
+    @Test
+    fun `인식이 찾은 줄인지와 사진에 일부만 적혀 있던 값을 음식 줄마다 함께 읽는다`() {
+        val recognizedMealFood = MealFood(
+            mealId = nutritionJob.mealId,
+            mealFoodSnapshotId = 11L,
+            displayOrder = 1,
+            name = "제육덮밥",
+            portion = MealFood.DEFAULT_PORTION,
+        ).apply { updateNutritionHint(NutritionHint(calory = BigDecimal("780.00"))) }
+        val addedMealFood = MealFood(
+            mealId = nutritionJob.mealId,
+            mealFoodSnapshotId = null,
+            displayOrder = 2,
+            name = "김치",
+            portion = null,
+        )
+        every { mealRepository.findById(nutritionJob.mealId) } returns Optional.of(createAnalyzingMeal())
+        every { mealFoodService.getMealFoods(any()) } returns listOf(recognizedMealFood, addedMealFood)
+
+        val mealFoods = assertNotNull(mealAnalysisJobTransactionService.getAnalysisMeal(nutritionJob)).mealFoods
+
+        // 스냅샷 줄을 가리키면 인식이 찾은 줄이고, 가리키지 않으면 사용자가 더한 줄이다.
+        assertEquals(listOf(true, false), mealFoods.map { it.isRecognized })
+        assertEquals(NutritionHint(calory = BigDecimal("780.00")), mealFoods[0].nutritionHint)
+        assertNull(mealFoods[1].nutritionHint)
+        assertNull(mealFoods[1].portion)
     }
 
     @Test

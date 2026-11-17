@@ -221,6 +221,8 @@ class MealAnalysisJobTransactionService(
                     portion = it.portion,
                     servingNutrition = it.servingNutrition,
                     iconId = it.iconId,
+                    nutritionHint = it.nutritionHint,
+                    isRecognized = it.mealFoodSnapshotId != null,
                 )
             },
         )

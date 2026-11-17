@@ -44,6 +44,7 @@ class GeminiNutritionAnalysisClientTest {
         model = "gemini-test",
         recognitionModel = "gemini-recognition-test",
         servingNutritionModel = "gemini-serving-nutrition-test",
+        photoNutritionModel = "gemini-photo-nutrition-test",
         catCommentModel = "gemini-cat-comment-test",
         baseUrl = "https://gemini.test",
         connectTimeout = Duration.ofSeconds(1),
