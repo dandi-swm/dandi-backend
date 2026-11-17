@@ -265,4 +265,57 @@ class MealFoodNutritionCalculatorTest {
     fun `칼로리가 0인데 탄단지가 있으면 맞지 않는 값이다`() {
         assertFalse(matchesMacroNutrientCalory(createServingNutrition("0", "5", "0", "0"), 0.1))
     }
+
+    // matchesNutritionHint
+
+    private val labelNutritionHint =
+        NutritionHint(BigDecimal("100.00"), BigDecimal("4.00"), BigDecimal("20.00"), BigDecimal("0.70"))
+
+    @Test
+    fun `네 값이 모두 같으면 같은 값이고 소수 자릿수 표현은 가리지 않는다`() {
+        assertTrue(matchesNutritionHint(labelNutritionHint, createServingNutrition("100", "4.0", "20.00", "0.7")))
+    }
+
+    @Test
+    fun `한 항목이라도 숫자가 다르면 다른 값이다`() {
+        assertFalse(matchesNutritionHint(labelNutritionHint, createServingNutrition("100", "4", "20", "0.71")))
+        assertFalse(matchesNutritionHint(labelNutritionHint, createServingNutrition("101", "4", "20", "0.7")))
+    }
+
+    @Test
+    fun `일부만 적혀 있던 값은 적힌 항목만 비교한다`() {
+        val nutritionHint = NutritionHint(calory = BigDecimal("100.00"), protein = BigDecimal("20.00"))
+
+        assertTrue(matchesNutritionHint(nutritionHint, createServingNutrition("100", "99", "20", "99")))
+        assertFalse(matchesNutritionHint(nutritionHint, createServingNutrition("100", "4", "21", "0.7")))
+    }
+
+    @Test
+    fun `허용 오차를 주면 항목마다 적힌 값의 그 비율 안이면 같다고 본다`() {
+        val nutritionHint =
+            NutritionHint(BigDecimal("400.00"), BigDecimal("60.00"), BigDecimal("20.00"), BigDecimal("15.00"))
+
+        // 440(+10%), 54(-10%), 22(+10%), 13.5(-10%)
+        assertTrue(matchesNutritionHint(nutritionHint, createServingNutrition("440", "54", "22", "13.5"), 0.1))
+        // 칼로리만 441(+10.25%)
+        assertFalse(matchesNutritionHint(nutritionHint, createServingNutrition("441", "54", "22", "13.5"), 0.1))
+        // 탄수화물만 67(+11.7%)
+        assertFalse(matchesNutritionHint(nutritionHint, createServingNutrition("400", "67", "20", "15"), 0.1))
+    }
+
+    @Test
+    fun `허용 오차를 줘도 작은 값은 차이가 1 이하이면 같다고 본다`() {
+        // 탄수화물 4 → 5(25%), 지방 0.7 → 0(100%)이지만 차이는 1 이하다.
+        assertTrue(matchesNutritionHint(labelNutritionHint, createServingNutrition("95", "5", "20", "0"), 0.1))
+        // 탄수화물 4 → 5.01은 차이가 1을 넘고 비율로도 벗어난다.
+        assertFalse(matchesNutritionHint(labelNutritionHint, createServingNutrition("95", "5.01", "20", "0"), 0.1))
+    }
+
+    @Test
+    fun `허용 오차를 줘도 일부만 적혀 있던 값은 적힌 항목만 비교한다`() {
+        val nutritionHint = NutritionHint(calory = BigDecimal("100.00"))
+
+        assertTrue(matchesNutritionHint(nutritionHint, createServingNutrition("105", "99", "99", "99"), 0.1))
+        assertFalse(matchesNutritionHint(nutritionHint, createServingNutrition("120", "4", "20", "0.7"), 0.1))
+    }
 }

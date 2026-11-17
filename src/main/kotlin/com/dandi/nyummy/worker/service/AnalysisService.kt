@@ -17,9 +17,11 @@ import com.dandi.nyummy.meal.calculator.calculateHintedServingNutrition
 import com.dandi.nyummy.meal.calculator.calculateMealFoodNutrition
 import com.dandi.nyummy.meal.calculator.calculateTotalAdjustedServingNutritions
 import com.dandi.nyummy.meal.calculator.calculateTotalNutrition
+import com.dandi.nyummy.meal.calculator.matchesNutritionHint
 import com.dandi.nyummy.meal.calculator.pickRewardBox
 import com.dandi.nyummy.meal.config.MealProperties
 import com.dandi.nyummy.meal.dto.CatCommentMealFoodInput
+import com.dandi.nyummy.meal.dto.NutritionHint
 import com.dandi.nyummy.meal.dto.PhotoServingNutritionInput
 import com.dandi.nyummy.meal.dto.ServingNutrition
 import com.dandi.nyummy.meal.dto.ServingNutritionResult
@@ -27,6 +29,7 @@ import com.dandi.nyummy.meal.entity.MealFood
 import com.dandi.nyummy.meal.enum.MealAnalysisJobCategory
 import com.dandi.nyummy.meal.enum.MealInputCategory
 import com.dandi.nyummy.meal.enum.MealStatus
+import com.dandi.nyummy.meal.enum.PackageNutritionMismatchCategory
 import com.dandi.nyummy.meal.service.FoodNutritionService
 import com.dandi.nyummy.notification.NotificationId
 import com.dandi.nyummy.notification.service.NotificationService
@@ -215,7 +218,7 @@ class AnalysisService(
         }
 
         return getPhotoServingNutritions(job, meal, photoMealFoods) +
-            getNamedServingNutritions(meal, namedMealFoods)
+            getNamedServingNutritions(job, meal, namedMealFoods)
     }
 
     /**
@@ -266,10 +269,11 @@ class AnalysisService(
      * 이름만으로 줄마다 1인분과 아이콘을 구한다. 사진에 칼로리가 적혀 있던 줄은 구한 값을 그 칼로리에 맞춘다
      * ([calculateHintedServingNutrition]).
      *
-     * 제품 유형이 아니면 저장해 둔 값을 먼저 찾는다([getFoodNutritions]). 제품 유형은 이름이 제품 이름이라
-     * 음식 이름으로 저장한 값을 쓰지 않고 늘 모델에 묻는다.
+     * 제품 유형이 아니면 음식 이름으로 저장해 둔 값을 먼저 찾는다([getFoodNutritions]). 제품 유형은 이름이 제품 이름이라
+     * 그 값을 쓰지 않고, 제품 이름과 용량으로 저장해 둔 표시값을 먼저 찾는다([getPackageNutritions]).
      */
     private fun getNamedServingNutritions(
+        job: MealAnalysisJobResult,
         meal: AnalysisMealResult,
         mealFoods: List<AnalysisMealFoodResult>,
     ): Map<Long, ServingNutritionResult> {
@@ -278,7 +282,7 @@ class AnalysisService(
         }
         val names = mealFoods.map { it.name }
         val servingNutritionResults = if (meal.inputCategory.isPackage) {
-            servingNutritionClient.getNamedServingNutritions(names, meal.inputCategory)
+            getPackageNutritions(job, meal.inputCategory, mealFoods)
         } else {
             getFoodNutritions(names, meal.inputCategory)
         }
@@ -318,6 +322,159 @@ class AnalysisService(
         createdResults.forEach { (name, result) -> foodNutritionService.createFoodNutrition(name, result) }
 
         return names.map { savedResults[it] ?: createdResults.getValue(it) }
+    }
+
+    /**
+     * 제품 유형의 줄마다 제품 하나의 값과 아이콘을 구한다. 제품 이름과 용량으로 저장해 둔 표시값을 먼저 찾고,
+     * 없는 제품만 모아 모델에 묻는다. 모델에는 이름 뒤에 용량을 붙여 보내 그 용량의 값을 답하게 한다.
+     *
+     * 저장해 둔 값은 사진에서 읽은 표시값뿐이다. 그래서 줄에 사진 값이 있을 때만 저장하거나 바꾼다([convertNutritionHint]).
+     * - 저장해 둔 값이 있으면 모델을 부르지 않는다. 사진 값이 그 값과 다르면 기록하고, 네 값이 다 적힌 사진이면 그 값으로 바꾼다
+     *   ([updateSavedPackageNutrition]).
+     * - 저장해 둔 값이 없고 네 값이 다 적힌 사진이면 그 값을 저장한다([createPackageNutrition]). 아이콘은 모델이 고른 것이다.
+     * - 사진에 일부만 적혀 있거나 아무것도 없던 줄은 모델 값으로 채우고 저장하지 않는다. 모델 값은 표시값과 많이 다르다.
+     *
+     * 이름과 용량이 같은 줄이 여럿이면 한 번만 찾고 한 번만 묻는다.
+     *
+     * @return [mealFoods]와 같은 순서, 같은 개수의 결과. 줄에 이미 있는 값(사진 값, 사용자가 적은 값)은 부르는 쪽이 그대로 둔다
+     */
+    private fun getPackageNutritions(
+        job: MealAnalysisJobResult,
+        inputCategory: MealInputCategory,
+        mealFoods: List<AnalysisMealFoodResult>,
+    ): List<ServingNutritionResult> {
+        val packageMealFoods = mealFoods.distinctBy { createPackageKey(it) }
+        val savedResults = packageMealFoods.associate {
+            createPackageKey(it) to foodNutritionService.getPackageNutrition(it.name, it.netContent, it.netContentUnit)
+        }
+        val missingMealFoods = packageMealFoods.filter { savedResults[createPackageKey(it)] == null }
+        val namedResults = if (missingMealFoods.isEmpty()) {
+            emptyMap()
+        } else {
+            missingMealFoods.map { createPackageKey(it) }
+                .zip(
+                    servingNutritionClient.getNamedServingNutritions(
+                        missingMealFoods.map { createPackageName(it) },
+                        inputCategory,
+                    ),
+                )
+                .toMap()
+        }
+
+        return mealFoods.map { mealFood ->
+            val packageKey = createPackageKey(mealFood)
+            val nutritionHint = convertNutritionHint(mealFood)
+            val savedResult = savedResults[packageKey]
+            if (savedResult != null) {
+                nutritionHint?.let { updateSavedPackageNutrition(job, mealFood, it, savedResult) }
+                return@map savedResult
+            }
+
+            val namedResult = namedResults.getValue(packageKey)
+            nutritionHint?.let { createPackageNutrition(job, mealFood, it, namedResult) }
+            namedResult
+        }
+    }
+
+    /** 같은 제품인지 가리는 값. 이름과 용량이 모두 같아야 같은 제품이다. */
+    private fun createPackageKey(mealFood: AnalysisMealFoodResult) =
+        Triple(mealFood.name, mealFood.netContent, mealFood.netContentUnit)
+
+    /** 모델에 물을 제품 이름. 용량을 읽은 제품은 이름 뒤에 용량을 붙인다(예: "셀렉스 프로핏 250ml"). */
+    private fun createPackageName(mealFood: AnalysisMealFoodResult): String {
+        val netContent = mealFood.netContent ?: return mealFood.name
+        val netContentUnit = mealFood.netContentUnit ?: return mealFood.name
+
+        return "${mealFood.name} ${netContent.stripTrailingZeros().toPlainString()}${netContentUnit.name.lowercase()}"
+    }
+
+    /**
+     * 이 줄에 사진에서 읽어 둔 값. 네 값이 다 적혀 있었으면 넷 모두, 일부만 적혀 있었으면 그 항목만 담는다.
+     *
+     * 사진 값을 따로 표시해 두지 않으므로 줄의 상태로 가린다. 여기에 오는 줄은 1인분이나 아이콘이 비어 있는 줄이고,
+     * 모델이 값을 구한 줄은 아이콘도 함께 채워져 다시 오지 않는다. 그래서 값이 있는 채로 오는 줄은 사진 값이 적힌 줄이거나
+     * 사용자가 영양을 직접 적은 줄이다. 사용자가 적은 값은 먹은 양에 맞춘 값이거나 어림값일 수 있어 사진 값으로 치지 않는다.
+     *
+     * @return 사진 값이 없으면 null
+     */
+    private fun convertNutritionHint(mealFood: AnalysisMealFoodResult): NutritionHint? {
+        if (mealFood.isNutritionFixed) {
+            return null
+        }
+
+        return mealFood.nutritionHint
+            ?: mealFood.servingNutrition?.let { NutritionHint(it.calory, it.carbs, it.protein, it.fat) }
+    }
+
+    /**
+     * 저장해 둔 제품의 값이 이번 사진 값과 다르면 기록하고, 네 값이 다 적힌 사진이면 그 값으로 바꾼다.
+     * 유효 기간이 없는 값이라, 잘못 들어간 값이 고쳐지고 바뀐 제품을 따라가는 길이 이것뿐이다. 바꾸기 전의 값은 기록에 남는다.
+     * 일부만 적힌 사진은 기록만 한다. 빈 항목을 채울 표시값이 없다.
+     */
+    private fun updateSavedPackageNutrition(
+        job: MealAnalysisJobResult,
+        mealFood: AnalysisMealFoodResult,
+        nutritionHint: NutritionHint,
+        savedResult: ServingNutritionResult,
+    ) {
+        if (matchesNutritionHint(nutritionHint, savedResult.servingNutrition)) {
+            return
+        }
+
+        foodNutritionService.createPackageNutritionMismatch(
+            category = PackageNutritionMismatchCategory.SAVED,
+            name = mealFood.name,
+            netContent = mealFood.netContent,
+            netContentUnit = mealFood.netContentUnit,
+            nutritionHint = nutritionHint,
+            servingNutrition = savedResult.servingNutrition,
+            mealId = job.mealId,
+        )
+        mealFood.servingNutrition?.let {
+            foodNutritionService.updatePackageNutrition(mealFood.name, mealFood.netContent, mealFood.netContentUnit, it)
+        }
+    }
+
+    /**
+     * 처음 보는 제품의 사진 값을 저장한다. 네 값이 다 적힌 사진만 저장하고, 아이콘은 모델이 고른 것을 쓴다.
+     * 모델이 구한 값이 사진 값과 허용 오차를 넘게 달라도 사진 값을 저장하고, 달랐다는 것만 기록한다.
+     *
+     * 모델이 먹거나 마시는 것이 아니라고 본 이름은 저장하지 않는다. 제품 이름을 제대로 읽지 못한 것일 수 있다.
+     */
+    private fun createPackageNutrition(
+        job: MealAnalysisJobResult,
+        mealFood: AnalysisMealFoodResult,
+        nutritionHint: NutritionHint,
+        namedResult: ServingNutritionResult,
+    ) {
+        val servingNutrition = mealFood.servingNutrition ?: return
+        if (!namedResult.isFood) {
+            return
+        }
+
+        foodNutritionService.createPackageNutrition(
+            name = mealFood.name,
+            netContent = mealFood.netContent,
+            netContentUnit = mealFood.netContentUnit,
+            servingNutrition = servingNutrition,
+            iconId = namedResult.iconId,
+        )
+        if (!matchesNutritionHint(
+                nutritionHint,
+                namedResult.servingNutrition,
+                mealProperties.packageNutrition.tolerance,
+            )
+        ) {
+            foodNutritionService.createPackageNutritionMismatch(
+                category = PackageNutritionMismatchCategory.NAMED,
+                name = mealFood.name,
+                netContent = mealFood.netContent,
+                netContentUnit = mealFood.netContentUnit,
+                nutritionHint = nutritionHint,
+                servingNutrition = namedResult.servingNutrition,
+                mealId = job.mealId,
+            )
+        }
     }
 
     /** 분석할 사진을 받는다. 콘텐츠 타입이 없으면 모델에 넘길 수 없다. */
