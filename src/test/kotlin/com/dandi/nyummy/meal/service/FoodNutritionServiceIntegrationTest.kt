@@ -1,10 +1,12 @@
 package com.dandi.nyummy.meal.service
 
+import com.dandi.nyummy.meal.dto.NutritionHint
 import com.dandi.nyummy.meal.dto.ServingNutrition
 import com.dandi.nyummy.meal.dto.ServingNutritionResult
 import com.dandi.nyummy.meal.entity.FoodNutrition
 import com.dandi.nyummy.meal.entity.Icon
 import com.dandi.nyummy.meal.enum.NetContentUnit
+import com.dandi.nyummy.meal.enum.PackageNutritionMismatchCategory
 import com.dandi.nyummy.meal.repository.FoodNutritionRepository
 import com.dandi.nyummy.meal.repository.IconRepository
 import com.dandi.nyummy.meal.repository.PackageNutritionRepository
@@ -345,5 +347,48 @@ class FoodNutritionServiceIntegrationTest @Autowired constructor(
         val result = foodNutritionService.getPackageNutrition("protein $suffix", netContent, NetContentUnit.ML)
 
         assertEquals(ServingNutritionResult(packageServingNutrition, iconId), result)
+    }
+
+    @Test
+    fun `불일치 기록은 사진에 일부만 적힌 값과 없는 식사의 id로도 쌓이고 같은 제품에 여러 번 쌓인다`() {
+        // 사진 값은 NULL을 허용하고, meal_id에는 외래 키가 없어 식사가 지워진 뒤에도 기록이 남는다.
+        val name = createPackageName()
+
+        foodNutritionService.createPackageNutritionMismatch(
+            category = PackageNutritionMismatchCategory.SAVED,
+            name = name,
+            netContent = netContent,
+            netContentUnit = NetContentUnit.ML,
+            nutritionHint = NutritionHint(calory = BigDecimal("120.00")),
+            servingNutrition = packageServingNutrition,
+            mealId = Long.MAX_VALUE,
+        )
+        foodNutritionService.createPackageNutritionMismatch(
+            category = PackageNutritionMismatchCategory.NAMED,
+            name = name,
+            netContent = null,
+            netContentUnit = null,
+            nutritionHint = NutritionHint(
+                otherPackageServingNutrition.calory,
+                otherPackageServingNutrition.carbs,
+                otherPackageServingNutrition.protein,
+                otherPackageServingNutrition.fat,
+            ),
+            servingNutrition = packageServingNutrition,
+            mealId = Long.MAX_VALUE,
+        )
+
+        val mismatches = jdbcTemplate.queryForList(
+            "SELECT category, net_content, nutrition_hint_calory, nutrition_hint_carbs, serving_calory " +
+                "FROM package_nutrition_mismatches WHERE name = ? ORDER BY id",
+            name,
+        )
+        assertEquals(listOf("SAVED", "NAMED"), mismatches.map { it["category"] })
+        assertEquals(0, BigDecimal("250.0").compareTo(mismatches[0]["net_content"] as BigDecimal))
+        assertNull(mismatches[1]["net_content"])
+        assertEquals(0, BigDecimal("120.00").compareTo(mismatches[0]["nutrition_hint_calory"] as BigDecimal))
+        assertNull(mismatches[0]["nutrition_hint_carbs"])
+        assertEquals(0, BigDecimal("5.00").compareTo(mismatches[1]["nutrition_hint_carbs"] as BigDecimal))
+        assertEquals(0, BigDecimal("100.00").compareTo(mismatches[1]["serving_calory"] as BigDecimal))
     }
 }

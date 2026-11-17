@@ -6,12 +6,16 @@ import com.dandi.nyummy.meal.config.MealProperties
 import com.dandi.nyummy.meal.config.MealRecognitionProperties
 import com.dandi.nyummy.meal.config.RewardBoxProperties
 import com.dandi.nyummy.meal.config.TutorialRewardBoxProperties
+import com.dandi.nyummy.meal.dto.NutritionHint
 import com.dandi.nyummy.meal.dto.ServingNutrition
 import com.dandi.nyummy.meal.dto.ServingNutritionResult
 import com.dandi.nyummy.meal.entity.FoodNutrition
 import com.dandi.nyummy.meal.entity.PackageNutrition
+import com.dandi.nyummy.meal.entity.PackageNutritionMismatch
 import com.dandi.nyummy.meal.enum.NetContentUnit
+import com.dandi.nyummy.meal.enum.PackageNutritionMismatchCategory
 import com.dandi.nyummy.meal.repository.FoodNutritionRepository
+import com.dandi.nyummy.meal.repository.PackageNutritionMismatchRepository
 import com.dandi.nyummy.meal.repository.PackageNutritionRepository
 import io.mockk.every
 import io.mockk.mockk
@@ -63,8 +67,15 @@ class FoodNutritionServiceTest {
 
     private val foodNutritionRepository = mockk<FoodNutritionRepository>()
     private val packageNutritionRepository = mockk<PackageNutritionRepository>()
+    private val packageNutritionMismatchRepository = mockk<PackageNutritionMismatchRepository>()
     private val foodNutritionService =
-        FoodNutritionService(foodNutritionRepository, packageNutritionRepository, mealProperties, clock)
+        FoodNutritionService(
+            foodNutritionRepository,
+            packageNutritionRepository,
+            packageNutritionMismatchRepository,
+            mealProperties,
+            clock,
+        )
 
     // 15×4 + 15×4 + 20×9 = 300
     private val servingNutrition =
@@ -419,5 +430,84 @@ class FoodNutritionServiceTest {
         )
 
         verify(exactly = 0) { packageNutritionRepository.save(any()) }
+    }
+
+    // createPackageNutritionMismatch
+
+    @Test
+    fun `사진 값과 비교한 값을 다듬은 이름과 용량, 식사 id와 함께 기록한다`() {
+        val saved = slot<PackageNutritionMismatch>()
+        every { packageNutritionMismatchRepository.save(capture(saved)) } answers { firstArg() }
+
+        foodNutritionService.createPackageNutritionMismatch(
+            category = PackageNutritionMismatchCategory.SAVED,
+            name = "  셀렉스  프로핏 딸기초코 ",
+            netContent = netContent,
+            netContentUnit = NetContentUnit.ML,
+            nutritionHint = NutritionHint(
+                otherPackageServingNutrition.calory,
+                otherPackageServingNutrition.carbs,
+                otherPackageServingNutrition.protein,
+                otherPackageServingNutrition.fat,
+            ),
+            servingNutrition = packageServingNutrition,
+            mealId = 100L,
+        )
+
+        val mismatch = saved.captured
+        assertEquals(PackageNutritionMismatchCategory.SAVED, mismatch.category)
+        assertEquals(packageName, mismatch.name)
+        assertEquals(netContent, mismatch.netContent)
+        assertEquals(NetContentUnit.ML, mismatch.netContentUnit)
+        assertEquals(otherPackageServingNutrition.calory, mismatch.nutritionHintCalory)
+        assertEquals(otherPackageServingNutrition.carbs, mismatch.nutritionHintCarbs)
+        assertEquals(otherPackageServingNutrition.protein, mismatch.nutritionHintProtein)
+        assertEquals(otherPackageServingNutrition.fat, mismatch.nutritionHintFat)
+        assertEquals(packageServingNutrition.calory, mismatch.servingCalory)
+        assertEquals(packageServingNutrition.carbs, mismatch.servingCarbs)
+        assertEquals(packageServingNutrition.protein, mismatch.servingProtein)
+        assertEquals(packageServingNutrition.fat, mismatch.servingFat)
+        assertEquals(100L, mismatch.mealId)
+    }
+
+    @Test
+    fun `사진에 일부만 적혀 있던 값은 적힌 항목만 기록하고 용량이 없으면 비워 둔다`() {
+        val saved = slot<PackageNutritionMismatch>()
+        every { packageNutritionMismatchRepository.save(capture(saved)) } answers { firstArg() }
+
+        foodNutritionService.createPackageNutritionMismatch(
+            category = PackageNutritionMismatchCategory.SAVED,
+            name = packageName,
+            netContent = netContent,
+            netContentUnit = null,
+            nutritionHint = NutritionHint(calory = BigDecimal("120.00"), protein = BigDecimal("20.00")),
+            servingNutrition = packageServingNutrition,
+            mealId = 100L,
+        )
+
+        val mismatch = saved.captured
+        assertEquals(BigDecimal("120.00"), mismatch.nutritionHintCalory)
+        assertNull(mismatch.nutritionHintCarbs)
+        assertEquals(BigDecimal("20.00"), mismatch.nutritionHintProtein)
+        assertNull(mismatch.nutritionHintFat)
+        assertNull(mismatch.netContent)
+        assertNull(mismatch.netContentUnit)
+    }
+
+    @Test
+    fun `다듬은 제품 이름이 비었거나 30자를 넘으면 기록하지 않는다`() {
+        listOf("   ", "가".repeat(31)).forEach { invalidName ->
+            foodNutritionService.createPackageNutritionMismatch(
+                category = PackageNutritionMismatchCategory.NAMED,
+                name = invalidName,
+                netContent = netContent,
+                netContentUnit = NetContentUnit.ML,
+                nutritionHint = NutritionHint(calory = BigDecimal("120.00")),
+                servingNutrition = packageServingNutrition,
+                mealId = 100L,
+            )
+        }
+
+        verify(exactly = 0) { packageNutritionMismatchRepository.save(any()) }
     }
 }

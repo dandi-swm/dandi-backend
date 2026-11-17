@@ -2,12 +2,16 @@ package com.dandi.nyummy.meal.service
 
 import com.dandi.nyummy.meal.calculator.matchesMacroNutrientCalory
 import com.dandi.nyummy.meal.config.MealProperties
+import com.dandi.nyummy.meal.dto.NutritionHint
 import com.dandi.nyummy.meal.dto.ServingNutrition
 import com.dandi.nyummy.meal.dto.ServingNutritionResult
 import com.dandi.nyummy.meal.entity.FoodNutrition
 import com.dandi.nyummy.meal.entity.PackageNutrition
+import com.dandi.nyummy.meal.entity.PackageNutritionMismatch
 import com.dandi.nyummy.meal.enum.NetContentUnit
+import com.dandi.nyummy.meal.enum.PackageNutritionMismatchCategory
 import com.dandi.nyummy.meal.repository.FoodNutritionRepository
+import com.dandi.nyummy.meal.repository.PackageNutritionMismatchRepository
 import com.dandi.nyummy.meal.repository.PackageNutritionRepository
 import org.slf4j.LoggerFactory
 import org.springframework.dao.DataIntegrityViolationException
@@ -30,6 +34,7 @@ import java.time.Clock
 class FoodNutritionService(
     private val foodNutritionRepository: FoodNutritionRepository,
     private val packageNutritionRepository: PackageNutritionRepository,
+    private val packageNutritionMismatchRepository: PackageNutritionMismatchRepository,
     private val mealProperties: MealProperties,
     private val clock: Clock,
 ) {
@@ -175,6 +180,45 @@ class FoodNutritionService(
 
         packageNutrition.updateServingNutrition(servingNutrition)
         packageNutritionRepository.save(packageNutrition)
+    }
+
+    /**
+     * 사진에 적힌 제품의 값이 저장해 둔 값이나 모델 값과 달랐던 것을 기록한다. 쌓기만 한다.
+     *
+     * @param category 무엇과 달랐는지
+     * @param nutritionHint 사진에 적혀 있던 값. 일부만 적혀 있었으면 적힌 항목만 있다
+     * @param servingNutrition 비교한 쪽의 값. 저장해 두었던 값(덮어쓴다면 덮어쓰기 전의 값)이나 모델이 구한 값
+     * @param mealId 이 차이가 나온 식사 ID
+     */
+    fun createPackageNutritionMismatch(
+        category: PackageNutritionMismatchCategory,
+        name: String,
+        netContent: BigDecimal?,
+        netContentUnit: NetContentUnit?,
+        nutritionHint: NutritionHint,
+        servingNutrition: ServingNutrition,
+        mealId: Long,
+    ) {
+        val packageNutritionName = convertName(name) ?: return
+        val hasNetContent = netContent != null && netContentUnit != null
+
+        packageNutritionMismatchRepository.save(
+            PackageNutritionMismatch(
+                category = category,
+                name = packageNutritionName,
+                netContent = netContent.takeIf { hasNetContent },
+                netContentUnit = netContentUnit.takeIf { hasNetContent },
+                nutritionHintCalory = nutritionHint.calory,
+                nutritionHintCarbs = nutritionHint.carbs,
+                nutritionHintProtein = nutritionHint.protein,
+                nutritionHintFat = nutritionHint.fat,
+                servingCalory = servingNutrition.calory,
+                servingCarbs = servingNutrition.carbs,
+                servingProtein = servingNutrition.protein,
+                servingFat = servingNutrition.fat,
+                mealId = mealId,
+            ),
+        )
     }
 
     /** 용량과 단위는 함께 있어야 한다. 하나만 있으면 용량을 읽지 못한 것으로 본다. */
