@@ -87,6 +87,11 @@ class MealFood(
     @Column(name = "net_content_unit", length = 10)
     var netContentUnit: NetContentUnit? = null
 
+    // 이름이 포장에 적힌 제품명인지. 인식이 사진에서 판단한 것이고, 제품이 아닌 줄과 사용자가 더한 줄은 false다.
+    // 영양성분표 면만 찍은 사진에는 제품명이 없어 인식이 그 면의 문구나 종류를 이름으로 적는다. 그런 이름으로는 제품의 값을 저장하지 않는다.
+    @Column(name = "has_package_name", nullable = false)
+    var hasPackageName: Boolean = false
+
     @CreatedDate
     @Column(name = "created_at", nullable = false)
     var createdAt: Instant = Instant.now()
@@ -207,6 +212,11 @@ class MealFood(
 
     fun updateIconId(iconId: Long) {
         this.iconId = iconId
+    }
+
+    /** 인식이 판단한, 이름이 포장에 적힌 제품명인지를 적는다. */
+    fun updateHasPackageName(hasPackageName: Boolean) {
+        this.hasPackageName = hasPackageName
     }
 
     /** 인식이 사진에서 읽은 제품의 총 내용량과 단위를 적는다. 둘은 함께 있거나 함께 없다. */

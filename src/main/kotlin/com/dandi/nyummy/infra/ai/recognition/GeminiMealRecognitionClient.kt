@@ -83,6 +83,11 @@ class GeminiMealRecognitionClient(
           여러 개를 묶어 파는 제품(예: 200ml × 6)은 낱개 하나의 용량을 적어.
           적혀 있지 않거나 단위가 g·ml·kg·L가 아니면(개, 정, 매 등) 둘 다 null로 둬. 짐작한 값은 절대 적지 마.
           용량은 여기에만 적고 name에는 넣지 마. (예: name은 "초코우유", netContent는 200, netContentUnit은 ML)
+        - hasPackageName은 name이 포장에 적힌 제품 이름(브랜드나 제품명)이면 true야. PACKAGE일 때만 true가 될 수 있어.
+          제품 이름이 사진에 보이지 않아서(예: 영양성분표 면만 찍힌 사진) 그 면의 문구나 음식 종류를 name에 적었으면 false야.
+          영양 성분이나 특징을 내세운 문구(예: "나트륨 30% 줄인", "당류 0g")와 음식 종류(예: "컵라면")는 제품 이름이 아니야.
+          이 판단과 상관없이 사진에 적힌 영양 값은 위에서 정한 대로 그대로 옮겨 적어.
+          (예: "농심 신라면 큰사발"은 true)
         - 이 식사를 대표하는 음식(주메뉴)을 맨 위에 적어.
         - 10개를 넘으면 양이 많은 것부터 10개만 적어.
 
@@ -120,10 +125,11 @@ class GeminiMealRecognitionClient(
                     "maxItems" to MealFood.MAX_COUNT,
                     "items" to mapOf(
                         "type" to "OBJECT",
-                        // 힌트와 용량은 적혀 있을 때만 오므로 필수가 아니고 null일 수 있다.
+                        // 힌트와 용량은 적혀 있을 때만 오므로 필수가 아니고 null일 수 있다. 이름이 제품명인지는 늘 받는다.
                         "properties" to mapOf("name" to mapOf("type" to "STRING")) +
                             NUTRITION_HINT_FIELDS.associateWith { mapOf("type" to "NUMBER", "nullable" to true) } +
                             mapOf(
+                                "hasPackageName" to mapOf("type" to "BOOLEAN"),
                                 "netContent" to mapOf("type" to "NUMBER", "nullable" to true),
                                 "netContentUnit" to mapOf(
                                     "type" to "STRING",
@@ -131,11 +137,11 @@ class GeminiMealRecognitionClient(
                                     "nullable" to true,
                                 ),
                             ),
-                        "required" to listOf("name"),
+                        "required" to listOf("name", "hasPackageName"),
                         // 순서를 정해 두지 않으면 모델이 용량을 건너뛴 뒤 마지막 숫자를 끝없이 이어 쓰는 일이 있었다.
-                        // 영양성분표 맨 위에 적힌 총 내용량을 먼저 쓰게 하고, 그 뒤에 영양 값을 쓰게 한다.
+                        // 이름과 그 이름이 제품명인지, 영양성분표 맨 위에 적힌 총 내용량을 먼저 쓰게 하고, 그 뒤에 영양 값을 쓰게 한다.
                         "propertyOrdering" to
-                            listOf("name", "netContent", "netContentUnit") + NUTRITION_HINT_FIELDS,
+                            listOf("name", "hasPackageName", "netContent", "netContentUnit") + NUTRITION_HINT_FIELDS,
                     ),
                 ),
                 "name" to mapOf("type" to "STRING"),
@@ -203,6 +209,7 @@ class GeminiMealRecognitionClient(
      * 모델이 낸 음식 줄을 저장할 수 있는 모양으로 맞춘다. 스키마로 묶어도 어길 수 있어 서버에서 한 번 더 맞춘다.
      * 이름이 빈 줄은 빼고, 이름은 [MealFood.NAME_MAX_LENGTH]자에서 자르고, [MealFood.MAX_COUNT]줄까지만 받는다.
      * 힌트는 저장할 수 있는 값만 남기고([convertNutritionHint]), 용량은 제품 유형일 때만 받는다([convertNetContent]).
+     * 이름이 제품명인지도 제품 유형일 때만 받는다. 다른 유형의 음식 이름은 제품명이 아니다.
      */
     private fun convertFoods(
         foods: List<GeminiRecognizedFood>,
@@ -219,6 +226,7 @@ class GeminiMealRecognitionClient(
                 nutritionHint = convertNutritionHint(it),
                 netContent = netContent?.first,
                 netContentUnit = netContent?.second,
+                hasPackageName = inputCategory.isPackage && it.hasPackageName,
             )
         }
 
@@ -271,6 +279,7 @@ private data class GeminiRecognizedFood(
     val carbs: BigDecimal? = null,
     val protein: BigDecimal? = null,
     val fat: BigDecimal? = null,
+    val hasPackageName: Boolean = false,
     val netContent: BigDecimal? = null,
     // 스키마로 묶어도 모르는 단위가 올 수 있어 문자열로 받는다. enum으로 받으면 단위 하나 때문에 결과 전체를 해석하지 못한다.
     val netContentUnit: String? = null,

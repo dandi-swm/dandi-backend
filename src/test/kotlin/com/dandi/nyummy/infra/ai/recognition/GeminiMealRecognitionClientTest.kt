@@ -172,7 +172,7 @@ class GeminiMealRecognitionClientTest {
         val foodSchema = foods["items"] as Map<*, *>
         val properties = foodSchema["properties"] as Map<*, *>
         assertEquals(
-            setOf("name", "calory", "carbs", "protein", "fat", "netContent", "netContentUnit"),
+            setOf("name", "calory", "carbs", "protein", "fat", "hasPackageName", "netContent", "netContentUnit"),
             properties.keys,
         )
         assertEquals(mapOf("type" to "NUMBER", "nullable" to true), properties["calory"])
@@ -181,20 +181,60 @@ class GeminiMealRecognitionClientTest {
             mapOf("type" to "STRING", "enum" to listOf("G", "ML", "KG", "L"), "nullable" to true),
             properties["netContentUnit"],
         )
-        assertEquals(listOf("name"), foodSchema["required"])
+        assertEquals(mapOf("type" to "BOOLEAN"), properties["hasPackageName"])
+        assertEquals(listOf("name", "hasPackageName"), foodSchema["required"])
     }
 
     @Test
-    fun `응답 스키마는 음식 줄의 필드를 이름, 용량, 영양 값 순서로 쓰게 한다`() {
+    fun `응답 스키마는 음식 줄의 필드를 이름, 제품명인지, 용량, 영양 값 순서로 쓰게 한다`() {
         // 순서를 정해 두지 않으면 모델이 용량을 건너뛴 뒤 마지막 숫자를 끝없이 이어 써서 결과를 해석하지 못했다.
         val responseSchema = captureResponseSchema()
 
         val foods = (responseSchema["properties"] as Map<*, *>)["foods"] as Map<*, *>
         val foodSchema = foods["items"] as Map<*, *>
         assertEquals(
-            listOf("name", "netContent", "netContentUnit", "calory", "carbs", "protein", "fat"),
+            listOf("name", "hasPackageName", "netContent", "netContentUnit", "calory", "carbs", "protein", "fat"),
             foodSchema["propertyOrdering"],
         )
+    }
+
+    // 이름이 제품명인지
+
+    @Test
+    fun `제품 사진의 줄은 이름이 포장에서 읽은 제품명인지를 모델이 답한 대로 싣는다`() {
+        givenRecognition(
+            inputCategory = "PACKAGE",
+            foods = listOf(
+                "셀렉스 프로핏 딸기초코" to mapOf("hasPackageName" to true),
+                "완전단백질 20g" to mapOf("hasPackageName" to false),
+                // 모델이 빼고 보내면 제품명이 아닌 것으로 본다.
+                "단백질 음료" to emptyMap(),
+            ),
+        )
+
+        val result = recognizeMeal()
+
+        assertEquals(listOf(true, false, false), result.foods.map { it.hasPackageName })
+    }
+
+    @Test
+    fun `제품이 아닌 유형의 사진은 모델이 제품명이라고 답해도 제품명으로 보지 않는다`() {
+        listOf("FOOD_PHOTO", "TEXT_RECORD", "ILLUSTRATION").forEach { inputCategory ->
+            givenRecognition(inputCategory = inputCategory, foods = listOf("콜라" to mapOf("hasPackageName" to true)))
+
+            val result = recognizeMeal()
+
+            assertFalse(result.foods.single().hasPackageName, inputCategory)
+        }
+    }
+
+    @Test
+    fun `영양 성분 문구와 음식 종류는 제품 이름이 아니라고, 영양 값은 그와 상관없이 옮겨 적으라고 지시한다`() {
+        val prompt = capturePrompt(Language.KO)
+
+        assertContains(prompt, "hasPackageName은 name이 포장에 적힌 제품 이름(브랜드나 제품명)이면 true야")
+        assertContains(prompt, "음식 종류(예: \"컵라면\")는 제품 이름이 아니야")
+        assertContains(prompt, "이 판단과 상관없이 사진에 적힌 영양 값은 위에서 정한 대로 그대로 옮겨 적어")
     }
 
     // 용량

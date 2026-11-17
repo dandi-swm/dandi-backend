@@ -184,6 +184,19 @@ class MealFoodTest {
             }
     }
 
+    @Test
+    fun `이름이 제품명인지는 이름이 바뀌어도 인식이 판단한 그대로 둔다`() {
+        // 사용자가 고친 이름이 제품명인지는 알 수 없다. 사진에서 제품명을 읽지 못한 줄은 이름을 고쳐도 그대로다.
+        val named = createMealFood().apply { updateHasPackageName(true) }
+        val unnamed = createMealFood()
+
+        named.updateName("셀렉스 프로핏", MealInputCategory.PACKAGE)
+        unnamed.updateName("셀렉스 프로핏", MealInputCategory.PACKAGE)
+
+        assertTrue(named.hasPackageName)
+        assertFalse(unnamed.hasPackageName)
+    }
+
     // updateFixedServingNutrition·updateFixedIconId
 
     @Test

@@ -27,12 +27,14 @@ data class MealRecognitionResult(
  * @property nutritionHint 사진에 이 음식의 값으로 적혀 있던 영양. 적힌 것이 없으면 null
  * @property netContent 사진에 적혀 있던 제품의 총 내용량. 제품이 아니거나 적힌 것이 없으면 null
  * @property netContentUnit 총 내용량의 단위. [netContent]와 함께 있거나 함께 없다
+ * @property hasPackageName 이름이 포장에 적힌 제품명인지. 제품이 아니거나, 제품명이 사진에 보이지 않아 문구나 종류를 적었으면 false
  */
 data class MealFoodRecognitionResult(
     val name: String,
     val nutritionHint: NutritionHint? = null,
     val netContent: BigDecimal? = null,
     val netContentUnit: NetContentUnit? = null,
+    val hasPackageName: Boolean = false,
 )
 
 /**

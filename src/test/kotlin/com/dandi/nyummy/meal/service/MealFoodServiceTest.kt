@@ -187,6 +187,7 @@ class MealFoodServiceTest {
                     name = "셀렉스 프로핏",
                     netContent = BigDecimal("250.0"),
                     netContentUnit = NetContentUnit.ML,
+                    hasPackageName = true,
                 ),
                 MealFoodRecognitionResult(name = "삼각김밥"),
             ),
@@ -202,6 +203,9 @@ class MealFoodServiceTest {
         assertEquals(NetContentUnit.ML, drink.netContentUnit)
         assertNull(riceBall.netContent)
         assertNull(riceBall.netContentUnit)
+        // 이름이 포장에서 읽은 제품명인지도 인식이 판단한 대로 적는다.
+        assertTrue(drink.hasPackageName)
+        assertFalse(riceBall.hasPackageName)
     }
 
     @Test
