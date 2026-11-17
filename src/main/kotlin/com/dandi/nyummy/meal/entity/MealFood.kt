@@ -2,6 +2,7 @@ package com.dandi.nyummy.meal.entity
 
 import com.dandi.nyummy.meal.dto.NutritionHint
 import com.dandi.nyummy.meal.dto.ServingNutrition
+import com.dandi.nyummy.meal.enum.MealInputCategory
 import com.dandi.nyummy.meal.enum.NetContentUnit
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
@@ -131,15 +132,25 @@ class MealFood(
      * 이름을 바꾼다. 이름이 달라지면 사용자가 고정하지 않은 1인분 영양과 아이콘을 비워, 새 이름으로 다시 구하게 한다.
      * 사용자가 직접 고친 영양과 직접 고른 아이콘은 이름을 바꿔도 그대로 둔다.
      *
-     * 용량은 이름이 달라지면 늘 비운다. 사진에서 읽은 그 제품의 용량이라 다른 이름에는 맞지 않을 수 있고,
-     * 사용자에게 보이지 않는 값이라 남겨 두면 모르는 사이에 다른 제품의 값을 찾는 데 쓰인다.
+     * 제품 사진에서 인식한 줄은 이름만 바꾸고 나머지는 건드리지 않는다. 그 줄의 값과 용량은 사진 속 제품의 것이라
+     * 이름을 고쳐도 달라지지 않는다. 인식이 틀리기 쉬운 쪽은 이름이다(영양성분표 면만 찍으면 제품 이름이 약하게 나온다).
+     * 아직 값을 구하지 않은 줄은 비어 있는 그대로라, 영양을 계산할 때 새 이름으로 구한다.
+     * 제품 식사에서 사용자가 더한 줄은 사진에서 인식한 것이 아니므로 다른 줄처럼 비운다.
+     *
+     * 그 밖의 줄은 용량도 비운다. 사용자에게 보이지 않는 값이라 남겨 두면 모르는 사이에 다른 제품의 값을 찾는 데 쓰인다.
+     *
+     * @param inputCategory 이 줄이 속한 식사의 입력 유형. 모르면 null이고 제품이 아닌 것으로 본다
      */
-    fun updateName(name: String) {
+    fun updateName(name: String, inputCategory: MealInputCategory? = null) {
         if (this.name == name) {
             return
         }
 
         this.name = name
+        if (inputCategory?.isPackage == true && mealFoodSnapshotId != null) {
+            return
+        }
+
         this.netContent = null
         this.netContentUnit = null
         if (!isNutritionFixed) {

@@ -2,6 +2,7 @@ package com.dandi.nyummy.meal.entity
 
 import com.dandi.nyummy.meal.dto.NutritionHint
 import com.dandi.nyummy.meal.dto.ServingNutrition
+import com.dandi.nyummy.meal.enum.MealInputCategory
 import com.dandi.nyummy.meal.enum.NetContentUnit
 import java.math.BigDecimal
 import kotlin.test.Test
@@ -116,6 +117,71 @@ class MealFoodTest {
         assertNull(mealFood.netContentUnit)
         assertEquals(fixedServingNutrition, mealFood.servingNutrition)
         assertEquals(7L, mealFood.iconId)
+    }
+
+    @Test
+    fun `제품 사진에서 인식한 줄은 이름이 바뀌어도 1인분과 아이콘과 용량을 그대로 둔다`() {
+        listOf(MealInputCategory.PACKAGE, MealInputCategory.NUTRITION_LABEL).forEach { inputCategory ->
+            val mealFood = createMealFood().apply { updateNetContent(BigDecimal("250.0"), NetContentUnit.ML) }
+
+            mealFood.updateName("셀렉스 프로핏 딸기초코", inputCategory)
+
+            assertEquals("셀렉스 프로핏 딸기초코", mealFood.name, "$inputCategory")
+            assertEquals(foundServingNutrition, mealFood.servingNutrition, "$inputCategory")
+            assertEquals(12L, mealFood.iconId, "$inputCategory")
+            assertEquals(BigDecimal("250.0"), mealFood.netContent, "$inputCategory")
+            assertEquals(NetContentUnit.ML, mealFood.netContentUnit, "$inputCategory")
+        }
+    }
+
+    @Test
+    fun `제품 사진에서 인식한 줄에 일부만 적혀 있던 값도 이름이 바뀌어도 그대로 둔다`() {
+        val mealFood = MealFood(
+            mealId = 1L,
+            mealFoodSnapshotId = 11L,
+            displayOrder = 1,
+            name = "완전단백질 20g",
+            portion = MealFood.DEFAULT_PORTION,
+        ).apply { updateNutritionHint(NutritionHint(calory = BigDecimal("100.00"), protein = BigDecimal("20.00"))) }
+
+        mealFood.updateName("셀렉스 프로핏 딸기초코", MealInputCategory.PACKAGE)
+
+        assertEquals(
+            NutritionHint(calory = BigDecimal("100.00"), protein = BigDecimal("20.00")),
+            mealFood.nutritionHint,
+        )
+    }
+
+    @Test
+    fun `제품 식사에서 사용자가 더한 줄은 이름이 바뀌면 1인분과 아이콘을 비운다`() {
+        val mealFood = MealFood(
+            mealId = 1L,
+            mealFoodSnapshotId = null,
+            displayOrder = 2,
+            name = "바나나",
+            portion = MealFood.DEFAULT_PORTION,
+        ).apply {
+            updateServingNutrition(foundServingNutrition)
+            updateIconId(12L)
+        }
+
+        mealFood.updateName("사과", MealInputCategory.PACKAGE)
+
+        assertNull(mealFood.servingNutrition)
+        assertNull(mealFood.iconId)
+    }
+
+    @Test
+    fun `제품이 아닌 식사의 인식한 줄은 이름이 바뀌면 1인분과 아이콘을 비운다`() {
+        (MealInputCategory.entries - MealInputCategory.PACKAGE - MealInputCategory.NUTRITION_LABEL)
+            .forEach { inputCategory ->
+                val mealFood = createMealFood()
+
+                mealFood.updateName("제육볶음", inputCategory)
+
+                assertNull(mealFood.servingNutrition, "$inputCategory")
+                assertNull(mealFood.iconId, "$inputCategory")
+            }
     }
 
     // updateFixedServingNutrition·updateFixedIconId

@@ -1072,8 +1072,8 @@ class MealServiceTest {
         every { mealAnalysisJobRepository.findIdByMealId(mealId) } returns jobId
         every { mealAnalysisJobRepository.deleteMealAnalysisJobById(any()) } returns 1
         every { mealRepository.findMealWithLockById(mealId) } returns meal
-        every { mealFoodService.updateMealFoods(any(), any()) } returns mealFoods
-        every { mealFoodService.updateMealFood(any(), any(), any()) } returns mealFoods
+        every { mealFoodService.updateMealFoods(any(), any(), any()) } returns mealFoods
+        every { mealFoodService.updateMealFood(any(), any(), any(), any()) } returns mealFoods
         every { mealFoodService.deleteMealFood(any(), any()) } returns mealFoods
     }
 
@@ -1109,6 +1109,32 @@ class MealServiceTest {
     }
 
     @Test
+    fun `음식 목록을 보내면 식사의 입력 유형을 함께 넘겨 제품의 인식한 줄을 가리게 한다`() {
+        val meal = createCompletedMealV2().apply { updateInputCategory(MealInputCategory.PACKAGE) }
+        givenMealToUpdate(meal)
+        every { mealAnalysisJobRepository.save(any()) } answers { firstArg() }
+
+        mealService.updateMealFoodsV2(userId, mealId, foodsRequest, Language.KO)
+
+        verify(exactly = 1) {
+            mealFoodService.updateMealFoods(meal.id, foodsRequest.foods, MealInputCategory.PACKAGE)
+        }
+    }
+
+    @Test
+    fun `한 줄을 고치면 식사의 입력 유형을 함께 넘겨 제품의 인식한 줄을 가리게 한다`() {
+        val meal = createCompletedMealV2().apply { updateInputCategory(MealInputCategory.PACKAGE) }
+        givenMealToUpdate(meal)
+        every { mealAnalysisJobRepository.save(any()) } answers { firstArg() }
+
+        mealService.updateMealFoodV2(userId, mealId, 1L, UpdateMealFoodRequest(name = "셀렉스 프로핏"), Language.KO)
+
+        verify(exactly = 1) {
+            mealFoodService.updateMealFood(meal.id, 1L, any(), MealInputCategory.PACKAGE)
+        }
+    }
+
+    @Test
     fun `음식 목록을 보내면 받은 줄로 바꾸게 하고 요청 언어의 영양 작업을 미루지 않고 만든다`() {
         val meal = createCompletedMealV2()
         givenMealToUpdate(meal)
@@ -1117,7 +1143,7 @@ class MealServiceTest {
 
         mealService.updateMealFoodsV2(userId, mealId, foodsRequest, Language.JA)
 
-        verify(exactly = 1) { mealFoodService.updateMealFoods(meal.id, foodsRequest.foods) }
+        verify(exactly = 1) { mealFoodService.updateMealFoods(meal.id, foodsRequest.foods, meal.inputCategory) }
         assertEquals(meal.id, job.captured.mealId)
         assertEquals(MealAnalysisJobCategory.NUTRITION, job.captured.category)
         assertEquals(Language.JA, job.captured.language)
@@ -1260,7 +1286,7 @@ class MealServiceTest {
 
             assertEquals(status, meal.status)
         }
-        verify(exactly = 0) { mealFoodService.updateMealFoods(any(), any()) }
+        verify(exactly = 0) { mealFoodService.updateMealFoods(any(), any(), any()) }
         verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
     }
 
@@ -1275,7 +1301,7 @@ class MealServiceTest {
 
         assertEquals(MealStatus.COMPLETED, meal.status)
         assertEquals(analyzedNutrition.calory, meal.calory)
-        verify(exactly = 0) { mealFoodService.updateMealFoods(any(), any()) }
+        verify(exactly = 0) { mealFoodService.updateMealFoods(any(), any(), any()) }
     }
 
     @Test
@@ -1291,7 +1317,7 @@ class MealServiceTest {
 
         mealService.updateMealFoodsV2(userId, mealId, request, Language.KO)
 
-        verify(exactly = 1) { mealFoodService.updateMealFoods(meal.id, request.foods) }
+        verify(exactly = 1) { mealFoodService.updateMealFoods(meal.id, request.foods, meal.inputCategory) }
     }
 
     @Test
@@ -1320,7 +1346,7 @@ class MealServiceTest {
             mealService.updateMealFoodsV2(userId, mealId, foodsRequest, Language.KO)
         }
 
-        verify(exactly = 0) { mealFoodService.updateMealFoods(any(), any()) }
+        verify(exactly = 0) { mealFoodService.updateMealFoods(any(), any(), any()) }
     }
 
     @Test
@@ -1334,7 +1360,7 @@ class MealServiceTest {
         }
 
         assertEquals(MealStatus.COMPLETED, meal.status)
-        verify(exactly = 0) { mealFoodService.updateMealFoods(any(), any()) }
+        verify(exactly = 0) { mealFoodService.updateMealFoods(any(), any(), any()) }
         verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
     }
 
@@ -1369,7 +1395,7 @@ class MealServiceTest {
             profileRepository.findProfileWithLockByUserId(userId)
             mealAnalysisJobRepository.findIdByMealId(mealId)
             mealRepository.findMealWithLockById(mealId)
-            mealFoodService.updateMealFood(meal.id, mealFoodId, foodRequest)
+            mealFoodService.updateMealFood(meal.id, mealFoodId, foodRequest, meal.inputCategory)
         }
     }
 
@@ -1444,7 +1470,7 @@ class MealServiceTest {
 
             assertEquals(status, meal.status)
         }
-        verify(exactly = 0) { mealFoodService.updateMealFood(any(), any(), any()) }
+        verify(exactly = 0) { mealFoodService.updateMealFood(any(), any(), any(), any()) }
         verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
     }
 
@@ -1458,7 +1484,7 @@ class MealServiceTest {
         }
 
         assertEquals(analyzedNutrition.calory, meal.calory)
-        verify(exactly = 0) { mealFoodService.updateMealFood(any(), any(), any()) }
+        verify(exactly = 0) { mealFoodService.updateMealFood(any(), any(), any(), any()) }
     }
 
     @Test
@@ -1489,7 +1515,7 @@ class MealServiceTest {
             mealService.updateMealFoodV2(userId, mealId, mealFoodId, foodRequest, Language.KO)
         }
 
-        verify(exactly = 0) { mealFoodService.updateMealFood(any(), any(), any()) }
+        verify(exactly = 0) { mealFoodService.updateMealFood(any(), any(), any(), any()) }
     }
 
     @Test
@@ -1502,7 +1528,7 @@ class MealServiceTest {
         }
 
         assertEquals(MealStatus.COMPLETED, meal.status)
-        verify(exactly = 0) { mealFoodService.updateMealFood(any(), any(), any()) }
+        verify(exactly = 0) { mealFoodService.updateMealFood(any(), any(), any(), any()) }
         verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
     }
 
@@ -1511,7 +1537,7 @@ class MealServiceTest {
         val meal = createCompletedMealV2()
         givenMealToUpdate(meal)
         every {
-            mealFoodService.updateMealFood(any(), any(), any())
+            mealFoodService.updateMealFood(any(), any(), any(), any())
         } throws BusinessException(MealErrorCode.MEAL_FOOD_NOT_FOUND)
 
         assertBusinessException(MealErrorCode.MEAL_FOOD_NOT_FOUND) {
@@ -1700,7 +1726,7 @@ class MealServiceTest {
 
         assertEquals(MealStatus.COMPLETED, meal.status)
         assertEquals(825, meal.calory)
-        verify(exactly = 0) { mealFoodService.updateMealFoods(any(), any()) }
+        verify(exactly = 0) { mealFoodService.updateMealFoods(any(), any(), any()) }
     }
 
     @Test
