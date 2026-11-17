@@ -63,6 +63,7 @@ import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 /**
  * analyzeMealAnalysisJob이 분석 결과와 실패 분류에 따라 확정·재시도·실패를 고르고, 알맞은 알림을 보내는지 다룬다.
@@ -1377,10 +1378,24 @@ class AnalysisServiceTest {
     // 지표의 작업 종류 태그
 
     private fun countAnalysisByJob(job: String, outcome: String): Long =
-        meterRegistry.find("nyummy.meal.analysis").tags("job", job, "outcome", outcome).timer()?.count() ?: 0
+        meterRegistry.find("nyummy.meal.analysis").tags("job.category", job, "outcome", outcome).timer()?.count() ?: 0
 
     private fun findElapsedByJob(job: String, outcome: String) =
-        meterRegistry.find("nyummy.meal.analysis.elapsed").tags("job", job, "outcome", outcome).timer()
+        meterRegistry.find("nyummy.meal.analysis.elapsed").tags("job.category", job, "outcome", outcome).timer()
+
+    @Test
+    fun `작업 종류 태그의 이름은 job이 아니다`() {
+        // 지표를 받는 쪽이 서비스 이름으로 만드는 job 라벨과 이름이 같으면 이 태그가 덮여, 작업 종류가 모두 서비스 이름으로 보인다.
+        givenAnalysisSuccess(retryableJob)
+
+        analysisService.analyzeMealAnalysisJob(retryableJob)
+
+        val tagKeys = meterRegistry.meters
+            .filter { it.id.name.startsWith("nyummy.meal.analysis") }
+            .flatMap { meter -> meter.id.tags.map { it.key } }
+        assertTrue(tagKeys.contains("job.category"))
+        assertFalse(tagKeys.contains("job"))
+    }
 
     @Test
     fun `종류가 없는 작업은 지표에 v1로 남긴다`() {
