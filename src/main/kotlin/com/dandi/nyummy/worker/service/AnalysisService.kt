@@ -18,6 +18,7 @@ import com.dandi.nyummy.meal.calculator.calculateTotalNutrition
 import com.dandi.nyummy.meal.config.MealProperties
 import com.dandi.nyummy.meal.dto.CatCommentMealFoodInput
 import com.dandi.nyummy.meal.dto.ServingNutritionResult
+import com.dandi.nyummy.meal.entity.MealFood
 import com.dandi.nyummy.meal.enum.MealAnalysisJobCategory
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.notification.NotificationId
@@ -200,7 +201,8 @@ class AnalysisService(
 
     /**
      * 저장하기 전의 값으로 줄 영양과 식사 합계를 먼저 구해 코멘트를 만든다.
-     * 줄에 이미 1인분 영양이 있으면 그 값을, 없으면 방금 조회한 값을 쓴다. 저장할 때 채우는 규칙과 같다.
+     * 줄에 이미 1인분 영양이 있으면 그 값을, 없으면 방금 조회한 값을 쓴다. 인분이 빈 줄은 [MealFood.DEFAULT_PORTION]으로 본다.
+     * 저장할 때 채우는 규칙(`MealFoodService.updateServingNutritions`)과 같다.
      */
     private fun createCatComment(
         meal: AnalysisMealResult,
@@ -210,7 +212,7 @@ class AnalysisService(
         val servings = meal.mealFoods.map { mealFood ->
             val servingNutrition = mealFood.servingNutrition
                 ?: servingNutritions.getValue(mealFood.mealFoodId).servingNutrition
-            servingNutrition to mealFood.portion
+            servingNutrition to (mealFood.portion ?: MealFood.DEFAULT_PORTION)
         }
 
         return catService.createCatComment(

@@ -11,12 +11,12 @@ import kotlin.test.assertNull
 
 class MealFoodNutritionCalculatorTest {
 
-    private fun createMealFood(portion: String, servingNutrition: ServingNutrition? = null) = MealFood(
+    private fun createMealFood(portion: String?, servingNutrition: ServingNutrition? = null) = MealFood(
         mealId = 1L,
         mealFoodSnapshotId = null,
         displayOrder = 1,
         name = "부추무침",
-        portion = BigDecimal(portion),
+        portion = portion?.let(::BigDecimal),
     ).apply {
         servingCalory = servingNutrition?.calory
         servingCarbs = servingNutrition?.carbs
@@ -46,6 +46,13 @@ class MealFoodNutritionCalculatorTest {
         assertNull(calculateMealFoodNutrition(createMealFood(portion = "1.0")))
     }
 
+    @Test
+    fun `인분을 아직 구하지 않은 줄은 1인분 값이 있어도 줄 영양이 없다`() {
+        val mealFood = createMealFood(portion = null, createServingNutrition("75", "6", "2", "5"))
+
+        assertNull(calculateMealFoodNutrition(mealFood))
+    }
+
     // calculateMealNutrition
 
     @Test
@@ -71,6 +78,16 @@ class MealFoodNutritionCalculatorTest {
         val mealFoods = listOf(
             createMealFood(portion = "1.0", createServingNutrition("350", "15", "25", "20")),
             createMealFood(portion = "1.0"),
+        )
+
+        assertFailsWith<IllegalStateException> { calculateMealNutrition(mealFoods) }
+    }
+
+    @Test
+    fun `인분이 없는 줄이 있으면 식사 합계를 계산하지 않는다`() {
+        val mealFoods = listOf(
+            createMealFood(portion = "1.0", createServingNutrition("350", "15", "25", "20")),
+            createMealFood(portion = null, createServingNutrition("300", "65", "6", "1")),
         )
 
         assertFailsWith<IllegalStateException> { calculateMealNutrition(mealFoods) }

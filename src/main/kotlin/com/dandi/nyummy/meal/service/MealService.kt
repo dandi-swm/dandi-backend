@@ -300,7 +300,7 @@ class MealService(
      *
      * 사용자의 확인을 기다리는 식사(CONFIRMING)에는 조금 뒤부터 가져갈 영양 작업이 있다. 그 작업을 지워 기다리지 않고 계산하게 한다.
      * 그 뒤는 값을 새로 구해야 하는지에 따라 갈린다.
-     * - 새로 구할 값이 있으면(이름을 바꾼 줄, 영양을 적지 않은 새 줄) 바로 가져갈 영양 작업을 만들고 WAITING으로 둔다.
+     * - 새로 구할 값이 있으면(이름을 바꾼 줄, 영양을 적지 않은 새 줄, 인분을 생략한 새 줄) 바로 가져갈 영양 작업을 만들고 WAITING으로 둔다.
      *   식사의 합계와 아이콘은 비운다. 계산이 끝나지 않은 식사는 영양이 없어야 하루 목록과 합계에 옛 값이 섞이지 않는다.
      *   아직 한 번도 계산이 끝나지 않은 식사도 여기로 간다. 고양이 코멘트를 만들어야 해서다.
      * - 새로 구할 값이 없으면(인분·순서만 바꿈, 줄을 지움, 영양·아이콘을 직접 적음) 이 요청 안에서 합계와 아이콘을 다시 계산해
@@ -316,6 +316,7 @@ class MealService(
      * 거절하면 앞에서 지운 작업도 트랜잭션과 함께 되돌아가므로, 계산 중이던 Worker는 그대로 끝낸다.
      *
      * 줄 수·이름 길이·인분 범위·영양 범위는 요청 DTO가 검사하고, 음식 줄을 바꾸는 규칙은 [MealFoodService.updateMealFoods]에 있다.
+     * 인분은 생략할 수 있다. 생략한 줄은 0.5 단위 검사를 하지 않는다.
      *
      * @param userId 보내는 사용자 ID
      * @param mealId 음식 목록을 바꿀 식사 ID
@@ -335,7 +336,10 @@ class MealService(
         request: UpdateMealFoodsRequest,
         language: Language,
     ): MealStatusResponse {
-        if (request.foods.any { it.portion.remainder(MealFood.PORTION_STEP).signum() != 0 }) {
+        val hasInvalidPortion = request.foods.any { food ->
+            food.portion?.let { it.remainder(MealFood.PORTION_STEP).signum() != 0 } == true
+        }
+        if (hasInvalidPortion) {
             throw BusinessException(CommonErrorCode.INVALID_INPUT_VALUE)
         }
 
@@ -435,7 +439,7 @@ class MealService(
 
     /**
      * 음식 줄이 바뀐 식사의 영양을 다시 계산하게 한다. 값을 새로 구해야 하는지에 따라 갈린다.
-     * - 1인분 영양이나 아이콘이 빈 줄이 있으면 바로 가져갈 영양 작업을 만들고, 식사의 합계와 아이콘을 비워 WAITING으로 둔다.
+     * - 1인분 영양이나 아이콘, 인분이 빈 줄이 있으면 바로 가져갈 영양 작업을 만들고, 식사의 합계와 아이콘을 비워 WAITING으로 둔다.
      *   아직 한 번도 계산이 끝나지 않은 식사(코멘트 없음)도 코멘트를 만들어야 하므로 작업을 만든다.
      * - 모든 줄에 값이 있고 한 번 계산이 끝났던 식사면 이 요청 안에서 합계와 맨 위 줄의 아이콘을 식사에 넣고 COMPLETED로 둔다.
      *
@@ -445,8 +449,8 @@ class MealService(
      */
     private fun recalculateMealNutrition(meal: Meal, mealFoods: List<MealFood>, language: Language) {
         val topMealFoodIconId = mealFoods.firstOrNull()?.iconId
-        val hasAllServingNutritions = mealFoods.all { it.servingNutrition != null && it.iconId != null }
-        if (meal.catComment != null && topMealFoodIconId != null && hasAllServingNutritions) {
+        val hasAllValues = mealFoods.all { it.servingNutrition != null && it.iconId != null && it.portion != null }
+        if (meal.catComment != null && topMealFoodIconId != null && hasAllValues) {
             meal.updateNutrition(calculateMealNutrition(mealFoods))
             meal.updateIconId(topMealFoodIconId)
             meal.updateStatus(MealStatus.COMPLETED)

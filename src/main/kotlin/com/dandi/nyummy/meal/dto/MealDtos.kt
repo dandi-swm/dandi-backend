@@ -78,7 +78,8 @@ data class CreateMealV2Response(
 /**
  * 식사 안의 음식 한 줄. 기록 응답과 단건 조회가 같은 모양을 쓴다. 목록의 맨 위 줄이 대표 음식이다.
  *
- * @property portion 인분(0.5~5.0, 0.5 단위). 1.0이 1인분이다
+ * @property portion 인분(0.5~5.0, 0.5 단위). 1.0이 1인분이다. 아직 구하지 않은 줄은 null이고 영양 계산 때 채워진다.
+ *   계산이 끝난(COMPLETED) 식사의 줄은 항상 값이 있다
  * @property nutrition 이 줄의 영양(1인분 영양 × 인분). 계산 전이면 null
  * @property isNutritionFixed 사용자가 영양을 직접 고친 줄. 다시 계산할 때 덮어쓰지 않는다
  * @property iconId 이 줄의 아이콘. 영양 계산 때 함께 정해지므로 계산 전이면 null. 맨 위 줄의 아이콘이 식사 아이콘이다
@@ -86,7 +87,7 @@ data class CreateMealV2Response(
 data class MealFoodResponse(
     val mealFoodId: Long,
     val name: String,
-    val portion: BigDecimal,
+    val portion: BigDecimal?,
     val nutrition: Nutrition?,
     val isNutritionFixed: Boolean,
     val iconId: Long?,
@@ -147,6 +148,7 @@ data class UpdateMealFoodsRequest(
  * 보낼 음식 한 줄.
  *
  * @property mealFoodId 있는 줄이면 그 id, 새로 추가한 줄이면 null
+ * @property portion 인분. 생략하면 있는 줄은 인분을 그대로 두고, 새 줄은 비워 두어 영양을 계산할 때 채운다
  * @property nutrition 이번에 영양을 직접 고친 줄만 채운다. 채우면 그 줄은 고정된다
  * @property iconId 이번에 아이콘을 직접 고친 줄만 채운다. 채우면 그 줄의 아이콘은 고정된다
  */
@@ -161,7 +163,7 @@ data class MealFoodRequest(
     @field:Schema(description = "인분 (0.5 ~ 5.0, 0.5 단위)", example = "1.0", multipleOf = 0.5)
     @field:DecimalMin("0.5")
     @field:DecimalMax("5.0")
-    val portion: BigDecimal,
+    val portion: BigDecimal? = null,
 
     @field:Valid
     val nutrition: MealFoodNutritionRequest? = null,

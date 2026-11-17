@@ -12,12 +12,13 @@ private const val SERVING_SCALE = 2
 /**
  * 음식 한 줄의 영양. 1인분 × 인분을 정수로 반올림한 값이라 응답에 그대로 쓴다.
  *
- * @return 1인분 값을 아직 구하지 않은 줄이면 null
+ * @return 1인분 값이나 인분을 아직 구하지 않은 줄이면 null
  */
 fun calculateMealFoodNutrition(mealFood: MealFood): Nutrition? {
     val servingNutrition = mealFood.servingNutrition ?: return null
+    val portion = mealFood.portion ?: return null
 
-    return calculateTotalNutrition(listOf(servingNutrition to mealFood.portion))
+    return calculateTotalNutrition(listOf(servingNutrition to portion))
 }
 
 /**
@@ -30,14 +31,17 @@ fun calculateMealFoodNutrition(servingNutrition: ServingNutrition, portion: BigD
  * 식사 합계. 줄마다 반올림하지 않고 1인분 × 인분을 소수로 더한 뒤 한 번만 반올림한다.
  * 그래서 [calculateMealFoodNutrition]으로 구한 줄 영양을 더한 값과 1 정도 다를 수 있다.
  *
- * @throws IllegalStateException 1인분 값을 아직 구하지 않은 줄이 있는 경우. 합계는 모든 줄의 1인분 값을 구한 뒤에 계산한다
+ * @throws IllegalStateException 1인분 값이나 인분을 아직 구하지 않은 줄이 있는 경우. 합계는 모든 줄의 값을 구한 뒤에 계산한다
  */
 fun calculateMealNutrition(mealFoods: List<MealFood>): Nutrition = calculateTotalNutrition(
     mealFoods.map { mealFood ->
         val servingNutrition = checkNotNull(mealFood.servingNutrition) {
             "1인분 값이 없는 음식 줄이 있습니다: mealFoodId=${mealFood.id}"
         }
-        servingNutrition to mealFood.portion
+        val portion = checkNotNull(mealFood.portion) {
+            "인분이 없는 음식 줄이 있습니다: mealFoodId=${mealFood.id}"
+        }
+        servingNutrition to portion
     },
 )
 

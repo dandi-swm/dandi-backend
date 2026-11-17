@@ -25,6 +25,7 @@ import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.dto.NutritionAnalysisResult
 import com.dandi.nyummy.meal.dto.ServingNutrition
 import com.dandi.nyummy.meal.dto.ServingNutritionResult
+import com.dandi.nyummy.meal.entity.MealFood
 import com.dandi.nyummy.meal.enum.MealAnalysisJobCategory
 import com.dandi.nyummy.meal.enum.MealInputCategory
 import com.dandi.nyummy.meal.enum.MealStatus
@@ -612,13 +613,14 @@ class AnalysisServiceTest {
         riceIconId: Long? = null,
         hasCatComment: Boolean = false,
         inputCategory: MealInputCategory = MealInputCategory.FOOD_PHOTO,
+        bulgogiPortion: BigDecimal? = BigDecimal("1.5"),
     ) = AnalysisMealResult(
         userId = userId,
         mealAt = mealAt,
         inputCategory = inputCategory,
         hasCatComment = hasCatComment,
         mealFoods = listOf(
-            AnalysisMealFoodResult(101L, "불고기", BigDecimal("1.5"), bulgogiServingNutrition, bulgogiIconId),
+            AnalysisMealFoodResult(101L, "불고기", bulgogiPortion, bulgogiServingNutrition, bulgogiIconId),
             AnalysisMealFoodResult(102L, "잡곡밥", BigDecimal("1.0"), riceServingNutrition, riceIconId),
         ),
     )
@@ -758,6 +760,32 @@ class AnalysisServiceTest {
                 // 합계는 소수로 더한 뒤 한 번 반올림한다: 탄수화물 23.25 + 65 = 88.25 → 88, 단백질 37.875 + 6 = 43.875 → 44
                 nutrition = Nutrition(calory = 825, carbs = 88, protein = 44, fat = 31),
                 language = Language.JA,
+            )
+        }
+    }
+
+    @Test
+    fun `인분이 빈 줄은 1인분으로 보고 코멘트에 넣을 줄 영양과 합계를 구한다`() {
+        givenAnalysisMeal(
+            createAnalysisMeal(riceServingNutrition = riceServingNutrition, riceIconId = 5L, bulgogiPortion = null),
+        )
+        givenServingNutritions(listOf("불고기"), listOf(ServingNutritionResult(bulgogiServingNutrition, 12L)))
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        verify(exactly = 1) {
+            catService.createCatComment(
+                userId = userId,
+                mealAt = mealAt,
+                mealFoods = listOf(
+                    // 저장할 때 빈 인분에 넣는 값(1.0)과 같아야 코멘트의 숫자가 저장된 결과와 맞는다.
+                    // 350 × 1.0 = 350, 15.5 → 16, 25.25 → 25, 20
+                    CatCommentMealFoodInput("불고기", MealFood.DEFAULT_PORTION, Nutrition(350, 16, 25, 20)),
+                    CatCommentMealFoodInput("잡곡밥", BigDecimal("1.0"), Nutrition(300, 65, 6, 1)),
+                ),
+                // 탄수화물 15.5 + 65 = 80.5 → 81, 단백질 25.25 + 6 = 31.25 → 31
+                nutrition = Nutrition(calory = 650, carbs = 81, protein = 31, fat = 21),
+                language = nutritionJob.language,
             )
         }
     }

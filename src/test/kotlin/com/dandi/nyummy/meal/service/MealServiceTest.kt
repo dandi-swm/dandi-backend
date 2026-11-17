@@ -1030,12 +1030,12 @@ class MealServiceTest {
     )
 
     /** 1인분과 아이콘이 채워진 줄. 다시 구할 값이 없다. */
-    private fun createFilledMealFood(name: String, portion: String, calory: String, iconId: Long) = MealFood(
+    private fun createFilledMealFood(name: String, portion: String?, calory: String, iconId: Long) = MealFood(
         mealId = 0L,
         mealFoodSnapshotId = null,
         displayOrder = 1,
         name = name,
-        portion = BigDecimal(portion),
+        portion = portion?.let(::BigDecimal),
     ).apply {
         updateServingNutrition(
             ServingNutrition(BigDecimal(calory), BigDecimal("10"), BigDecimal("20"), BigDecimal("4")),
@@ -1132,6 +1132,28 @@ class MealServiceTest {
         // 기다리던 작업은 지우고 새 작업은 만들지 않는다. 작업이 없으므로 Worker도 푸시도 없다.
         verify(exactly = 1) { mealAnalysisJobRepository.deleteMealAnalysisJobById(77L) }
         verify(exactly = 0) { mealAnalysisJobRepository.save(any()) }
+    }
+
+    @Test
+    fun `1인분과 아이콘이 다 있어도 인분이 빈 줄이 있으면 요청 안에서 끝내지 않고 영양 작업을 만들어 WAITING으로 둔다`() {
+        val meal = createCompletedMealV2()
+        givenMealToUpdate(
+            meal,
+            mealFoods = listOf(
+                createFilledMealFood("잡곡밥", portion = "1.0", calory = "300", iconId = 5L),
+                createFilledMealFood("불고기", portion = null, calory = "350", iconId = 12L),
+            ),
+        )
+        val job = slot<MealAnalysisJob>()
+        every { mealAnalysisJobRepository.save(capture(job)) } answers { firstArg() }
+
+        val response = mealService.updateMealFoodsV2(userId, mealId, foodsRequest, Language.KO)
+
+        // 인분은 Worker가 채운다. 빈 인분을 둔 채 합계를 내지 않는다.
+        assertEquals(MealStatus.WAITING, response.status)
+        assertEquals(MealStatus.WAITING, meal.status)
+        assertNull(meal.calory)
+        assertEquals(MealAnalysisJobCategory.NUTRITION, job.captured.category)
     }
 
     @Test
@@ -1235,6 +1257,22 @@ class MealServiceTest {
         assertEquals(MealStatus.COMPLETED, meal.status)
         assertEquals(analyzedNutrition.calory, meal.calory)
         verify(exactly = 0) { mealFoodService.updateMealFoods(any(), any()) }
+    }
+
+    @Test
+    fun `인분을 생략한 줄은 0_5 단위 검사를 하지 않고 받은 그대로 음식 줄을 바꾸게 한다`() {
+        val request = UpdateMealFoodsRequest(
+            foods = listOf(
+                MealFoodRequest(mealFoodId = 1L, name = "불고기"),
+                MealFoodRequest(mealFoodId = null, name = "김치", portion = BigDecimal("0.5")),
+            ),
+        )
+        val meal = createMealV2(MealStatus.CONFIRMING)
+        givenMealToUpdate(meal)
+
+        mealService.updateMealFoodsV2(userId, mealId, request, Language.KO)
+
+        verify(exactly = 1) { mealFoodService.updateMealFoods(meal.id, request.foods) }
     }
 
     @Test

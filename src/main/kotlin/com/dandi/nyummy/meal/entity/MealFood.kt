@@ -21,7 +21,7 @@ import java.time.Instant
  *
  * @property mealFoodSnapshotId 짝이 되는 스냅샷 줄. 사용자가 더한 줄은 null
  * @property displayOrder 목록 순서. 1이 대표 음식이고, 그 줄의 아이콘이 식사 아이콘이 된다
- * @property portion 인분
+ * @property portion 인분. 아직 구하지 않은 줄은 null이고, 영양을 계산할 때 채운다
  */
 @Entity
 @EntityListeners(AuditingEntityListener::class)
@@ -39,8 +39,8 @@ class MealFood(
     @Column(name = "name", nullable = false, length = 30)
     var name: String,
 
-    @Column(name = "portion", nullable = false, precision = 2, scale = 1)
-    var portion: BigDecimal,
+    @Column(name = "portion", precision = 2, scale = 1)
+    var portion: BigDecimal?,
 ) {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -153,5 +153,8 @@ class MealFood(
         val MIN_PORTION: BigDecimal = BigDecimal("0.5")
         val MAX_PORTION: BigDecimal = BigDecimal("5.0")
         val PORTION_STEP: BigDecimal = BigDecimal("0.5")
+
+        /** 인분을 따로 구하지 않는 줄에 넣는 인분(1인분) */
+        val DEFAULT_PORTION: BigDecimal = BigDecimal("1.0")
     }
 }

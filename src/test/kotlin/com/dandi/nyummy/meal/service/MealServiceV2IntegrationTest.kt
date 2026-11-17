@@ -195,6 +195,33 @@ class MealServiceV2IntegrationTest @Autowired constructor(
     )
 
     @Test
+    fun `인분을 생략해 보내면 있는 줄의 인분은 그대로이고 새 줄은 인분이 빈 채 저장되며 영양 작업이 생긴다`() {
+        val (meal, mealFoods) = createCompletedMeal("portion-omitted@nyummy.co.kr")
+        val (bulgogi, rice) = mealFoods
+
+        val response = mealService.updateMealFoodsV2(
+            userId = meal.userId,
+            mealId = meal.id,
+            request = UpdateMealFoodsRequest(
+                foods = listOf(
+                    MealFoodRequest(mealFoodId = bulgogi.id, name = "불고기"),
+                    MealFoodRequest(mealFoodId = rice.id, name = "잡곡밥"),
+                    MealFoodRequest(mealFoodId = null, name = "김치"),
+                ),
+            ),
+            language = Language.KO,
+        )
+
+        val (savedBulgogi, savedRice, savedKimchi) = mealFoodRepository.findAllByMealIdOrderByDisplayOrderAsc(meal.id)
+        assertEquals(BigDecimal("1.5"), savedBulgogi.portion)
+        assertEquals(BigDecimal("1.0"), savedRice.portion)
+        // 빈 인분은 영양 작업이 채운다. 그때까지는 합계를 내지 않는다.
+        assertNull(savedKimchi.portion)
+        assertEquals(MealStatus.WAITING, response.status)
+        assertNotNull(findJob(meal.id))
+    }
+
+    @Test
     fun `완료된 식사의 목록을 고쳐 보내면 줄이 바뀌고 바로 가져갈 영양 작업이 생기며 식사는 값 없는 WAITING이 된다`() {
         val (meal, mealFoods) = createCompletedMeal("update@nyummy.co.kr")
         val (bulgogi, rice) = mealFoods
