@@ -12,6 +12,7 @@ import com.dandi.nyummy.meal.dto.UpdateMealFoodRequest
 import com.dandi.nyummy.meal.entity.MealFood
 import com.dandi.nyummy.meal.entity.MealFoodSnapshot
 import com.dandi.nyummy.meal.entity.MealSnapshot
+import com.dandi.nyummy.meal.enum.MealInputCategory
 import com.dandi.nyummy.meal.enum.MealRecognitionCategory
 import com.dandi.nyummy.meal.mapper.toNutrition
 import com.dandi.nyummy.meal.repository.IconRepository
@@ -233,6 +234,10 @@ class MealFoodService(
      * 인식 결과를 스냅샷(AI가 처음 낸 목록)과 음식 줄(사용자가 고치는 지금 값)로 저장한다.
      * 음식 줄은 짝이 되는 스냅샷 줄을 가리키고, 순서는 인식이 낸 순서(맨 앞이 대표 음식)다.
      *
+     * 사진에 그 음식의 값이 적혀 있던 줄(힌트)은 그 값을 1인분 영양으로 적고 인분을 [MealFood.DEFAULT_PORTION]으로 둔다.
+     * 인분을 따로 구하지 않는 유형(음식 사진이 아닌 것)의 줄도 인분을 [MealFood.DEFAULT_PORTION]으로 둔다.
+     * 음식 사진 식사의 나머지 줄은 인분을 비워 두고, 영양을 계산할 때 채운다.
+     *
      * 식사 기록 요청 안에서 인식했을 때와 Worker의 인식 작업이 인식했을 때 모두 이 메서드로 저장한다.
      * 식사의 상태·이름을 바꾸고 작업을 만드는 일과 함께 커밋돼야 하므로 호출하는 쪽 트랜잭션에 합류한다.
      * 혼자 불려도 스냅샷만 남고 음식 줄이 빠지지 않게 트랜잭션을 건다.
@@ -264,20 +269,21 @@ class MealFoodService(
                     mealSnapshotId = mealSnapshot.id,
                     displayOrder = index + 1,
                     name = food.name,
-                    portion = food.portion,
                 )
             },
         )
+        // 인분은 사진과 함께 영양을 구할 줄만 비워 둔다. 음식 사진 식사의, 사진에 값이 적혀 있지 않던 줄이다.
+        val isPhotoMeal = recognition.inputCategory == MealInputCategory.FOOD_PHOTO
 
         return mealFoodRepository.saveAll(
-            mealFoodSnapshots.map { mealFoodSnapshot ->
+            mealFoodSnapshots.zip(recognition.foods) { mealFoodSnapshot, food ->
                 MealFood(
                     mealId = mealId,
                     mealFoodSnapshotId = mealFoodSnapshot.id,
                     displayOrder = mealFoodSnapshot.displayOrder,
                     name = mealFoodSnapshot.name,
-                    portion = mealFoodSnapshot.portion,
-                )
+                    portion = if (isPhotoMeal && food.nutritionHint == null) null else MealFood.DEFAULT_PORTION,
+                ).apply { food.nutritionHint?.let { updateNutritionHint(it) } }
             },
         )
     }

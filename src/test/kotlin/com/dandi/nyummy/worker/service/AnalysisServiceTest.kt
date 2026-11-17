@@ -447,7 +447,7 @@ class AnalysisServiceTest {
     private val recognition = MealRecognitionResult(
         inputCategory = MealInputCategory.FOOD_PHOTO,
         name = "불고기 백반",
-        foods = listOf(MealFoodRecognitionResult(name = "불고기", portion = BigDecimal("1.5"))),
+        foods = listOf(MealFoodRecognitionResult(name = "불고기")),
         model = "gemini-recognition-test",
         promptVersion = "v1",
     )

@@ -183,10 +183,10 @@ class MealV2E2eTest {
             assertEquals("CONFIRMING", untouchedMeal.getString("status"))
             assertEquals(recognizedFoods, untouchedMeal.getList<Map<String, Any?>>("foods"), "거부된 요청이 음식 줄을 바꿨습니다")
 
-            // 9. 음식 목록을 보낸다. 맨 위 줄의 인분을 바꾸고, 나머지 줄은 인분을 생략하고, 김치를 인분 없이 더한다.
-            // 인분을 생략한 기존 줄은 인분이 그대로이고, 인분 없이 더한 줄은 영양을 계산할 때 채워진다.
+            // 9. 음식 목록을 보낸다. 맨 위 줄의 인분을 정하고, 나머지 줄은 인분을 생략하고, 김치를 인분 없이 더한다.
+            // 인분을 정한 줄은 그 인분으로 남고, 인분이 빈 줄은 영양을 계산할 때 채워진다.
             // 5분을 기다리던 계산 대신 바로 계산한다. 처음 계산이라 Worker가 1인분 영양과 아이콘을 구하고 코멘트를 만든다. 응답은 WAITING이다.
-            val firstPortion = if (convertPortion(firstFood) == 1.0) 1.5 else 1.0
+            val firstPortion = 1.5
             val sentFoods = listOf(convertFoodBody(firstFood) + mapOf("portion" to firstPortion)) +
                 recognizedFoods.drop(1).map { convertFoodBody(it) - "portion" } +
                 mapOf("mealFoodId" to null, "name" to ADDED_FOOD_NAME)
@@ -204,16 +204,12 @@ class MealV2E2eTest {
             assertEquals(firstFood["mealFoodId"], completedFoods.first()["mealFoodId"])
             assertEquals(firstPortion, convertPortion(completedFoods.first()))
             assertEquals(ADDED_FOOD_NAME, completedFoods.last()["name"])
-            // 인분을 생략한 기존 줄은 인식된 인분 그대로다.
-            assertEquals(
-                recognizedFoods.drop(1).map { convertPortion(it) },
-                completedFoods.drop(1).dropLast(1).map { convertPortion(it) },
-                "인분을 생략한 줄의 인분이 바뀌었습니다",
-            )
-            // 인분 없이 더한 줄은 1인분으로 채워진다.
+            // 사용자가 더한 줄은 사진과 함께 구하지 않으므로 1인분으로 채워진다.
             assertEquals(1.0, convertPortion(completedFoods.last()))
             completedFoods.forEach { food ->
+                // 인식 때 비어 있던 인분도 계산이 끝나면 모두 채워져 있다.
                 assertNotNull(food["portion"], "계산이 끝났는데 인분이 없습니다: ${food["name"]}")
+                assertValidPortion(food)
                 assertNotNull(food["nutrition"], "계산이 끝났는데 줄 영양이 없습니다: ${food["name"]}")
                 assertNotNull(food["iconId"], "계산이 끝났는데 줄 아이콘이 없습니다: ${food["name"]}")
             }
@@ -609,12 +605,8 @@ class MealV2E2eTest {
             )
             val foodName = food["name"] as String
             assertTrue(foodName.isNotBlank() && foodName.length <= 30, "음식 이름은 1~30자여야 합니다: $foodName")
-            // 인분은 0.5 단위로 0.5~5.0이다. 두 배 하면 1~10의 정수가 된다.
-            val doubledPortion = convertPortion(food) * 2
-            assertTrue(
-                doubledPortion in 1.0..10.0 && doubledPortion == Math.floor(doubledPortion),
-                "인분은 0.5 단위로 0.5~5.0이어야 합니다: ${food["portion"]}",
-            )
+            // 인분은 영양을 계산할 때 구하므로 인식 직후에는 비어 있을 수 있다. 있으면 0.5 단위로 0.5~5.0이다.
+            if (food["portion"] != null) assertValidPortion(food)
             assertNull(food["nutrition"], "영양 계산 전에는 줄 영양이 없어야 합니다")
             assertNull(food["iconId"], "영양 계산 전에는 줄 아이콘이 없어야 합니다")
             assertEquals(false, food["isNutritionFixed"])
@@ -622,11 +614,21 @@ class MealV2E2eTest {
     }
 
     // 조회한 음식 줄을 그대로 다시 보낼 요청 줄로 바꾼다. 영양과 아이콘은 직접 고칠 때만 채우므로 넣지 않는다.
-    private fun convertFoodBody(food: Map<String, Any?>): Map<String, Any?> = mapOf(
+    // 아직 구하지 않아 인분이 빈 줄은 인분을 생략한다.
+    private fun convertFoodBody(food: Map<String, Any?>): Map<String, Any?> = listOfNotNull(
         "mealFoodId" to (food["mealFoodId"] as Number).toLong(),
         "name" to food["name"],
-        "portion" to convertPortion(food),
-    )
+        (food["portion"] as Number?)?.let { "portion" to it.toDouble() },
+    ).toMap()
+
+    // 인분은 0.5 단위로 0.5~5.0이다. 두 배 하면 1~10의 정수가 된다.
+    private fun assertValidPortion(food: Map<String, Any?>) {
+        val doubledPortion = convertPortion(food) * 2
+        assertTrue(
+            doubledPortion in 1.0..10.0 && doubledPortion == Math.floor(doubledPortion),
+            "인분은 0.5 단위로 0.5~5.0이어야 합니다: ${food["portion"]}",
+        )
+    }
 
     private fun convertPortion(food: Map<String, Any?>): Double = (food["portion"] as Number).toDouble()
 

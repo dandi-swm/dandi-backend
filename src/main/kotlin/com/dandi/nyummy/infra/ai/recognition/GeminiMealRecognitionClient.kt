@@ -9,6 +9,7 @@ import com.dandi.nyummy.infra.ai.nutrition.AnalysisFailureException
 import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.meal.dto.MealFoodRecognitionResult
 import com.dandi.nyummy.meal.dto.MealRecognitionResult
+import com.dandi.nyummy.meal.dto.NutritionHint
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.entity.MealFood
 import com.dandi.nyummy.meal.enum.MealInputCategory
@@ -30,13 +31,15 @@ class GeminiMealRecognitionClient(
     companion object {
 
         // 프롬프트나 응답 스키마를 바꾸면 올린다. 스냅샷에 남겨 사용자가 고친 비율을 프롬프트별로 나눠 본다.
-        private const val PROMPT_VERSION = "v1"
+        private const val PROMPT_VERSION = "v2"
 
-        // 인분은 숫자로 받으면 0.5 단위를 어긴다(0.8 등). 고를 수 있는 값을 스키마로 묶는다.
-        private val PORTIONS = generateSequence(MealFood.MIN_PORTION) { it + MealFood.PORTION_STEP }
-            .takeWhile { it <= MealFood.MAX_PORTION }
-            .map { it.stripTrailingZeros().toPlainString() }
-            .toList()
+        // 영양성분표는 제품으로 판정한다. 값만 남겨 두는 것은 예전에 저장된 행을 읽기 위해서다.
+        private val INPUT_CATEGORIES = MealInputCategory.entries - MealInputCategory.NUTRITION_LABEL
+
+        // 1인분 컬럼(DECIMAL(7,2))에 담을 수 있는 가장 큰 값
+        private val MAX_NUTRITION_HINT_VALUE = BigDecimal("99999.99")
+
+        private val NUTRITION_HINT_FIELDS = listOf("calory", "carbs", "protein", "fat")
 
         private const val PROMPT =
             """
@@ -44,8 +47,7 @@ class GeminiMealRecognitionClient(
 
         [inputCategory] 사진이 무엇을 찍은 것인지 하나를 골라.
         FOOD_PHOTO 실제 음식(먹기 전, 먹는 중, 조금 남은 것)
-        PACKAGE 과자·음료·간편식 포장이나 제품
-        NUTRITION_LABEL 영양성분표 숫자가 보이는 라벨
+        PACKAGE 과자·음료·간편식 포장이나 제품, 그 제품의 영양성분표
         TEXT_RECORD 영수증, 주문·배달 앱 화면, 메뉴판, 먹은 것을 적은 글
         ILLUSTRATION 음식 그림이나 모형
         NOT_FOOD 음식과 전혀 관련 없는 사진, 무엇인지 알아볼 수 없는 사진
@@ -56,8 +58,14 @@ class GeminiMealRecognitionClient(
         - 한 항목에는 음식 하나만 적어. 서로 다른 음식은 같은 칸이나 같은 그릇에 있어도 따로 적어(예: 밥과 김치, 밥 옆의 후식).
         - 소스·양념·드레싱은 따로 적지 않고 그 음식에 포함해.
         - name은 흔히 부르는 음식 이름으로 30자 이내로 적어. 포장·제품과 영양성분표는 제품 이름을 적어.
-        - portion은 사진에 보이는 그 음식의 양 전체가 일반적인 1인분의 몇 배인지야. 여러 사람이 나눠 먹을 양이면 그만큼 크게 적어(큰 접시에 2인분쯤 담겨 있으면 2). 영수증·주문 화면은 적힌 수량을 써.
         - 같은 음식이 여러 그릇에 있으면 한 줄로 합쳐 적어.
+        - calory·carbs·protein·fat은 사진에 그 음식의 값으로 적혀 있는 숫자만 옮겨 적어. calory는 kcal, 나머지는 g이야.
+          음식 옆에 직접 적어 둔 숫자, 메뉴판·주문 화면에 적힌 숫자, 영양성분표의 총 내용량 기준 숫자가 여기에 들어가.
+          적혀 있지 않은 항목은 null로 둬. 사진에 적힌 숫자가 없는데 음식만 보고 짐작한 값은 절대 적지 마.
+          100g당·100ml당처럼 그 음식 하나 전체의 값이 아닌 숫자는 적지 말고 null로 둬.
+          음식이 둘 이상인데 숫자가 음식마다 적혀 있지 않고 한 벌만 적혀 있으면(예: "총 칼로리 650"), 그것은 식사 전체의 값이야.
+          식사 전체의 값은 어느 음식에도 적지 말고 모든 음식의 값을 null로 둬. 나눠서 적지도 마.
+          음식이 하나뿐이면 적혀 있는 값이 그 음식의 값이니 그대로 적어.
         - 이 식사를 대표하는 음식(주메뉴)을 맨 위에 적어.
         - 10개를 넘으면 양이 많은 것부터 10개만 적어.
 
@@ -85,17 +93,16 @@ class GeminiMealRecognitionClient(
         private val RESPONSE_SCHEMA = mapOf(
             "type" to "OBJECT",
             "properties" to mapOf(
-                "inputCategory" to mapOf("type" to "STRING", "enum" to MealInputCategory.entries.map { it.name }),
+                "inputCategory" to mapOf("type" to "STRING", "enum" to INPUT_CATEGORIES.map { it.name }),
                 "foods" to mapOf(
                     "type" to "ARRAY",
                     "maxItems" to MealFood.MAX_COUNT,
                     "items" to mapOf(
                         "type" to "OBJECT",
-                        "properties" to mapOf(
-                            "name" to mapOf("type" to "STRING"),
-                            "portion" to mapOf("type" to "STRING", "enum" to PORTIONS),
-                        ),
-                        "required" to listOf("name", "portion"),
+                        // 힌트는 적혀 있을 때만 오므로 필수가 아니고 null일 수 있다.
+                        "properties" to mapOf("name" to mapOf("type" to "STRING")) +
+                            NUTRITION_HINT_FIELDS.associateWith { mapOf("type" to "NUMBER", "nullable" to true) },
+                        "required" to listOf("name"),
                     ),
                 ),
                 "name" to mapOf("type" to "STRING"),
@@ -162,6 +169,7 @@ class GeminiMealRecognitionClient(
     /**
      * 모델이 낸 음식 줄을 저장할 수 있는 모양으로 맞춘다. 스키마로 묶어도 어길 수 있어 서버에서 한 번 더 맞춘다.
      * 이름이 빈 줄은 빼고, 이름은 [MealFood.NAME_MAX_LENGTH]자에서 자르고, [MealFood.MAX_COUNT]줄까지만 받는다.
+     * 힌트는 저장할 수 있는 값만 남긴다([convertNutritionHint]).
      */
     private fun convertFoods(foods: List<GeminiRecognizedFood>): List<MealFoodRecognitionResult> = foods
         .map { it.copy(name = it.name.trim()) }
@@ -170,17 +178,29 @@ class GeminiMealRecognitionClient(
         .map {
             MealFoodRecognitionResult(
                 name = it.name.take(MealFood.NAME_MAX_LENGTH),
-                portion = convertPortion(it.portion),
+                nutritionHint = convertNutritionHint(it),
             )
         }
 
-    /** 인분을 가장 가까운 0.5 단위로 맞추고 [MealFood.MIN_PORTION]~[MealFood.MAX_PORTION] 안으로 넣는다. */
-    private fun convertPortion(portion: String): BigDecimal {
-        val value = portion.trim().toBigDecimalOrNull()
-            ?: throw AnalysisFailureException(AnalysisFailureCategory.INVALID_RESPONSE, "인분이 숫자가 아닙니다: $portion")
-        val steps = value.divide(MealFood.PORTION_STEP, 0, RoundingMode.HALF_UP)
+    /**
+     * 모델이 읽은 힌트를 1인분 컬럼에 담을 수 있는 값(소수 둘째 자리)으로 맞춘다.
+     * 음수이거나 컬럼에 담을 수 없게 큰 값은 잘못 읽은 것으로 보고 그 항목만 버린다. 숫자 하나 때문에 인식 전체를 실패로 돌리지 않는다.
+     *
+     * @return 남은 항목이 하나도 없으면 null
+     */
+    private fun convertNutritionHint(food: GeminiRecognizedFood): NutritionHint? {
+        fun convertNutritionHintValue(value: BigDecimal?): BigDecimal? = value
+            ?.setScale(2, RoundingMode.HALF_UP)
+            ?.takeIf { it >= BigDecimal.ZERO && it <= MAX_NUTRITION_HINT_VALUE }
 
-        return (steps * MealFood.PORTION_STEP).coerceIn(MealFood.MIN_PORTION, MealFood.MAX_PORTION)
+        val nutritionHint = NutritionHint(
+            calory = convertNutritionHintValue(food.calory),
+            carbs = convertNutritionHintValue(food.carbs),
+            protein = convertNutritionHintValue(food.protein),
+            fat = convertNutritionHintValue(food.fat),
+        )
+
+        return nutritionHint.takeIf { listOfNotNull(it.calory, it.carbs, it.protein, it.fat).isNotEmpty() }
     }
 }
 
@@ -190,4 +210,10 @@ private data class GeminiMealRecognitionResponse(
     val name: String = "",
 )
 
-private data class GeminiRecognizedFood(val name: String, val portion: String)
+private data class GeminiRecognizedFood(
+    val name: String,
+    val calory: BigDecimal? = null,
+    val carbs: BigDecimal? = null,
+    val protein: BigDecimal? = null,
+    val fat: BigDecimal? = null,
+)

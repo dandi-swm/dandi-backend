@@ -154,6 +154,7 @@
 - 인분 `portion`(Serving·Quantity·Amount 금지 — Quantity는 지급 개수), 음식 1인분의 영양 `Serving`(`servingCalory`, 값 객체 `ServingNutrition`) — 줄 영양과 식사 합계 `Nutrition`과 다른 것
 - 사용자가 직접 정해 다시 구하지 않는 값 `Fixed`(`isNutritionFixed`·`isIconFixed`, Locked·Manual·Custom 금지)
 - 사진에서 입력 유형·대표 이름·음식 줄을 알아내는 것 `Recognition`(동사 recognize, Detection·Classification 금지) — 영양을 구하는 `Analysis`와 다른 단계
+- 사진에 적혀 있어 인식이 읽은 음식 하나의 영양 값 `NutritionHint`(`nutritionHint`, Hint 단독 금지) — 모델이 구한 1인분 `Serving`, 사용자가 직접 정한 값 `Fixed`와 다른 것
 - AI가 처음 인식한 결과 `MealSnapshot`·`MealFoodSnapshot`(History·Original 금지) — 사용자가 고치는 지금 값 `Meal.name`·`MealFood`와 다른 것
 - 식사를 만든 분석의 버전 `MealAnalysisVersion`(`analysisVersion`), 인식이 판정한 입력 유형 `MealInputCategory`(`inputCategory`), 인식한 곳 `MealRecognitionCategory`
 - 식사 기록 요청 안에서 한 인식 시도의 결과 `MealRecognitionOutcome`, 요청 안에서 끝내지 못해 Worker로 넘긴 것 `Deferred`(`MealRecognitionDeferralCategory`, Delayed·Postponed 금지 — 지표의 `delayed`는 설정 오류로 미룬 작업)

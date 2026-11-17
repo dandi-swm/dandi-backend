@@ -1,5 +1,6 @@
 package com.dandi.nyummy.meal.entity
 
+import com.dandi.nyummy.meal.dto.NutritionHint
 import com.dandi.nyummy.meal.dto.ServingNutrition
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
@@ -48,6 +49,7 @@ class MealFood(
     val id: Long = 0L
 
     // 1인분 영양. 아직 구하지 않았거나 이름이 바뀌어 다시 구해야 하는 줄은 넷 다 null이다.
+    // 인식이 사진에서 일부만 읽은 줄은 읽은 항목만 차 있고, 빈 항목은 영양을 계산할 때 채운다.
     @Column(name = "serving_calory", precision = 7, scale = 2)
     var servingCalory: BigDecimal? = null
 
@@ -130,6 +132,17 @@ class MealFood(
     fun updateFixedIconId(iconId: Long) {
         this.iconId = iconId
         this.isIconFixed = true
+    }
+
+    /**
+     * 인식이 사진에서 읽은 힌트를 1인분 컬럼에 적는다. 적힌 항목만 채우고 나머지는 비워 둔다.
+     * 넷이 다 적혀 있었으면 이 줄은 1인분 영양이 있는 줄이 되고, 일부만 있었으면 빈 항목을 영양을 계산할 때 채운다.
+     */
+    fun updateNutritionHint(nutritionHint: NutritionHint) {
+        nutritionHint.calory?.let { this.servingCalory = it }
+        nutritionHint.carbs?.let { this.servingCarbs = it }
+        nutritionHint.protein?.let { this.servingProtein = it }
+        nutritionHint.fat?.let { this.servingFat = it }
     }
 
     fun updateServingNutrition(servingNutrition: ServingNutrition) {

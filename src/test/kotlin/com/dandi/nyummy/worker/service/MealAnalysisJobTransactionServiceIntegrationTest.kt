@@ -11,6 +11,7 @@ import com.dandi.nyummy.meal.dto.ServingNutritionResult
 import com.dandi.nyummy.meal.entity.Icon
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.entity.MealAnalysisJob
+import com.dandi.nyummy.meal.entity.MealFood
 import com.dandi.nyummy.meal.enum.MealAnalysisJobCategory
 import com.dandi.nyummy.meal.enum.MealAnalysisVersion
 import com.dandi.nyummy.meal.enum.MealInputCategory
@@ -103,8 +104,8 @@ class MealAnalysisJobTransactionServiceIntegrationTest @Autowired constructor(
         inputCategory = MealInputCategory.FOOD_PHOTO,
         name = "불고기 백반",
         foods = listOf(
-            MealFoodRecognitionResult(name = "불고기", portion = BigDecimal("1.5")),
-            MealFoodRecognitionResult(name = "잡곡밥", portion = BigDecimal("1.0")),
+            MealFoodRecognitionResult(name = "불고기"),
+            MealFoodRecognitionResult(name = "잡곡밥"),
         ),
         model = "gemini-recognition-test",
         promptVersion = "v1",
@@ -276,11 +277,13 @@ class MealAnalysisJobTransactionServiceIntegrationTest @Autowired constructor(
 
         val savedMeal = mealRepository.findById(meal.id).orElseThrow()
         assertEquals(MealStatus.COMPLETED, savedMeal.status)
-        // 불고기 1.5인분 + 잡곡밥 1인분: 350 × 1.5 + 300 = 825, 15.5 × 1.5 + 65 = 88.25 → 88
-        assertEquals(825, savedMeal.calory)
-        assertEquals(88, savedMeal.carbs)
-        assertEquals(44, savedMeal.protein)
-        assertEquals(31, savedMeal.fat)
+        // 인식한 줄은 인분이 비어 있다가 영양을 확정할 때 1인분으로 채워진다.
+        assertEquals(listOf(MealFood.DEFAULT_PORTION, MealFood.DEFAULT_PORTION), mealFoods.map { it.portion })
+        // 불고기 1인분 + 잡곡밥 1인분: 350 + 300 = 650, 15.5 + 65 = 80.5 → 81, 25.25 + 6 = 31.25 → 31
+        assertEquals(650, savedMeal.calory)
+        assertEquals(81, savedMeal.carbs)
+        assertEquals(31, savedMeal.protein)
+        assertEquals(21, savedMeal.fat)
         assertEquals(bulgogiIconId, savedMeal.iconId)
         assertEquals("든든하게 먹었다냥", savedMeal.catComment)
         assertEquals("불고기 백반", savedMeal.name)
