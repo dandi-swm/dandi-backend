@@ -328,6 +328,8 @@ class GeminiMealRecognitionClientTest {
         assertContains(prompt, "netContent·netContentUnit은 PACKAGE일 때만 적어")
         assertContains(prompt, "낱개 하나의 용량을 적어")
         assertContains(prompt, "둘 다 null로 둬")
+        // 이름에 용량이 붙으면 같은 제품이 다른 이름으로 저장된다.
+        assertContains(prompt, "용량은 여기에만 적고 name에는 넣지 마")
     }
 
     @Test
@@ -440,6 +442,14 @@ class GeminiMealRecognitionClientTest {
 
         assertContains(prompt, "식사 전체의 값은 어느 음식에도 적지 말고")
         assertContains(prompt, "음식이 하나뿐이면 적혀 있는 값이 그 음식의 값이니 그대로 적어")
+    }
+
+    @Test
+    fun `대표 이름은 브랜드와 제품명을 뺀 음식 종류로 적고 음식 줄의 이름은 구체적으로 두라고 지시한다`() {
+        val prompt = capturePrompt(Language.KO)
+
+        assertContains(prompt, "무엇을 먹었는지 알 수 있는 음식 종류로 적어. 브랜드, 제품명, 맛, 용량은 빼.")
+        assertContains(prompt, "foods의 name은 여기에 맞추지 말고")
     }
 
     @Test
