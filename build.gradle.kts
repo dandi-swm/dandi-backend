@@ -202,6 +202,9 @@ testing {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+    // 통합 테스트는 클래스마다 MySQL 컨테이너를 따로 선언해 스프링 컨텍스트를 재사용하지 못한다. 클래스 수만큼 컨텍스트가
+    // 테스트 JVM 하나에 쌓여, Gradle 기본 힙(512MB)으로는 뒤쪽 클래스가 OutOfMemoryError로 컨텍스트를 띄우지 못한다.
+    maxHeapSize = "1g"
 }
 
 // 실제 MySQL(Testcontainers)에 동시 요청을 수백 라운드 부딪히는 경쟁 테스트(@Tag("race")). 오래 걸려 ./gradlew test에서 빼고

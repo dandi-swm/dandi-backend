@@ -14,7 +14,7 @@ class WorkerConfigTest {
         apiKey = "test-gemini-key",
         model = "gemini-test",
         recognitionModel = "gemini-recognition-test",
-        servingNutritionModel = "gemini-serving-nutrition-test",
+        namedNutritionModel = "gemini-named-nutrition-test",
         photoNutritionModel = "gemini-photo-nutrition-test",
         catCommentModel = "gemini-cat-comment-test",
         baseUrl = "https://aiplatform.googleapis.com",

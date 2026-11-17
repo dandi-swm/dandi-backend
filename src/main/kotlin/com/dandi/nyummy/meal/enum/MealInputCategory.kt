@@ -22,4 +22,12 @@ enum class MealInputCategory {
 
     // 음식과 관련 없는 사진, 무엇인지 알아볼 수 없는 사진.
     NOT_FOOD,
+    ;
+
+    /**
+     * 포장 제품 유형인지([PACKAGE]와, 예전에 따로 판정하던 [NUTRITION_LABEL]). 음식 줄 이름이 제품 이름이라
+     * 이 유형의 줄은 일반적인 1인분이 아니라 그 제품의 영양성분표 값을 구하고, 음식 이름별 1인분 영양(food_nutritions)을 거치지 않는다.
+     */
+    val isPackage: Boolean
+        get() = this == PACKAGE || this == NUTRITION_LABEL
 }

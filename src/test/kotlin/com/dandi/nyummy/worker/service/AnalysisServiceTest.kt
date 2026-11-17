@@ -32,6 +32,7 @@ import com.dandi.nyummy.meal.entity.MealFood
 import com.dandi.nyummy.meal.enum.MealAnalysisJobCategory
 import com.dandi.nyummy.meal.enum.MealInputCategory
 import com.dandi.nyummy.meal.enum.MealStatus
+import com.dandi.nyummy.meal.service.FoodNutritionService
 import com.dandi.nyummy.notification.NotificationId
 import com.dandi.nyummy.notification.service.NotificationService
 import com.dandi.nyummy.worker.dto.AnalysisMealFoodResult
@@ -75,6 +76,7 @@ class AnalysisServiceTest {
     private val analysisImageClient = mockk<AnalysisImageClient>()
     private val mealRecognitionClient = mockk<MealRecognitionClient>()
     private val servingNutritionClient = mockk<ServingNutritionClient>()
+    private val foodNutritionService = mockk<FoodNutritionService>()
     private val catService = mockk<CatService>()
     private val mealAnalysisJobTransactionService = mockk<MealAnalysisJobTransactionService>()
     private val mealProperties = mockk<MealProperties> {
@@ -100,6 +102,7 @@ class AnalysisServiceTest {
         analysisImageClient = analysisImageClient,
         mealRecognitionClient = mealRecognitionClient,
         servingNutritionClient = servingNutritionClient,
+        foodNutritionService = foodNutritionService,
         catService = catService,
         mealAnalysisJobTransactionService = mealAnalysisJobTransactionService,
         mealProperties = mealProperties,
@@ -131,6 +134,9 @@ class AnalysisServiceTest {
         every { mealAnalysisJobTransactionService.failMealAnalysis(any()) } returns createPushResult(MealStatus.FAILED)
         every { mealAnalysisJobTransactionService.retryMealAnalysis(any()) } returns true
         every { mealAnalysisJobTransactionService.cancelMealAnalysis(any(), any()) } returns true
+        // 기본은 저장해 둔 음식 영양이 없는 상태다. 이름만으로 구하는 줄은 모두 모델에 묻는다.
+        every { foodNutritionService.getFoodNutrition(any()) } returns null
+        every { foodNutritionService.createFoodNutrition(any(), any()) } just Runs
     }
 
     private fun createJob(canRetry: Boolean) = MealAnalysisJobResult(
@@ -662,7 +668,7 @@ class AnalysisServiceTest {
         results: List<ServingNutritionResult>,
         inputCategory: MealInputCategory = MealInputCategory.FOOD_PHOTO,
     ) {
-        every { servingNutritionClient.getServingNutritions(names, inputCategory) } returns results
+        every { servingNutritionClient.getNamedServingNutritions(names, inputCategory) } returns results
     }
 
     @Test
@@ -728,7 +734,7 @@ class AnalysisServiceTest {
                 any(),
             )
         }
-        verify(exactly = 0) { servingNutritionClient.getServingNutritions(any(), any()) }
+        verify(exactly = 0) { servingNutritionClient.getNamedServingNutritions(any(), any()) }
     }
 
     @Test
@@ -795,6 +801,24 @@ class AnalysisServiceTest {
             }
 
         verify(exactly = 0) { servingNutritionClient.getPhotoServingNutritions(any(), any(), any()) }
+    }
+
+    @Test
+    fun `사진을 함께 보내 구한 값은 음식 이름으로 저장하지 않고 저장해 둔 값을 찾지도 않는다`() {
+        // 그 사진 속 음식을 보고 구한 값이라 같은 이름의 다른 음식에 다시 쓰지 않는다.
+        givenAnalysisMeal(createAnalysisMeal(isRecognized = true, bulgogiPortion = null))
+        givenPhotoServingNutritions(
+            listOf(PhotoServingNutritionInput("불고기"), PhotoServingNutritionInput("잡곡밥")),
+            listOf(
+                ServingNutritionResult(bulgogiServingNutrition, 12L, BigDecimal("2.0")),
+                ServingNutritionResult(riceServingNutrition, 5L, BigDecimal("1.0")),
+            ),
+        )
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        verify(exactly = 0) { foodNutritionService.createFoodNutrition(any(), any()) }
+        verify(exactly = 0) { foodNutritionService.getFoodNutrition(any()) }
     }
 
     @Test
@@ -895,6 +919,155 @@ class AnalysisServiceTest {
         assertEquals(riceServingNutrition, servingNutritions.captured.getValue(102L).servingNutrition)
     }
 
+    // 영양 작업: 이름만으로 구하는 줄과 저장해 둔 음식 영양
+
+    private fun captureConfirmedServingNutritions(): () -> Map<Long, ServingNutritionResult> {
+        val servingNutritions = slot<Map<Long, ServingNutritionResult>>()
+        every {
+            mealAnalysisJobTransactionService.confirmMealNutrition(any(), capture(servingNutritions), any())
+        } returns createPushResult(MealStatus.COMPLETED)
+
+        return { servingNutritions.captured }
+    }
+
+    @Test
+    fun `저장해 둔 음식 영양이 있는 이름은 모델을 부르지 않고 그 값으로 확정한다`() {
+        givenAnalysisMeal(createAnalysisMeal())
+        every { foodNutritionService.getFoodNutrition("불고기") } returns
+            ServingNutritionResult(bulgogiServingNutrition, 12L)
+        every { foodNutritionService.getFoodNutrition("잡곡밥") } returns ServingNutritionResult(riceServingNutrition, 5L)
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        verify(exactly = 1) {
+            mealAnalysisJobTransactionService.confirmMealNutrition(
+                nutritionJob,
+                mapOf(
+                    101L to ServingNutritionResult(bulgogiServingNutrition, 12L),
+                    102L to ServingNutritionResult(riceServingNutrition, 5L),
+                ),
+                any(),
+            )
+        }
+        verify(exactly = 0) { servingNutritionClient.getNamedServingNutritions(any(), any()) }
+        verify(exactly = 0) { foodNutritionService.createFoodNutrition(any(), any()) }
+    }
+
+    @Test
+    fun `저장해 둔 음식 영양이 없는 이름만 모델에 묻고 구한 값을 저장한다`() {
+        givenAnalysisMeal(createAnalysisMeal())
+        every { foodNutritionService.getFoodNutrition("불고기") } returns
+            ServingNutritionResult(bulgogiServingNutrition, 12L)
+        givenServingNutritions(listOf("잡곡밥"), listOf(ServingNutritionResult(riceServingNutrition, 5L)))
+        val getConfirmed = captureConfirmedServingNutritions()
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        assertEquals(
+            mapOf(
+                101L to ServingNutritionResult(bulgogiServingNutrition, 12L),
+                102L to ServingNutritionResult(riceServingNutrition, 5L),
+            ),
+            getConfirmed(),
+        )
+        verify(exactly = 1) {
+            foodNutritionService.createFoodNutrition("잡곡밥", ServingNutritionResult(riceServingNutrition, 5L))
+        }
+        verify(exactly = 0) { foodNutritionService.createFoodNutrition("불고기", any()) }
+    }
+
+    @Test
+    fun `제품 유형은 저장해 둔 음식 영양을 찾지도 저장하지도 않고 모델에 묻는다`() {
+        listOf(MealInputCategory.PACKAGE, MealInputCategory.NUTRITION_LABEL).forEach { inputCategory ->
+            givenAnalysisMeal(createAnalysisMeal(inputCategory = inputCategory, isRecognized = true))
+            givenServingNutritions(
+                listOf("불고기", "잡곡밥"),
+                listOf(
+                    ServingNutritionResult(bulgogiServingNutrition, 12L),
+                    ServingNutritionResult(riceServingNutrition, 5L),
+                ),
+                inputCategory,
+            )
+
+            analysisService.analyzeMealAnalysisJob(nutritionJob)
+        }
+
+        verify(exactly = 2) { servingNutritionClient.getNamedServingNutritions(listOf("불고기", "잡곡밥"), any()) }
+        verify(exactly = 0) { foodNutritionService.getFoodNutrition(any()) }
+        verify(exactly = 0) { foodNutritionService.createFoodNutrition(any(), any()) }
+    }
+
+    @Test
+    fun `같은 이름의 줄이 여럿이면 한 번만 묻고 같은 값을 쓴다`() {
+        val meal = createAnalysisMeal().let { meal ->
+            meal.copy(mealFoods = meal.mealFoods + meal.mealFoods.first().copy(mealFoodId = 103L))
+        }
+        givenAnalysisMeal(meal)
+        givenServingNutritions(
+            listOf("불고기", "잡곡밥"),
+            listOf(
+                ServingNutritionResult(bulgogiServingNutrition, 12L),
+                ServingNutritionResult(riceServingNutrition, 5L),
+            ),
+        )
+        val getConfirmed = captureConfirmedServingNutritions()
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        assertEquals(getConfirmed().getValue(101L), getConfirmed().getValue(103L))
+        verify(exactly = 1) { foodNutritionService.getFoodNutrition("불고기") }
+        verify(exactly = 1) { foodNutritionService.createFoodNutrition("불고기", any()) }
+    }
+
+    @Test
+    fun `저장해 둔 음식 영양도 줄에 적혀 있던 칼로리에 맞춘다`() {
+        // 글씨 유형: 메뉴판에 280kcal만 적혀 있던 불고기. 저장해 둔 350kcal의 0.8배로 맞춘다.
+        givenAnalysisMeal(
+            createAnalysisMeal(
+                inputCategory = MealInputCategory.TEXT_RECORD,
+                isRecognized = true,
+                bulgogiNutritionHint = NutritionHint(calory = BigDecimal("280.00")),
+                riceServingNutrition = riceServingNutrition,
+                riceIconId = 5L,
+            ),
+        )
+        every { foodNutritionService.getFoodNutrition("불고기") } returns
+            ServingNutritionResult(bulgogiServingNutrition, 12L)
+        val getConfirmed = captureConfirmedServingNutritions()
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        assertEquals(
+            createServingNutrition("280.00", "12.40", "20.20", "16.00"),
+            getConfirmed().getValue(101L).servingNutrition,
+        )
+        verify(exactly = 0) { servingNutritionClient.getNamedServingNutritions(any(), any()) }
+    }
+
+    @Test
+    fun `줄에 칼로리가 적혀 있었어도 저장하는 값은 모델이 구한 그대로다`() {
+        givenAnalysisMeal(
+            createAnalysisMeal(
+                inputCategory = MealInputCategory.TEXT_RECORD,
+                isRecognized = true,
+                bulgogiNutritionHint = NutritionHint(calory = BigDecimal("280.00")),
+                riceServingNutrition = riceServingNutrition,
+                riceIconId = 5L,
+            ),
+        )
+        givenServingNutritions(
+            listOf("불고기"),
+            listOf(ServingNutritionResult(bulgogiServingNutrition, 12L)),
+            MealInputCategory.TEXT_RECORD,
+        )
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        verify(exactly = 1) {
+            foodNutritionService.createFoodNutrition("불고기", ServingNutritionResult(bulgogiServingNutrition, 12L))
+        }
+    }
+
     @Test
     fun `사진을 함께 보낼 줄이 있는데 사진의 콘텐츠 타입이 없으면 FAILED로 끝낸다`() {
         givenAnalysisMeal(createAnalysisMeal(isRecognized = true))
@@ -915,7 +1088,7 @@ class AnalysisServiceTest {
 
         analysisService.analyzeMealAnalysisJob(nutritionJob)
 
-        verify(exactly = 1) { servingNutritionClient.getServingNutritions(listOf("불고기"), any()) }
+        verify(exactly = 1) { servingNutritionClient.getNamedServingNutritions(listOf("불고기"), any()) }
         verify(exactly = 1) {
             mealAnalysisJobTransactionService.confirmMealNutrition(
                 nutritionJob,
@@ -938,7 +1111,7 @@ class AnalysisServiceTest {
 
         analysisService.analyzeMealAnalysisJob(nutritionJob)
 
-        verify(exactly = 1) { servingNutritionClient.getServingNutritions(listOf("불고기"), any()) }
+        verify(exactly = 1) { servingNutritionClient.getNamedServingNutritions(listOf("불고기"), any()) }
     }
 
     @Test
@@ -954,7 +1127,7 @@ class AnalysisServiceTest {
 
         analysisService.analyzeMealAnalysisJob(nutritionJob)
 
-        verify(exactly = 0) { servingNutritionClient.getServingNutritions(any(), any()) }
+        verify(exactly = 0) { servingNutritionClient.getNamedServingNutritions(any(), any()) }
         verify(exactly = 1) {
             mealAnalysisJobTransactionService.confirmMealNutrition(nutritionJob, emptyMap(), any())
         }
@@ -975,7 +1148,7 @@ class AnalysisServiceTest {
         analysisService.analyzeMealAnalysisJob(nutritionJob)
 
         verify(exactly = 1) {
-            servingNutritionClient.getServingNutritions(listOf("불고기", "잡곡밥"), MealInputCategory.PACKAGE)
+            servingNutritionClient.getNamedServingNutritions(listOf("불고기", "잡곡밥"), MealInputCategory.PACKAGE)
         }
     }
 
@@ -1063,7 +1236,7 @@ class AnalysisServiceTest {
     @Test
     fun `다시 계산이 실패하면 완료였던 식사가 FAILED가 되므로 실패 알림은 보낸다`() {
         givenAnalysisMeal(createAnalysisMeal(hasCatComment = true))
-        every { servingNutritionClient.getServingNutritions(any(), any()) } throws
+        every { servingNutritionClient.getNamedServingNutritions(any(), any()) } throws
             AnalysisFailureException(AnalysisFailureCategory.INVALID_RESPONSE, "실패")
 
         analysisService.analyzeMealAnalysisJob(nutritionJob)
@@ -1101,7 +1274,7 @@ class AnalysisServiceTest {
     @Test
     fun `1인분 조회가 일시적으로 실패하고 다시 시도할 수 있으면 코멘트를 만들지 않고 대기로 되돌린다`() {
         givenAnalysisMeal(createAnalysisMeal())
-        every { servingNutritionClient.getServingNutritions(any(), any()) } throws
+        every { servingNutritionClient.getNamedServingNutritions(any(), any()) } throws
             AnalysisFailureException(AnalysisFailureCategory.UNAVAILABLE, "실패")
 
         analysisService.analyzeMealAnalysisJob(nutritionJob)
@@ -1115,7 +1288,7 @@ class AnalysisServiceTest {
     @Test
     fun `1인분 조회 결과를 해석하지 못하면 FAILED로 끝내고 알린다`() {
         givenAnalysisMeal(createAnalysisMeal())
-        every { servingNutritionClient.getServingNutritions(any(), any()) } throws
+        every { servingNutritionClient.getNamedServingNutritions(any(), any()) } throws
             AnalysisFailureException(AnalysisFailureCategory.INVALID_RESPONSE, "실패")
 
         analysisService.analyzeMealAnalysisJob(nutritionJob)
@@ -1130,7 +1303,7 @@ class AnalysisServiceTest {
 
         analysisService.analyzeMealAnalysisJob(nutritionJob)
 
-        verify(exactly = 0) { servingNutritionClient.getServingNutritions(any(), any()) }
+        verify(exactly = 0) { servingNutritionClient.getNamedServingNutritions(any(), any()) }
         verify(exactly = 1) { mealAnalysisJobTransactionService.failMealAnalysis(nutritionJob) }
         assertEquals(1, countAnalysis("failed", "invalid_request"))
     }
@@ -1141,7 +1314,7 @@ class AnalysisServiceTest {
 
         analysisService.analyzeMealAnalysisJob(nutritionJob)
 
-        verify(exactly = 0) { servingNutritionClient.getServingNutritions(any(), any()) }
+        verify(exactly = 0) { servingNutritionClient.getNamedServingNutritions(any(), any()) }
         verify(exactly = 0) { mealAnalysisJobTransactionService.confirmMealNutrition(any(), any(), any()) }
         verify(exactly = 0) { mealAnalysisJobTransactionService.failMealAnalysis(any()) }
     }
