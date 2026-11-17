@@ -157,6 +157,10 @@
 - 사진에 적혀 있어 인식이 읽은 음식 하나의 영양 값 `NutritionHint`(`nutritionHint`, Hint 단독 금지) — 모델이 구한 1인분 `Serving`, 사용자가 직접 정한 값 `Fixed`와 다른 것
 - 음식 이름별로 저장해 두고 다시 쓰는 1인분 영양 `FoodNutrition`(테이블 `food_nutritions`, Food 단독 금지) — 식사 안의 음식 한 줄 `MealFood`, 1인분 값 객체 `ServingNutrition`과 다른 것
 - 음식 이름만으로 구하는 1인분 조회 `Named`(`getNamedServingNutritions`, 설정 `named-nutrition-model`, Text·String 금지 — Text는 입력 유형 글씨 `TEXT_RECORD`와 혼동) — 사진을 함께 보내 구하는 `Photo`(`getPhotoServingNutritions`)와 짝
+- 포장 제품 `Package`(`MealInputCategory.PACKAGE`, `isPackage`, Product 금지 — 상점의 판매 단위와 충돌), 제품의 총 내용량 `NetContent`(`netContent`, 단위 `NetContentUnit`, Size·Volume·Weight·Amount 금지) — 먹은 양을 나타내는 인분 `portion`과 다른 것
+- 제품 이름·용량별로 저장해 두고 다시 쓰는 사진의 표시값 `PackageNutrition`(테이블 `package_nutritions`) — 모델이 이름만으로 구한 값을 저장하는 `FoodNutrition`과 다른 것
+- 음식 줄의 이름이 포장에서 읽은 제품명인지 `hasPackageName`(isProductName·isBrandName 금지) — 영양성분표 면만 찍혀 그 면의 문구나 종류를 이름으로 적은 줄은 false
+- 사진에 적힌 제품의 값이 저장해 둔 값이나 모델 값과 달랐던 기록 `PackageNutritionMismatch`(테이블 `package_nutrition_mismatches`, Diff·Conflict 금지), 무엇과 달랐는지 `PackageNutritionMismatchCategory`
 - AI가 처음 인식한 결과 `MealSnapshot`·`MealFoodSnapshot`(History·Original 금지) — 사용자가 고치는 지금 값 `Meal.name`·`MealFood`와 다른 것
 - 식사를 만든 분석의 버전 `MealAnalysisVersion`(`analysisVersion`), 인식이 판정한 입력 유형 `MealInputCategory`(`inputCategory`), 인식한 곳 `MealRecognitionCategory`
 - 식사 기록 요청 안에서 한 인식 시도의 결과 `MealRecognitionOutcome`, 요청 안에서 끝내지 못해 Worker로 넘긴 것 `Deferred`(`MealRecognitionDeferralCategory`, Delayed·Postponed 금지 — 지표의 `delayed`는 설정 오류로 미룬 작업)
