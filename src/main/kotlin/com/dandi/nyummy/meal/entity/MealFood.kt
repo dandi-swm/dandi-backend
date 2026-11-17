@@ -2,9 +2,12 @@ package com.dandi.nyummy.meal.entity
 
 import com.dandi.nyummy.meal.dto.NutritionHint
 import com.dandi.nyummy.meal.dto.ServingNutrition
+import com.dandi.nyummy.meal.enum.NetContentUnit
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.EntityListeners
+import jakarta.persistence.EnumType
+import jakarta.persistence.Enumerated
 import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
@@ -74,6 +77,15 @@ class MealFood(
     @Column(name = "is_icon_fixed", nullable = false)
     var isIconFixed: Boolean = false
 
+    // 제품의 총 내용량과 단위. 인식이 사진에서 읽은 값이고, 제품이 아니거나 읽지 못했으면 둘 다 null이다.
+    // 같은 제품도 용량에 따라 영양이 달라, 제품 이름·용량별로 저장한 영양을 찾을 때 이름과 함께 쓴다.
+    @Column(name = "net_content", precision = 7, scale = 1)
+    var netContent: BigDecimal? = null
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "net_content_unit", length = 10)
+    var netContentUnit: NetContentUnit? = null
+
     @CreatedDate
     @Column(name = "created_at", nullable = false)
     var createdAt: Instant = Instant.now()
@@ -118,6 +130,9 @@ class MealFood(
     /**
      * 이름을 바꾼다. 이름이 달라지면 사용자가 고정하지 않은 1인분 영양과 아이콘을 비워, 새 이름으로 다시 구하게 한다.
      * 사용자가 직접 고친 영양과 직접 고른 아이콘은 이름을 바꿔도 그대로 둔다.
+     *
+     * 용량은 이름이 달라지면 늘 비운다. 사진에서 읽은 그 제품의 용량이라 다른 이름에는 맞지 않을 수 있고,
+     * 사용자에게 보이지 않는 값이라 남겨 두면 모르는 사이에 다른 제품의 값을 찾는 데 쓰인다.
      */
     fun updateName(name: String) {
         if (this.name == name) {
@@ -125,6 +140,8 @@ class MealFood(
         }
 
         this.name = name
+        this.netContent = null
+        this.netContentUnit = null
         if (!isNutritionFixed) {
             this.servingCalory = null
             this.servingCarbs = null
@@ -179,6 +196,12 @@ class MealFood(
 
     fun updateIconId(iconId: Long) {
         this.iconId = iconId
+    }
+
+    /** 인식이 사진에서 읽은 제품의 총 내용량과 단위를 적는다. 둘은 함께 있거나 함께 없다. */
+    fun updateNetContent(netContent: BigDecimal, netContentUnit: NetContentUnit) {
+        this.netContent = netContent
+        this.netContentUnit = netContentUnit
     }
 
     companion object {

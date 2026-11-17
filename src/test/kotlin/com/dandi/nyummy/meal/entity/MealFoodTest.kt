@@ -2,6 +2,7 @@ package com.dandi.nyummy.meal.entity
 
 import com.dandi.nyummy.meal.dto.NutritionHint
 import com.dandi.nyummy.meal.dto.ServingNutrition
+import com.dandi.nyummy.meal.enum.NetContentUnit
 import java.math.BigDecimal
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -79,6 +80,42 @@ class MealFoodTest {
         assertEquals(7L, mealFood.iconId)
         assertTrue(mealFood.isIconFixed)
         assertNull(mealFood.servingNutrition)
+    }
+
+    @Test
+    fun `이름이 바뀌면 용량을 비운다`() {
+        val mealFood = createMealFood().apply { updateNetContent(BigDecimal("250.0"), NetContentUnit.ML) }
+
+        mealFood.updateName("제육볶음")
+
+        assertNull(mealFood.netContent)
+        assertNull(mealFood.netContentUnit)
+    }
+
+    @Test
+    fun `같은 이름이면 용량을 그대로 둔다`() {
+        val mealFood = createMealFood().apply { updateNetContent(BigDecimal("250.0"), NetContentUnit.ML) }
+
+        mealFood.updateName("불고기")
+
+        assertEquals(BigDecimal("250.0"), mealFood.netContent)
+        assertEquals(NetContentUnit.ML, mealFood.netContentUnit)
+    }
+
+    @Test
+    fun `영양과 아이콘을 고정한 줄도 이름이 바뀌면 용량은 비운다`() {
+        val mealFood = createMealFood().apply {
+            updateFixedServingNutrition(fixedServingNutrition)
+            updateFixedIconId(7L)
+            updateNetContent(BigDecimal("120.0"), NetContentUnit.G)
+        }
+
+        mealFood.updateName("제육볶음")
+
+        assertNull(mealFood.netContent)
+        assertNull(mealFood.netContentUnit)
+        assertEquals(fixedServingNutrition, mealFood.servingNutrition)
+        assertEquals(7L, mealFood.iconId)
     }
 
     // updateFixedServingNutrition·updateFixedIconId
