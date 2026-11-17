@@ -191,8 +191,11 @@ class MealTransactionServiceTest {
         promptVersion = "v1",
     )
 
-    private fun createMealV2(outcome: MealRecognitionOutcome, language: Language = Language.KO) =
-        mealTransactionService.createMealV2(meal, outcome, rewardBox, rewardMailExpiresAt, nutritionDelay, language)
+    private fun createMealV2(
+        outcome: MealRecognitionOutcome,
+        language: Language = Language.KO,
+        rewardBox: RewardBoxResult? = this.rewardBox,
+    ) = mealTransactionService.createMealV2(meal, outcome, rewardBox, rewardMailExpiresAt, nutritionDelay, language)
 
     @Test
     fun `음식으로 인식했으면 요청 안에서 인식한 것으로 음식 줄을 저장하고 저장한 줄을 돌려준다`() {
@@ -251,18 +254,33 @@ class MealTransactionServiceTest {
     }
 
     @Test
-    fun `인식 결과와 상관없이 보상 상자 우편을 만들고 연속 기록을 갱신한다`() {
+    fun `받은 보상 상자가 있으면 그 상자의 우편을 요청의 언어로 만든다`() {
+        createMealV2(MealRecognitionOutcome.Recognized(recognition), Language.EN)
+
+        verify(exactly = 1) {
+            mailService.createMealRewardMail(userId, RewardBoxCategory.GOLD, 412, rewardMailExpiresAt, Language.EN)
+        }
+    }
+
+    @Test
+    fun `받은 보상 상자가 없으면 식사는 저장하고 우편은 만들지 않는다`() {
         val outcomes = listOf(
-            MealRecognitionOutcome.Recognized(recognition),
             MealRecognitionOutcome.NotFood,
             MealRecognitionOutcome.Deferred(MealRecognitionDeferralCategory.SATURATED),
         )
 
-        outcomes.forEach { createMealV2(it) }
+        outcomes.forEach { createMealV2(it, rewardBox = null) }
 
-        verify(exactly = 3) {
-            mailService.createMealRewardMail(userId, RewardBoxCategory.GOLD, 412, rewardMailExpiresAt, Language.KO)
-        }
+        verify(exactly = 2) { mealRepository.save(meal) }
+        verify(exactly = 0) { mailService.createMealRewardMail(any(), any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `보상 상자를 주지 않는 식사도 연속 기록은 갱신한다`() {
+        createMealV2(MealRecognitionOutcome.Recognized(recognition))
+        createMealV2(MealRecognitionOutcome.NotFood, rewardBox = null)
+        createMealV2(MealRecognitionOutcome.Deferred(MealRecognitionDeferralCategory.SATURATED), rewardBox = null)
+
         verify(exactly = 3) { streakService.updateStreak(userId) }
     }
 

@@ -3,9 +3,11 @@ package com.dandi.nyummy.worker.service
 import com.dandi.nyummy.cat.repository.CatRepository
 import com.dandi.nyummy.cat.service.CatService
 import com.dandi.nyummy.language.enum.Language
+import com.dandi.nyummy.mail.service.MailService
 import com.dandi.nyummy.meal.calculator.calculateMealNutrition
 import com.dandi.nyummy.meal.dto.MealRecognitionResult
 import com.dandi.nyummy.meal.dto.NutritionAnalysisResult
+import com.dandi.nyummy.meal.dto.RewardBoxResult
 import com.dandi.nyummy.meal.dto.ServingNutritionResult
 import com.dandi.nyummy.meal.entity.Icon
 import com.dandi.nyummy.meal.entity.Meal
@@ -45,6 +47,7 @@ class MealAnalysisJobTransactionService(
     private val mealAnalysisJobRepository: MealAnalysisJobRepository,
     private val mealRepository: MealRepository,
     private val mealFoodService: MealFoodService,
+    private val mailService: MailService,
     private val catRepository: CatRepository,
     private val catService: CatService,
     private val workerProperties: WorkerProperties,
@@ -159,10 +162,19 @@ class MealAnalysisJobTransactionService(
      * 인식 작업 행을 영양 작업으로 바꿔 쓰지 않고 새 행을 만든다. 같은 행을 쓰면 영양 작업의 시도 횟수를 0부터 다시 세야 하는데,
      * 그러면 늦게 끝난 인식 Worker의 번호가 영양 작업의 번호와 같아져 결과를 쓸 수 있다. 새 행은 id가 달라 그럴 일이 없다.
      *
-     * 인식하는 동안 사용자가 식사를 지웠으면 인식 작업만 지우고 끝낸다. 음식 줄과 영양 작업을 만들지 않아 더 계산하지 않는다.
+     * 인식하는 동안 사용자가 식사를 지웠으면 인식 작업만 지우고 끝낸다. 음식 줄과 영양 작업을 만들지 않아 더 계산하지 않고,
+     * 보상 상자도 주지 않는다.
+     *
+     * 식사 기록 보상 상자는 식사가 처음 음식으로 인식됐을 때 한 번 준다. 요청 안에서 인식한 식사는 기록할 때 이미 받았고,
+     * 여기서는 아직 받지 못한 식사에만 준다: 기록할 때 인식을 넘긴 식사와, 음식이 아니라고 판정됐거나 인식에 실패한 뒤 다시 분석한 식사다.
+     * 이미 받았는지는 식사의 입력 유형으로 가린다([MealInputCategory.isFood]). 음식으로 인식됐다가 영양 계산에서 실패해 다시 분석한
+     * 식사는 입력 유형이 음식 유형으로 남아 있어 다시 주지 않는다. 그래서 입력 유형을 새 결과로 덮기 전에 확인한다.
+     * 식사를 잠가 읽은 뒤에 확인하고 우편도 같은 트랜잭션에 저장하므로, 같은 식사에 두 번 주거나 우편만 남는 일이 없다.
      *
      * @param recognition 음식 인식 결과
      * @param nutritionDelay 영양 작업을 가져가기까지 기다리는 시간
+     * @param rewardBox 이 식사가 아직 보상 상자를 받지 못했으면 줄 상자
+     * @param rewardMailExpiresAt 보상 상자 우편의 만료 시각
      * @return 이 Worker의 작업이라 인식 작업을 끝냈으면 true. lease가 만료돼 다른 Worker가 가져갔으면 false
      */
     @Transactional
@@ -170,6 +182,8 @@ class MealAnalysisJobTransactionService(
         job: MealAnalysisJobResult,
         recognition: MealRecognitionResult,
         nutritionDelay: Duration,
+        rewardBox: RewardBoxResult,
+        rewardMailExpiresAt: Instant,
     ): Boolean {
         val meal = deleteJobAndGetMeal(job) ?: return false
         if (meal.deletedAt != null) {
@@ -177,6 +191,7 @@ class MealAnalysisJobTransactionService(
             return true
         }
 
+        val isRewarded = meal.inputCategory?.isFood == true
         meal.updateName(recognition.name)
         meal.updateInputCategory(recognition.inputCategory)
         meal.updateStatus(MealStatus.CONFIRMING)
@@ -191,6 +206,15 @@ class MealAnalysisJobTransactionService(
         )
         if (nutritionDelay.toSeconds() > 0) {
             mealAnalysisJobRepository.updateAvailableAt(nutritionJob.id, nutritionDelay.toSeconds())
+        }
+        if (!isRewarded) {
+            mailService.createMealRewardMail(
+                userId = meal.userId,
+                rewardBoxCategory = rewardBox.category,
+                coinQuantity = rewardBox.coinQuantity,
+                expiresAt = rewardMailExpiresAt,
+                language = job.language,
+            )
         }
 
         return true

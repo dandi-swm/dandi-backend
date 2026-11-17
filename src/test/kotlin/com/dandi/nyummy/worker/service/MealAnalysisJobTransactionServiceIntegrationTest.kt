@@ -4,8 +4,13 @@ import com.dandi.nyummy.auth.enum.AuthProvider
 import com.dandi.nyummy.cat.repository.CatRepository
 import com.dandi.nyummy.cat.service.CatService
 import com.dandi.nyummy.language.enum.Language
+import com.dandi.nyummy.mail.enum.MailCategory
+import com.dandi.nyummy.mail.enum.RewardBoxCategory
+import com.dandi.nyummy.mail.repository.MailRepository
+import com.dandi.nyummy.mail.service.MailService
 import com.dandi.nyummy.meal.dto.MealFoodRecognitionResult
 import com.dandi.nyummy.meal.dto.MealRecognitionResult
+import com.dandi.nyummy.meal.dto.RewardBoxResult
 import com.dandi.nyummy.meal.dto.ServingNutrition
 import com.dandi.nyummy.meal.dto.ServingNutritionResult
 import com.dandi.nyummy.meal.entity.Icon
@@ -68,7 +73,9 @@ class MealAnalysisJobTransactionServiceIntegrationTest @Autowired constructor(
     private val mealAnalysisJobRepository: MealAnalysisJobRepository,
     private val iconRepository: IconRepository,
     private val jdbcTemplate: JdbcTemplate,
-    mealFoodService: MealFoodService,
+    private val mailRepository: MailRepository,
+    private val mealFoodService: MealFoodService,
+    mailService: MailService,
     catRepository: CatRepository,
     catService: CatService,
     transactionManager: PlatformTransactionManager,
@@ -94,6 +101,7 @@ class MealAnalysisJobTransactionServiceIntegrationTest @Autowired constructor(
         mealAnalysisJobRepository = mealAnalysisJobRepository,
         mealRepository = mealRepository,
         mealFoodService = mealFoodService,
+        mailService = mailService,
         catRepository = catRepository,
         catService = catService,
         workerProperties = WorkerProperties(enabled = true),
@@ -135,7 +143,13 @@ class MealAnalysisJobTransactionServiceIntegrationTest @Autowired constructor(
     }!!.singleOrNull { it.mealId == mealId }
 
     private fun confirmMealRecognition(job: MealAnalysisJobResult): Boolean = transactionTemplate.execute {
-        mealAnalysisJobTransactionService.confirmMealRecognition(job, recognition, NUTRITION_DELAY)
+        mealAnalysisJobTransactionService.confirmMealRecognition(
+            job = job,
+            recognition = recognition,
+            nutritionDelay = NUTRITION_DELAY,
+            rewardBox = RewardBoxResult(RewardBoxCategory.GOLD, 412),
+            rewardMailExpiresAt = Instant.now(clock).plus(Duration.ofDays(7)),
+        )
     }!!
 
     private fun findJob(mealId: Long): MealAnalysisJob? =
@@ -184,6 +198,38 @@ class MealAnalysisJobTransactionServiceIntegrationTest @Autowired constructor(
         assertTrue(leaseExpiresAt > Instant.now().plus(NUTRITION_DELAY).minus(Duration.ofMinutes(1)))
         // 가져갈 수 있게 되는 시각을 따로 남긴다. lease_expires_at은 가져갈 때 덮인다.
         assertEquals(leaseExpiresAt, nutritionJob.availableAt)
+
+        // 기록할 때 받지 못한 보상 상자 우편이 인식과 함께 생긴다.
+        val mail = mailRepository.findAll().single { it.userId == meal.userId }
+        assertEquals(MailCategory.REWARD_BOX, mail.category)
+        assertEquals(RewardBoxCategory.GOLD, mail.rewardBoxCategory)
+        assertEquals(412, mail.coinQuantity)
+    }
+
+    @Test
+    fun `음식으로 인식됐던 식사를 다시 분석해 또 인식해도 보상 상자 우편은 하나다`() {
+        val meal = createRecognizingMeal("rewarded-once@nyummy.co.kr")
+        confirmMealRecognition(assertNotNull(leaseJob(meal.id)))
+        assertEquals(1, mailRepository.findAll().count { it.userId == meal.userId })
+
+        // 영양 계산에서 실패한 식사를 다시 분석할 때처럼 음식 줄과 작업을 지우고 인식 작업을 새로 만든다. 입력 유형은 그대로 남는다.
+        // 작업은 한 문장으로 바로 지운다. 엔티티로 지우면 새 작업의 INSERT가 먼저 나가 식사당 작업 하나라는 유니크 제약에 걸린다.
+        val nutritionJobId = assertNotNull(findJob(meal.id)).id
+        transactionTemplate.execute {
+            mealAnalysisJobRepository.deleteMealAnalysisJobById(nutritionJobId)
+            mealFoodService.deleteMealFoods(meal.id)
+            mealAnalysisJobRepository.save(
+                MealAnalysisJob(
+                    mealId = meal.id,
+                    language = Language.JA,
+                    category = MealAnalysisJobCategory.RECOGNITION,
+                ),
+            )
+        }
+        assertTrue(confirmMealRecognition(assertNotNull(leaseJob(meal.id))))
+
+        assertEquals(2, mealFoodRepository.findAll().count { it.mealId == meal.id })
+        assertEquals(1, mailRepository.findAll().count { it.userId == meal.userId })
     }
 
     @Test

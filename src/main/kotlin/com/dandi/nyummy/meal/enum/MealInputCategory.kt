@@ -30,4 +30,12 @@ enum class MealInputCategory {
      */
     val isPackage: Boolean
         get() = this == PACKAGE || this == NUTRITION_LABEL
+
+    /**
+     * 음식으로 인식한 유형인지([NOT_FOOD]가 아닌 모든 유형). 식사의 입력 유형은 음식으로 인식될 때만 이 유형이 되고
+     * 다시 분석해도 지워지지 않으므로, 식사의 입력 유형이 이 유형이면 음식으로 인식된 적이 있는 식사다.
+     * 식사 기록 보상 상자를 이미 받은 식사인지를 이것으로 가린다.
+     */
+    val isFood: Boolean
+        get() = this != NOT_FOOD
 }

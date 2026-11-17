@@ -17,7 +17,9 @@ import com.dandi.nyummy.infra.storage.s3.dto.S3ObjectContentResult
 import com.dandi.nyummy.language.createTestMessageSource
 import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.language.getMessage
+import com.dandi.nyummy.mail.enum.RewardBoxCategory
 import com.dandi.nyummy.meal.config.MealProperties
+import com.dandi.nyummy.meal.config.RewardBoxProperties
 import com.dandi.nyummy.meal.dto.CatCommentMealFoodInput
 import com.dandi.nyummy.meal.dto.MealFoodRecognitionResult
 import com.dandi.nyummy.meal.dto.MealRecognitionResult
@@ -26,6 +28,7 @@ import com.dandi.nyummy.meal.dto.NutritionAnalysisResult
 import com.dandi.nyummy.meal.dto.NutritionHint
 import com.dandi.nyummy.meal.dto.PhotoServingNutritionInput
 import com.dandi.nyummy.meal.dto.PhotoServingNutritionResult
+import com.dandi.nyummy.meal.dto.RewardBoxResult
 import com.dandi.nyummy.meal.dto.ServingNutrition
 import com.dandi.nyummy.meal.dto.ServingNutritionResult
 import com.dandi.nyummy.meal.entity.MealFood
@@ -53,6 +56,7 @@ import java.time.Duration
 import java.time.Instant
 import java.time.ZoneOffset
 import java.util.concurrent.TimeUnit
+import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -81,6 +85,18 @@ class AnalysisServiceTest {
     private val mealAnalysisJobTransactionService = mockk<MealAnalysisJobTransactionService>()
     private val mealProperties = mockk<MealProperties> {
         every { recognition.nutritionDelay } returns nutritionDelay
+        every { rewardBoxes } returns mapOf(
+            RewardBoxCategory.BRONZE to RewardBoxProperties(rate = 40, minCoinQuantity = 100, maxCoinQuantity = 199),
+            RewardBoxCategory.SILVER to RewardBoxProperties(rate = 40, minCoinQuantity = 200, maxCoinQuantity = 349),
+            RewardBoxCategory.GOLD to RewardBoxProperties(rate = 20, minCoinQuantity = 350, maxCoinQuantity = 500),
+        )
+        every { rewardMailTimeToLive } returns Duration.ofDays(7)
+    }
+
+    // 0~99에서 85가 나오면 골드이고, 골드의 코인 범위에서 412를 뽑는다.
+    private val random = mockk<Random> {
+        every { nextInt(100) } returns 85
+        every { nextInt(350, 501) } returns 412
     }
     private val catRepository = mockk<CatRepository>()
     private val notificationService = mockk<NotificationService>()
@@ -112,6 +128,7 @@ class AnalysisServiceTest {
         meterRegistry = meterRegistry,
         clock = clock,
         messageSource = messageSource,
+        random = random,
     )
 
     private val retryableJob = createJob(canRetry = true)
@@ -469,7 +486,8 @@ class AnalysisServiceTest {
     private fun givenRecognitionSuccess(job: MealAnalysisJobResult) {
         givenImage(job)
         every { mealRecognitionClient.recognizeMeal(imageBytes, "image/jpeg", job.language, null) } returns recognition
-        every { mealAnalysisJobTransactionService.confirmMealRecognition(any(), any(), any()) } returns true
+        every { mealAnalysisJobTransactionService.confirmMealRecognition(any(), any(), any(), any(), any()) } returns
+            true
     }
 
     private fun givenRecognitionFailure(job: MealAnalysisJobResult, category: AnalysisFailureCategory) {
@@ -485,11 +503,34 @@ class AnalysisServiceTest {
         analysisService.analyzeMealAnalysisJob(recognitionJob)
 
         verify(exactly = 1) {
-            mealAnalysisJobTransactionService.confirmMealRecognition(recognitionJob, recognition, nutritionDelay)
+            mealAnalysisJobTransactionService.confirmMealRecognition(
+                job = recognitionJob,
+                recognition = recognition,
+                nutritionDelay = nutritionDelay,
+                rewardBox = any(),
+                rewardMailExpiresAt = any(),
+            )
         }
         // 인식 작업은 v1 분석을 부르지 않는다.
         verify(exactly = 0) { nutritionAnalysisClient.analyzeNutrition(any(), any()) }
         verify(exactly = 0) { mealAnalysisJobTransactionService.confirmMealAnalysis(any(), any()) }
+    }
+
+    @Test
+    fun `인식 작업은 뽑은 보상 상자와 지금부터 센 우편 만료 시각을 확정에 넘긴다`() {
+        givenRecognitionSuccess(recognitionJob)
+
+        analysisService.analyzeMealAnalysisJob(recognitionJob)
+
+        verify(exactly = 1) {
+            mealAnalysisJobTransactionService.confirmMealRecognition(
+                job = any(),
+                recognition = any(),
+                nutritionDelay = any(),
+                rewardBox = RewardBoxResult(RewardBoxCategory.GOLD, 412),
+                rewardMailExpiresAt = now.plus(Duration.ofDays(7)),
+            )
+        }
     }
 
     @Test
@@ -524,7 +565,8 @@ class AnalysisServiceTest {
     @Test
     fun `다른 Worker가 가져가 인식 결과를 쓰지 못했으면 아무것도 세지 않는다`() {
         givenRecognitionSuccess(recognitionJob)
-        every { mealAnalysisJobTransactionService.confirmMealRecognition(any(), any(), any()) } returns false
+        every { mealAnalysisJobTransactionService.confirmMealRecognition(any(), any(), any(), any(), any()) } returns
+            false
 
         analysisService.analyzeMealAnalysisJob(recognitionJob)
 
@@ -539,7 +581,9 @@ class AnalysisServiceTest {
         analysisService.analyzeMealAnalysisJob(recognitionJob)
 
         verify(exactly = 1) { mealAnalysisJobTransactionService.failMealAnalysis(recognitionJob) }
-        verify(exactly = 0) { mealAnalysisJobTransactionService.confirmMealRecognition(any(), any(), any()) }
+        verify(exactly = 0) {
+            mealAnalysisJobTransactionService.confirmMealRecognition(any(), any(), any(), any(), any())
+        }
         assertFailedPushSent(title = "음식 사진이 아닌 것 같다냥 🐾", body = "음식이 보이게 다시 찍어줄래?")
         assertEquals(1, countAnalysis("failed", "not_food"))
     }

@@ -64,13 +64,15 @@ data class CreateMealResponse(val id: Long, val status: MealStatus, val rewardBo
 /**
  * v2 식사 기록 응답. 5초 안에 인식하면 대표 이름과 음식 목록을 함께 준다.
  *
+ * @property rewardBoxCategory 이 기록으로 받은 보상 상자의 등급. 인식 전이거나 음식이 아니면 null.
+ *   인식 전인 식사는 음식으로 인식된 뒤에 보상 상자 우편이 생긴다
  * @property name AI가 추천한 대표 이름(20자 이내). 인식 전이면 null, 음식이 아니면 빈 문자열
  * @property foods 인식된 음식 줄. 인식 전이거나 음식이 아니면 null
  */
 data class CreateMealV2Response(
     val id: Long,
     val status: MealStatus,
-    val rewardBoxCategory: RewardBoxCategory,
+    val rewardBoxCategory: RewardBoxCategory?,
     val name: String?,
     val foods: List<MealFoodResponse>?,
 )
