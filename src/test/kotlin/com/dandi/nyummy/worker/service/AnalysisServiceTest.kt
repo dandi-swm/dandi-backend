@@ -1446,7 +1446,7 @@ class AnalysisServiceTest {
     // 모델이 이름으로 구한 값. 표시값과 허용 오차(10%, 작은 값은 1) 안이다.
     private val namedResult = ServingNutritionResult(createServingNutrition("95", "5", "20", "0"), 6L)
 
-    /** 제품 사진에서 인식한 줄. 아이콘은 아직 없다. */
+    /** 제품 사진에서 인식한 줄. 포장에서 제품명을 읽었고 아이콘은 아직 없다. */
     private fun createPackageMealFood(
         mealFoodId: Long = 201L,
         name: String = packageName,
@@ -1455,6 +1455,7 @@ class AnalysisServiceTest {
         netContent: BigDecimal? = this.netContent,
         netContentUnit: NetContentUnit? = NetContentUnit.ML,
         isNutritionFixed: Boolean = false,
+        hasPackageName: Boolean = true,
     ) = AnalysisMealFoodResult(
         mealFoodId = mealFoodId,
         name = name,
@@ -1466,6 +1467,7 @@ class AnalysisServiceTest {
         netContent = netContent,
         netContentUnit = netContentUnit,
         isNutritionFixed = isNutritionFixed,
+        hasPackageName = hasPackageName,
     )
 
     private fun givenPackageMeal(vararg mealFoods: AnalysisMealFoodResult) = givenAnalysisMeal(
@@ -1711,6 +1713,51 @@ class AnalysisServiceTest {
         analysisService.analyzeMealAnalysisJob(nutritionJob)
 
         assertEquals(7L, getConfirmed().getValue(201L).iconId)
+        verifyNoPackageNutritionChange()
+    }
+
+    // 포장에서 제품명을 읽지 못한 줄
+
+    @Test
+    fun `제품명을 읽지 못한 줄은 네 값이 다 적혀 있어도 저장하지 않고 모델 값과 달랐다는 기록도 남기지 않는다`() {
+        // 영양성분표 면만 찍은 사진. 이름이 그 면의 문구나 종류라, 그 이름으로 저장하면 다른 제품에도 맞는다.
+        val differentNamedResult = ServingNutritionResult(createServingNutrition("140", "10", "15", "3"), 6L)
+        givenPackageMeal(
+            createPackageMealFood(name = "단백질 음료", servingNutrition = labelServingNutrition, hasPackageName = false),
+        )
+        givenNamedPackageNutritions(listOf("단백질 음료 250ml"), listOf(differentNamedResult))
+        val getConfirmed = captureConfirmedServingNutritions()
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        // 아이콘은 모델에서 받는다.
+        assertEquals(6L, getConfirmed().getValue(201L).iconId)
+        verifyNoPackageNutritionChange()
+    }
+
+    @Test
+    fun `제품명을 읽지 못한 줄은 저장해 둔 값이 있어도 비교하지도 바꾸지도 않고 아이콘만 받는다`() {
+        val savedServingNutrition = createServingNutrition("110.00", "5.00", "20.00", "1.00")
+        givenPackageMeal(createPackageMealFood(servingNutrition = labelServingNutrition, hasPackageName = false))
+        givenSavedPackageNutrition(ServingNutritionResult(savedServingNutrition, 6L))
+        val getConfirmed = captureConfirmedServingNutritions()
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        assertEquals(6L, getConfirmed().getValue(201L).iconId)
+        verify(exactly = 0) { servingNutritionClient.getNamedServingNutritions(any(), any()) }
+        verifyNoPackageNutritionChange()
+    }
+
+    @Test
+    fun `제품명을 읽지 못한 줄도 값이 비어 있으면 저장해 둔 값을 찾아 쓴다`() {
+        givenPackageMeal(createPackageMealFood(hasPackageName = false))
+        givenSavedPackageNutrition(ServingNutritionResult(labelServingNutrition, 6L))
+        val getConfirmed = captureConfirmedServingNutritions()
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        assertEquals(ServingNutritionResult(labelServingNutrition, 6L), getConfirmed().getValue(201L))
         verifyNoPackageNutritionChange()
     }
 

@@ -34,6 +34,7 @@ data class AnalysisMealResult(
  * @property netContent 사진에서 읽은 제품의 총 내용량. 제품이 아니거나 읽지 못했으면 null
  * @property netContentUnit 총 내용량의 단위. [netContent]와 함께 있거나 함께 없다
  * @property isNutritionFixed 사용자가 영양을 직접 적은 줄인지. 이런 줄의 값은 사진에서 읽은 값이 아니다
+ * @property hasPackageName 이름이 포장에서 읽은 제품명인지. 아니면 이 줄의 값을 제품의 값으로 저장하지 않는다
  */
 data class AnalysisMealFoodResult(
     val mealFoodId: Long,
@@ -46,4 +47,5 @@ data class AnalysisMealFoodResult(
     val netContent: BigDecimal? = null,
     val netContentUnit: NetContentUnit? = null,
     val isNutritionFixed: Boolean = false,
+    val hasPackageName: Boolean = false,
 )

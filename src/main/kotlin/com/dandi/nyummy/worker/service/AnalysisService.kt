@@ -328,7 +328,8 @@ class AnalysisService(
      * 제품 유형의 줄마다 제품 하나의 값과 아이콘을 구한다. 제품 이름과 용량으로 저장해 둔 표시값을 먼저 찾고,
      * 없는 제품만 모아 모델에 묻는다. 모델에는 이름 뒤에 용량을 붙여 보내 그 용량의 값을 답하게 한다.
      *
-     * 저장해 둔 값은 사진에서 읽은 표시값뿐이다. 그래서 줄에 사진 값이 있을 때만 저장하거나 바꾼다([convertNutritionHint]).
+     * 저장해 둔 값은 제품명과 함께 사진에서 읽은 표시값뿐이다. 그래서 줄에 그런 사진 값이 있을 때만 저장하거나 바꾼다
+     * ([convertNutritionHint]). 제품명을 읽지 못한 줄과 사용자가 영양을 직접 적은 줄은 저장해 둔 값을 찾아 쓰기만 한다.
      * - 저장해 둔 값이 있으면 모델을 부르지 않는다. 사진 값이 그 값과 다르면 기록하고, 네 값이 다 적힌 사진이면 그 값으로 바꾼다
      *   ([updateSavedPackageNutrition]).
      * - 저장해 둔 값이 없고 네 값이 다 적힌 사진이면 그 값을 저장한다([createPackageNutrition]). 아이콘은 모델이 고른 것이다.
@@ -395,10 +396,13 @@ class AnalysisService(
      * 모델이 값을 구한 줄은 아이콘도 함께 채워져 다시 오지 않는다. 그래서 값이 있는 채로 오는 줄은 사진 값이 적힌 줄이거나
      * 사용자가 영양을 직접 적은 줄이다. 사용자가 적은 값은 먹은 양에 맞춘 값이거나 어림값일 수 있어 사진 값으로 치지 않는다.
      *
-     * @return 사진 값이 없으면 null
+     * 이름이 포장에서 읽은 제품명이 아닌 줄의 값도 치지 않는다. 영양성분표 면만 찍은 사진은 제품명이 없어 그 면의 문구나
+     * 종류("단백질 음료")가 이름이 되는데, 그 이름으로 값을 저장하면 다른 제품의 사진에도 맞아 틀린 값을 준다.
+     *
+     * @return 저장하거나 비교할 사진 값이 없으면 null
      */
     private fun convertNutritionHint(mealFood: AnalysisMealFoodResult): NutritionHint? {
-        if (mealFood.isNutritionFixed) {
+        if (mealFood.isNutritionFixed || !mealFood.hasPackageName) {
             return null
         }
 

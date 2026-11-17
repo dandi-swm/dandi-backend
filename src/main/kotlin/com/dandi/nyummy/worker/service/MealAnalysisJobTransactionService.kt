@@ -250,6 +250,7 @@ class MealAnalysisJobTransactionService(
                     netContent = it.netContent,
                     netContentUnit = it.netContentUnit,
                     isNutritionFixed = it.isNutritionFixed,
+                    hasPackageName = it.hasPackageName,
                 )
             },
         )
