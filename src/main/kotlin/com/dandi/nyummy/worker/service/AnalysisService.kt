@@ -74,7 +74,7 @@ class AnalysisService(
         // 설정 오류로 되돌린 작업을 다시 가져가기까지 기다리는 시간. 설정이 고장 난 동안 Gemini를 1초마다 부르지 않게 한다.
         private val MISCONFIGURED_DELAY = Duration.ofMinutes(1)
 
-        // 분석 시도 한 번의 결과와 걸린 시간(S3 다운로드 + Gemini + 결과 저장). job 태그로 작업 종류를 나눈다.
+        // 분석 시도 한 번의 결과와 걸린 시간(S3 다운로드 + Gemini + 결과 저장). job.category 태그로 작업 종류를 나눈다.
         private const val ANALYSIS_METER = "nyummy.meal.analysis"
 
         // 작업을 가져갈 수 있게 된 때부터 끝날 때까지 걸린 시간. 사용자가 결과를 기다린 시간이다.
@@ -82,7 +82,11 @@ class AnalysisService(
         // 인식 작업은 식사 기록부터 음식 목록이 준비될 때까지(outcome이 recognized)다.
         private const val ANALYSIS_ELAPSED_METER = "nyummy.meal.analysis.elapsed"
 
-        // 종류가 없는 작업(v1 분석)의 job 태그 값
+        // 작업 종류를 담는 태그. 이름을 job으로 두면 지표를 받는 쪽(Prometheus)이 서비스 이름으로 만드는 job 라벨과 겹쳐
+        // 이 태그가 덮인다. 그러면 작업 종류가 모두 서비스 이름 하나로 보여 종류별로 나눌 수 없다.
+        private const val JOB_CATEGORY_TAG = "job.category"
+
+        // 종류가 없는 작업(v1 분석)의 job.category 태그 값
         private const val V1_JOB = "v1"
 
         // 분류된 실패가 아닌 예외의 category 태그 값
@@ -637,7 +641,7 @@ class AnalysisService(
         val now = Instant.now(clock)
         val jobTag = job.category?.name?.lowercase() ?: V1_JOB
         Timer.builder(ANALYSIS_METER)
-            .tag("job", jobTag)
+            .tag(JOB_CATEGORY_TAG, jobTag)
             .tag("outcome", outcome.tagValue)
             .tag("category", category)
             .register(meterRegistry)
@@ -645,7 +649,7 @@ class AnalysisService(
 
         if (outcome.isFinal) {
             Timer.builder(ANALYSIS_ELAPSED_METER)
-                .tag("job", jobTag)
+                .tag(JOB_CATEGORY_TAG, jobTag)
                 .tag("outcome", outcome.tagValue)
                 .register(meterRegistry)
                 .record(Duration.between(job.availableAt, now))
