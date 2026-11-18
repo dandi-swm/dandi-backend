@@ -247,6 +247,10 @@ class MealAnalysisJobTransactionService(
                     iconId = it.iconId,
                     nutritionHint = it.nutritionHint,
                     isRecognized = it.mealFoodSnapshotId != null,
+                    netContent = it.netContent,
+                    netContentUnit = it.netContentUnit,
+                    isNutritionFixed = it.isNutritionFixed,
+                    hasPackageName = it.hasPackageName,
                 )
             },
         )

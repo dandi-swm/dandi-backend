@@ -14,6 +14,9 @@ private const val SERVING_SCALE = 2
 // 적힌 값에 맞출 때 곱하는 비율의 소수 자릿수. 맞춘 값을 다시 더했을 때 적힌 값에서 벗어나지 않을 만큼 둔다.
 private const val RATE_SCALE = 8
 
+// 영양 값의 차이가 이 값 이하이면 비율과 상관없이 같다고 본다. 작은 값은 조금만 달라도 비율로는 크게 벗어난다.
+private val SMALL_NUTRIENT_DIFFERENCE = BigDecimal.ONE
+
 /**
  * 음식 한 줄의 영양. 1인분 × 인분을 정수로 반올림한 값이라 응답에 그대로 쓴다.
  *
@@ -95,6 +98,43 @@ fun calculateHintedServingNutrition(
         fat = calculateNutrient(nutritionHint.fat, servingNutrition.fat),
     )
 }
+
+/**
+ * 사진에 적혀 있던 값이 다른 값과 같은지. 적혀 있던 항목만 비교하고, 숫자가 같아야 같다고 본다(소수 자릿수 표현은 가리지 않는다).
+ * 저장해 둔 표시값과 새로 읽은 표시값을 비교할 때 쓴다. 둘 다 표시값이라 조금이라도 다르면 다른 값이다.
+ *
+ * @param nutritionHint 사진에 적혀 있던 값. 일부 항목만 있을 수 있다
+ * @param servingNutrition 비교할 값
+ */
+fun matchesNutritionHint(nutritionHint: NutritionHint, servingNutrition: ServingNutrition): Boolean =
+    createNutritionHintPairs(nutritionHint, servingNutrition).all { (hint, serving) -> hint.compareTo(serving) == 0 }
+
+/**
+ * 사진에 적혀 있던 값이 다른 값과 허용 오차 안에서 같은지. 적혀 있던 항목만 비교하고, 모든 항목이 맞아야 한다.
+ * 모델이 구한 값을 표시값과 비교할 때 쓴다.
+ *
+ * 항목마다 차이가 적힌 값의 [tolerance] 비율 이하이면 같다고 본다. 작은 값은 비율로 보면 조금만 달라도 크게 벗어나므로
+ * (3g과 4g은 33%), 차이가 1 이하이면 비율과 상관없이 같다고 본다.
+ *
+ * @param tolerance 적힌 값에서 벗어나도 되는 비율(0.1 = ±10%)
+ */
+fun matchesNutritionHint(nutritionHint: NutritionHint, servingNutrition: ServingNutrition, tolerance: Double): Boolean =
+    createNutritionHintPairs(nutritionHint, servingNutrition).all { (hint, serving) ->
+        val difference = (hint - serving).abs()
+
+        difference <= SMALL_NUTRIENT_DIFFERENCE || difference <= hint * BigDecimal.valueOf(tolerance)
+    }
+
+/** 사진에 적혀 있던 항목과 그 항목의 비교할 값을 짝지은 목록. 적혀 있지 않던 항목은 뺀다. */
+private fun createNutritionHintPairs(
+    nutritionHint: NutritionHint,
+    servingNutrition: ServingNutrition,
+): List<Pair<BigDecimal, BigDecimal>> = listOfNotNull(
+    nutritionHint.calory?.let { it to servingNutrition.calory },
+    nutritionHint.carbs?.let { it to servingNutrition.carbs },
+    nutritionHint.protein?.let { it to servingNutrition.protein },
+    nutritionHint.fat?.let { it to servingNutrition.fat },
+)
 
 /**
  * 사진에 적혀 있던 식사 전체의 값에 음식 줄들의 1인분을 맞춘다. 영양소마다 줄들의 (1인분 × 인분) 합이 적힌 값과 같아지게

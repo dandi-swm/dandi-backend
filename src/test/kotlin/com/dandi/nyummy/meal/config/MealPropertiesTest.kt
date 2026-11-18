@@ -3,6 +3,7 @@ package com.dandi.nyummy.meal.config
 import com.dandi.nyummy.mail.enum.RewardBoxCategory
 import java.time.Duration
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
 class MealPropertiesTest {
@@ -29,6 +30,7 @@ class MealPropertiesTest {
             nutritionDelay = Duration.ofMinutes(5),
         ),
         foodNutrition = FoodNutritionProperties(timeToLive = Duration.ofDays(7), caloryTolerance = 0.1),
+        packageNutrition = PackageNutritionProperties(tolerance = 0.1),
     )
 
     // rewardBoxes
@@ -72,5 +74,12 @@ class MealPropertiesTest {
         assertFailsWith<IllegalArgumentException> {
             RewardBoxProperties(rate = 101, minCoinQuantity = 100, maxCoinQuantity = 199)
         }
+    }
+
+    @Test
+    fun `제품 영양의 허용 오차가 0과 1 사이가 아니면 만들 수 없다`() {
+        assertEquals(0.1, PackageNutritionProperties(tolerance = 0.1).tolerance)
+        assertFailsWith<IllegalArgumentException> { PackageNutritionProperties(tolerance = -0.1) }
+        assertFailsWith<IllegalArgumentException> { PackageNutritionProperties(tolerance = 1.1) }
     }
 }

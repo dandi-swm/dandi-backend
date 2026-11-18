@@ -35,6 +35,8 @@ import com.dandi.nyummy.meal.entity.MealFood
 import com.dandi.nyummy.meal.enum.MealAnalysisJobCategory
 import com.dandi.nyummy.meal.enum.MealInputCategory
 import com.dandi.nyummy.meal.enum.MealStatus
+import com.dandi.nyummy.meal.enum.NetContentUnit
+import com.dandi.nyummy.meal.enum.PackageNutritionMismatchCategory
 import com.dandi.nyummy.meal.service.FoodNutritionService
 import com.dandi.nyummy.notification.NotificationId
 import com.dandi.nyummy.notification.service.NotificationService
@@ -49,6 +51,7 @@ import io.mockk.just
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
+import io.mockk.verifyOrder
 import org.springframework.dao.QueryTimeoutException
 import java.math.BigDecimal
 import java.time.Clock
@@ -91,6 +94,7 @@ class AnalysisServiceTest {
             RewardBoxCategory.GOLD to RewardBoxProperties(rate = 20, minCoinQuantity = 350, maxCoinQuantity = 500),
         )
         every { rewardMailTimeToLive } returns Duration.ofDays(7)
+        every { packageNutrition.tolerance } returns 0.1
     }
 
     // 0~99에서 85가 나오면 골드이고, 골드의 코인 범위에서 412를 뽑는다.
@@ -154,6 +158,13 @@ class AnalysisServiceTest {
         // 기본은 저장해 둔 음식 영양이 없는 상태다. 이름만으로 구하는 줄은 모두 모델에 묻는다.
         every { foodNutritionService.getFoodNutrition(any()) } returns null
         every { foodNutritionService.createFoodNutrition(any(), any()) } just Runs
+        // 저장해 둔 제품 영양도 없는 상태다.
+        every { foodNutritionService.getPackageNutrition(any(), any(), any()) } returns null
+        every { foodNutritionService.createPackageNutrition(any(), any(), any(), any(), any()) } just Runs
+        every { foodNutritionService.updatePackageNutrition(any(), any(), any(), any()) } just Runs
+        every {
+            foodNutritionService.createPackageNutritionMismatch(any(), any(), any(), any(), any(), any(), any())
+        } just Runs
     }
 
     private fun createJob(canRetry: Boolean) = MealAnalysisJobResult(
@@ -1021,7 +1032,7 @@ class AnalysisServiceTest {
     }
 
     @Test
-    fun `제품 유형은 저장해 둔 음식 영양을 찾지도 저장하지도 않고 모델에 묻는다`() {
+    fun `제품 유형은 음식 이름으로 저장해 둔 영양을 찾지도 저장하지도 않는다`() {
         listOf(MealInputCategory.PACKAGE, MealInputCategory.NUTRITION_LABEL).forEach { inputCategory ->
             givenAnalysisMeal(createAnalysisMeal(inputCategory = inputCategory, isRecognized = true))
             givenServingNutritions(
@@ -1420,5 +1431,397 @@ class AnalysisServiceTest {
         analysisService.analyzeMealAnalysisJob(delayedJob)
 
         assertEquals(10.0, findElapsedByJob("nutrition", "completed")?.totalTime(TimeUnit.SECONDS))
+    }
+
+    // 영양 작업: 제품 유형의 줄과 저장해 둔 제품 영양
+
+    private val packageName = "셀렉스 프로핏"
+    private val netContent = BigDecimal("250.0")
+
+    // 사진의 영양성분표에 적혀 있던 값
+    private val labelServingNutrition = createServingNutrition("100.00", "4.00", "20.00", "0.70")
+    private val labelNutritionHint =
+        NutritionHint(BigDecimal("100.00"), BigDecimal("4.00"), BigDecimal("20.00"), BigDecimal("0.70"))
+
+    // 모델이 이름으로 구한 값. 표시값과 허용 오차(10%, 작은 값은 1) 안이다.
+    private val namedResult = ServingNutritionResult(createServingNutrition("95", "5", "20", "0"), 6L)
+
+    /** 제품 사진에서 인식한 줄. 포장에서 제품명을 읽었고 아이콘은 아직 없다. */
+    private fun createPackageMealFood(
+        mealFoodId: Long = 201L,
+        name: String = packageName,
+        servingNutrition: ServingNutrition? = null,
+        nutritionHint: NutritionHint? = null,
+        netContent: BigDecimal? = this.netContent,
+        netContentUnit: NetContentUnit? = NetContentUnit.ML,
+        isNutritionFixed: Boolean = false,
+        hasPackageName: Boolean = true,
+    ) = AnalysisMealFoodResult(
+        mealFoodId = mealFoodId,
+        name = name,
+        portion = BigDecimal("1.0"),
+        servingNutrition = servingNutrition,
+        iconId = null,
+        nutritionHint = nutritionHint,
+        isRecognized = true,
+        netContent = netContent,
+        netContentUnit = netContentUnit,
+        isNutritionFixed = isNutritionFixed,
+        hasPackageName = hasPackageName,
+    )
+
+    private fun givenPackageMeal(vararg mealFoods: AnalysisMealFoodResult) = givenAnalysisMeal(
+        AnalysisMealResult(
+            userId = userId,
+            mealAt = mealAt,
+            inputCategory = MealInputCategory.PACKAGE,
+            hasCatComment = false,
+            mealFoods = mealFoods.toList(),
+        ),
+    )
+
+    private fun givenSavedPackageNutrition(result: ServingNutritionResult?) {
+        every { foodNutritionService.getPackageNutrition(packageName, netContent, NetContentUnit.ML) } returns result
+    }
+
+    private fun givenNamedPackageNutritions(names: List<String>, results: List<ServingNutritionResult>) =
+        givenServingNutritions(names, results, MealInputCategory.PACKAGE)
+
+    private fun verifyNoPackageNutritionChange() {
+        verify(exactly = 0) { foodNutritionService.createPackageNutrition(any(), any(), any(), any(), any()) }
+        verify(exactly = 0) { foodNutritionService.updatePackageNutrition(any(), any(), any(), any()) }
+        verify(exactly = 0) {
+            foodNutritionService.createPackageNutritionMismatch(any(), any(), any(), any(), any(), any(), any())
+        }
+    }
+
+    // 사진에 네 값이 다 적혀 있던 줄
+
+    @Test
+    fun `네 값이 다 적힌 제품이 저장돼 있고 값이 같으면 모델을 부르지 않고 저장해 둔 아이콘을 쓴다`() {
+        givenPackageMeal(createPackageMealFood(servingNutrition = labelServingNutrition))
+        givenSavedPackageNutrition(ServingNutritionResult(createServingNutrition("100", "4", "20", "0.7"), 6L))
+        val getConfirmed = captureConfirmedServingNutritions()
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        assertEquals(6L, getConfirmed().getValue(201L).iconId)
+        verify(exactly = 0) { servingNutritionClient.getNamedServingNutritions(any(), any()) }
+        verifyNoPackageNutritionChange()
+    }
+
+    @Test
+    fun `네 값이 다 적힌 제품이 저장돼 있는데 값이 다르면 옛 값을 기록하고 사진 값으로 바꾼다`() {
+        val savedServingNutrition = createServingNutrition("110.00", "5.00", "20.00", "1.00")
+        givenPackageMeal(createPackageMealFood(servingNutrition = labelServingNutrition))
+        givenSavedPackageNutrition(ServingNutritionResult(savedServingNutrition, 6L))
+        val getConfirmed = captureConfirmedServingNutritions()
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        verifyOrder {
+            foodNutritionService.createPackageNutritionMismatch(
+                category = PackageNutritionMismatchCategory.SAVED,
+                name = packageName,
+                netContent = netContent,
+                netContentUnit = NetContentUnit.ML,
+                nutritionHint = labelNutritionHint,
+                servingNutrition = savedServingNutrition,
+                mealId = mealId,
+            )
+            foodNutritionService.updatePackageNutrition(
+                packageName,
+                netContent,
+                NetContentUnit.ML,
+                labelServingNutrition,
+            )
+        }
+        assertEquals(6L, getConfirmed().getValue(201L).iconId)
+        verify(exactly = 0) { servingNutritionClient.getNamedServingNutritions(any(), any()) }
+        verify(exactly = 0) { foodNutritionService.createPackageNutrition(any(), any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `네 값이 다 적힌 처음 보는 제품은 이름에 용량을 붙여 모델에 묻고 사진 값과 모델이 고른 아이콘을 저장한다`() {
+        givenPackageMeal(createPackageMealFood(servingNutrition = labelServingNutrition))
+        givenNamedPackageNutritions(listOf("셀렉스 프로핏 250ml"), listOf(namedResult))
+        val getConfirmed = captureConfirmedServingNutritions()
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        verify(exactly = 1) {
+            foodNutritionService.createPackageNutrition(
+                packageName,
+                netContent,
+                NetContentUnit.ML,
+                labelServingNutrition,
+                6L,
+            )
+        }
+        assertEquals(6L, getConfirmed().getValue(201L).iconId)
+        // 모델 값이 허용 오차 안이라 기록하지 않는다.
+        verify(exactly = 0) {
+            foodNutritionService.createPackageNutritionMismatch(any(), any(), any(), any(), any(), any(), any())
+        }
+        verify(exactly = 0) { foodNutritionService.updatePackageNutrition(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `모델 값이 사진 값과 허용 오차를 넘게 달라도 사진 값을 저장하고 달랐다는 것을 기록한다`() {
+        val differentNamedResult = ServingNutritionResult(createServingNutrition("140", "10", "15", "3"), 6L)
+        givenPackageMeal(createPackageMealFood(servingNutrition = labelServingNutrition))
+        givenNamedPackageNutritions(listOf("셀렉스 프로핏 250ml"), listOf(differentNamedResult))
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        verify(exactly = 1) {
+            foodNutritionService.createPackageNutrition(
+                packageName,
+                netContent,
+                NetContentUnit.ML,
+                labelServingNutrition,
+                6L,
+            )
+        }
+        verify(exactly = 1) {
+            foodNutritionService.createPackageNutritionMismatch(
+                category = PackageNutritionMismatchCategory.NAMED,
+                name = packageName,
+                netContent = netContent,
+                netContentUnit = NetContentUnit.ML,
+                nutritionHint = labelNutritionHint,
+                servingNutrition = differentNamedResult.servingNutrition,
+                mealId = mealId,
+            )
+        }
+    }
+
+    @Test
+    fun `모델이 먹는 것이 아니라고 본 이름은 사진에 네 값이 다 적혀 있어도 저장하지 않는다`() {
+        val notFoodResult = ServingNutritionResult(createServingNutrition("0", "0", "0", "0"), 1L, isFood = false)
+        givenPackageMeal(createPackageMealFood(servingNutrition = labelServingNutrition))
+        givenNamedPackageNutritions(listOf("셀렉스 프로핏 250ml"), listOf(notFoodResult))
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        verifyNoPackageNutritionChange()
+    }
+
+    // 사진에 일부만 적혀 있던 줄
+
+    private val partialNutritionHint = NutritionHint(calory = BigDecimal("100.00"), protein = BigDecimal("20.00"))
+
+    @Test
+    fun `일부만 적힌 제품이 저장돼 있으면 모델을 부르지 않고 저장해 둔 값으로 빈 항목을 채운다`() {
+        givenPackageMeal(createPackageMealFood(nutritionHint = partialNutritionHint))
+        givenSavedPackageNutrition(ServingNutritionResult(labelServingNutrition, 6L))
+        val getConfirmed = captureConfirmedServingNutritions()
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        assertEquals(ServingNutritionResult(labelServingNutrition, 6L), getConfirmed().getValue(201L))
+        verify(exactly = 0) { servingNutritionClient.getNamedServingNutritions(any(), any()) }
+        verifyNoPackageNutritionChange()
+    }
+
+    @Test
+    fun `일부만 적힌 값이 저장해 둔 값과 다르면 기록만 하고 저장해 둔 값은 바꾸지 않는다`() {
+        val savedServingNutrition = createServingNutrition("120.00", "6.00", "20.00", "1.20")
+        givenPackageMeal(createPackageMealFood(nutritionHint = partialNutritionHint))
+        givenSavedPackageNutrition(ServingNutritionResult(savedServingNutrition, 6L))
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        verify(exactly = 1) {
+            foodNutritionService.createPackageNutritionMismatch(
+                category = PackageNutritionMismatchCategory.SAVED,
+                name = packageName,
+                netContent = netContent,
+                netContentUnit = NetContentUnit.ML,
+                nutritionHint = partialNutritionHint,
+                servingNutrition = savedServingNutrition,
+                mealId = mealId,
+            )
+        }
+        verify(exactly = 0) { foodNutritionService.updatePackageNutrition(any(), any(), any(), any()) }
+        verify(exactly = 0) { foodNutritionService.createPackageNutrition(any(), any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `일부만 적힌 처음 보는 제품은 모델 값으로 빈 항목을 채우고 저장하지 않는다`() {
+        givenPackageMeal(createPackageMealFood(nutritionHint = partialNutritionHint))
+        givenNamedPackageNutritions(listOf("셀렉스 프로핏 250ml"), listOf(namedResult))
+        val getConfirmed = captureConfirmedServingNutritions()
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        // 적힌 100kcal에 맞춰 모델의 95kcal 값을 100/95배 한다. 5 × 1.0526… = 5.26, 0 × … = 0.00
+        assertEquals(
+            ServingNutritionResult(createServingNutrition("100.00", "5.26", "20.00", "0.00"), 6L),
+            getConfirmed().getValue(201L),
+        )
+        verifyNoPackageNutritionChange()
+    }
+
+    // 사진에 값이 없던 줄
+
+    @Test
+    fun `값이 적혀 있지 않은 제품이 저장돼 있으면 모델을 부르지 않고 저장해 둔 값을 쓴다`() {
+        givenPackageMeal(createPackageMealFood())
+        givenSavedPackageNutrition(ServingNutritionResult(labelServingNutrition, 6L))
+        val getConfirmed = captureConfirmedServingNutritions()
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        assertEquals(ServingNutritionResult(labelServingNutrition, 6L), getConfirmed().getValue(201L))
+        verify(exactly = 0) { servingNutritionClient.getNamedServingNutritions(any(), any()) }
+        verifyNoPackageNutritionChange()
+    }
+
+    @Test
+    fun `값이 적혀 있지 않은 처음 보는 제품은 모델 값을 쓰고 저장하지 않는다`() {
+        givenPackageMeal(createPackageMealFood())
+        givenNamedPackageNutritions(listOf("셀렉스 프로핏 250ml"), listOf(namedResult))
+        val getConfirmed = captureConfirmedServingNutritions()
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        assertEquals(namedResult, getConfirmed().getValue(201L))
+        verifyNoPackageNutritionChange()
+    }
+
+    // 사용자가 영양을 직접 적은 줄
+
+    @Test
+    fun `사용자가 영양을 직접 적은 줄은 아이콘만 받고 그 값을 저장하지도 비교하지도 않는다`() {
+        // 저장해 둔 값이 없으면 모델에서, 있으면 저장해 둔 행에서 아이콘을 받는다. 어느 쪽이든 사용자가 적은 값은 사진 값이 아니다.
+        val fixedMealFood = createPackageMealFood(
+            servingNutrition = createServingNutrition("50.00", "2.00", "10.00", "0.35"),
+            isNutritionFixed = true,
+        )
+        givenPackageMeal(fixedMealFood)
+        givenNamedPackageNutritions(listOf("셀렉스 프로핏 250ml"), listOf(namedResult))
+        val getConfirmed = captureConfirmedServingNutritions()
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        assertEquals(6L, getConfirmed().getValue(201L).iconId)
+        verifyNoPackageNutritionChange()
+
+        givenSavedPackageNutrition(ServingNutritionResult(labelServingNutrition, 7L))
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        assertEquals(7L, getConfirmed().getValue(201L).iconId)
+        verifyNoPackageNutritionChange()
+    }
+
+    // 포장에서 제품명을 읽지 못한 줄
+
+    @Test
+    fun `제품명을 읽지 못한 줄은 네 값이 다 적혀 있어도 저장하지 않고 모델 값과 달랐다는 기록도 남기지 않는다`() {
+        // 영양성분표 면만 찍은 사진. 이름이 그 면의 문구나 종류라, 그 이름으로 저장하면 다른 제품에도 맞는다.
+        val differentNamedResult = ServingNutritionResult(createServingNutrition("140", "10", "15", "3"), 6L)
+        givenPackageMeal(
+            createPackageMealFood(name = "단백질 음료", servingNutrition = labelServingNutrition, hasPackageName = false),
+        )
+        givenNamedPackageNutritions(listOf("단백질 음료 250ml"), listOf(differentNamedResult))
+        val getConfirmed = captureConfirmedServingNutritions()
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        // 아이콘은 모델에서 받는다.
+        assertEquals(6L, getConfirmed().getValue(201L).iconId)
+        verifyNoPackageNutritionChange()
+    }
+
+    @Test
+    fun `제품명을 읽지 못한 줄은 저장해 둔 값이 있어도 비교하지도 바꾸지도 않고 아이콘만 받는다`() {
+        val savedServingNutrition = createServingNutrition("110.00", "5.00", "20.00", "1.00")
+        givenPackageMeal(createPackageMealFood(servingNutrition = labelServingNutrition, hasPackageName = false))
+        givenSavedPackageNutrition(ServingNutritionResult(savedServingNutrition, 6L))
+        val getConfirmed = captureConfirmedServingNutritions()
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        assertEquals(6L, getConfirmed().getValue(201L).iconId)
+        verify(exactly = 0) { servingNutritionClient.getNamedServingNutritions(any(), any()) }
+        verifyNoPackageNutritionChange()
+    }
+
+    @Test
+    fun `제품명을 읽지 못한 줄도 값이 비어 있으면 저장해 둔 값을 찾아 쓴다`() {
+        givenPackageMeal(createPackageMealFood(hasPackageName = false))
+        givenSavedPackageNutrition(ServingNutritionResult(labelServingNutrition, 6L))
+        val getConfirmed = captureConfirmedServingNutritions()
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        assertEquals(ServingNutritionResult(labelServingNutrition, 6L), getConfirmed().getValue(201L))
+        verifyNoPackageNutritionChange()
+    }
+
+    // 이름과 용량
+
+    @Test
+    fun `이름과 용량이 같은 줄이 여럿이면 한 번만 찾고 한 번만 묻는다`() {
+        givenPackageMeal(createPackageMealFood(mealFoodId = 201L), createPackageMealFood(mealFoodId = 202L))
+        givenNamedPackageNutritions(listOf("셀렉스 프로핏 250ml"), listOf(namedResult))
+        val getConfirmed = captureConfirmedServingNutritions()
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        assertEquals(getConfirmed().getValue(201L), getConfirmed().getValue(202L))
+        verify(exactly = 1) { foodNutritionService.getPackageNutrition(packageName, netContent, NetContentUnit.ML) }
+        verify(exactly = 1) { servingNutritionClient.getNamedServingNutritions(any(), any()) }
+    }
+
+    @Test
+    fun `이름이 같아도 용량이 다르면 다른 제품으로 따로 찾고, 저장돼 있지 않은 것만 모델에 묻는다`() {
+        val smallResult = ServingNutritionResult(labelServingNutrition, 6L)
+        val largeResult = ServingNutritionResult(createServingNutrition("200", "8", "40", "1.4"), 6L)
+        givenPackageMeal(
+            createPackageMealFood(mealFoodId = 201L),
+            createPackageMealFood(mealFoodId = 202L, netContent = BigDecimal("500.0")),
+        )
+        givenSavedPackageNutrition(smallResult)
+        givenNamedPackageNutritions(listOf("셀렉스 프로핏 500ml"), listOf(largeResult))
+        val getConfirmed = captureConfirmedServingNutritions()
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        assertEquals(mapOf(201L to smallResult, 202L to largeResult), getConfirmed())
+        verify(exactly = 1) {
+            foodNutritionService.getPackageNutrition(packageName, BigDecimal("500.0"), NetContentUnit.ML)
+        }
+    }
+
+    @Test
+    fun `용량을 읽지 못한 제품은 용량 없이 찾고 모델에도 이름만 보낸다`() {
+        givenPackageMeal(
+            createPackageMealFood(servingNutrition = labelServingNutrition, netContent = null, netContentUnit = null),
+        )
+        givenNamedPackageNutritions(listOf(packageName), listOf(namedResult))
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        verify(exactly = 1) { foodNutritionService.getPackageNutrition(packageName, null, null) }
+        verify(exactly = 1) {
+            foodNutritionService.createPackageNutrition(packageName, null, null, labelServingNutrition, 6L)
+        }
+    }
+
+    @Test
+    fun `용량이 소수이면 그대로, g이면 g을 붙여 모델에 보낸다`() {
+        givenPackageMeal(
+            createPackageMealFood(name = "꼬북칩", netContent = BigDecimal("16.5"), netContentUnit = NetContentUnit.G),
+        )
+        givenNamedPackageNutritions(listOf("꼬북칩 16.5g"), listOf(namedResult))
+
+        analysisService.analyzeMealAnalysisJob(nutritionJob)
+
+        verify(exactly = 1) {
+            servingNutritionClient.getNamedServingNutritions(listOf("꼬북칩 16.5g"), MealInputCategory.PACKAGE)
+        }
     }
 }

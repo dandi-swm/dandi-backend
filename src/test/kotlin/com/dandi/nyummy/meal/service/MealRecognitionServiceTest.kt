@@ -8,6 +8,7 @@ import com.dandi.nyummy.mail.enum.RewardBoxCategory
 import com.dandi.nyummy.meal.config.FoodNutritionProperties
 import com.dandi.nyummy.meal.config.MealProperties
 import com.dandi.nyummy.meal.config.MealRecognitionProperties
+import com.dandi.nyummy.meal.config.PackageNutritionProperties
 import com.dandi.nyummy.meal.config.RewardBoxProperties
 import com.dandi.nyummy.meal.config.TutorialRewardBoxProperties
 import com.dandi.nyummy.meal.dto.MealFoodRecognitionResult
@@ -74,6 +75,7 @@ class MealRecognitionServiceTest {
             nutritionDelay = Duration.ofMinutes(5),
         ),
         foodNutrition = FoodNutritionProperties(timeToLive = Duration.ofDays(7), caloryTolerance = 0.1),
+        packageNutrition = PackageNutritionProperties(tolerance = 0.1),
     )
 
     private val mealRecognitionClient = mockk<MealRecognitionClient>()
