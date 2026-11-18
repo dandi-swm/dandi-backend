@@ -9,6 +9,7 @@ import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.meal.dto.MealFoodRecognitionResult
 import com.dandi.nyummy.meal.dto.NutritionHint
 import com.dandi.nyummy.meal.enum.MealInputCategory
+import com.dandi.nyummy.meal.enum.NetContentUnit
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
@@ -107,7 +108,7 @@ class GeminiMealRecognitionClientTest {
         val result = recognizeMeal()
 
         assertEquals("gemini-recognition-test", result.model)
-        assertEquals("v2", result.promptVersion)
+        assertEquals("v3", result.promptVersion)
     }
 
     @Test
@@ -164,15 +165,211 @@ class GeminiMealRecognitionClientTest {
     }
 
     @Test
-    fun `응답 스키마는 인분을 받지 않고 힌트 넷을 비어 있을 수 있는 숫자로 받는다`() {
+    fun `응답 스키마는 인분을 받지 않고 힌트 넷과 용량을 비어 있을 수 있는 값으로 받는다`() {
         val responseSchema = captureResponseSchema()
 
         val foods = (responseSchema["properties"] as Map<*, *>)["foods"] as Map<*, *>
         val foodSchema = foods["items"] as Map<*, *>
         val properties = foodSchema["properties"] as Map<*, *>
-        assertEquals(setOf("name", "calory", "carbs", "protein", "fat"), properties.keys)
+        assertEquals(
+            setOf("name", "calory", "carbs", "protein", "fat", "hasPackageName", "netContent", "netContentUnit"),
+            properties.keys,
+        )
         assertEquals(mapOf("type" to "NUMBER", "nullable" to true), properties["calory"])
-        assertEquals(listOf("name"), foodSchema["required"])
+        assertEquals(mapOf("type" to "NUMBER", "nullable" to true), properties["netContent"])
+        assertEquals(
+            mapOf("type" to "STRING", "enum" to listOf("G", "ML", "KG", "L"), "nullable" to true),
+            properties["netContentUnit"],
+        )
+        assertEquals(mapOf("type" to "BOOLEAN"), properties["hasPackageName"])
+        assertEquals(listOf("name", "hasPackageName"), foodSchema["required"])
+    }
+
+    @Test
+    fun `응답 스키마는 음식 줄의 필드를 이름, 제품명인지, 용량, 영양 값 순서로 쓰게 한다`() {
+        // 순서를 정해 두지 않으면 모델이 용량을 건너뛴 뒤 마지막 숫자를 끝없이 이어 써서 결과를 해석하지 못했다.
+        val responseSchema = captureResponseSchema()
+
+        val foods = (responseSchema["properties"] as Map<*, *>)["foods"] as Map<*, *>
+        val foodSchema = foods["items"] as Map<*, *>
+        assertEquals(
+            listOf("name", "hasPackageName", "netContent", "netContentUnit", "calory", "carbs", "protein", "fat"),
+            foodSchema["propertyOrdering"],
+        )
+    }
+
+    // 이름이 제품명인지
+
+    @Test
+    fun `제품 사진의 줄은 이름이 포장에서 읽은 제품명인지를 모델이 답한 대로 싣는다`() {
+        givenRecognition(
+            inputCategory = "PACKAGE",
+            foods = listOf(
+                "셀렉스 프로핏 딸기초코" to mapOf("hasPackageName" to true),
+                "완전단백질 20g" to mapOf("hasPackageName" to false),
+                // 모델이 빼고 보내면 제품명이 아닌 것으로 본다.
+                "단백질 음료" to emptyMap(),
+            ),
+        )
+
+        val result = recognizeMeal()
+
+        assertEquals(listOf(true, false, false), result.foods.map { it.hasPackageName })
+    }
+
+    @Test
+    fun `제품이 아닌 유형의 사진은 모델이 제품명이라고 답해도 제품명으로 보지 않는다`() {
+        listOf("FOOD_PHOTO", "TEXT_RECORD", "ILLUSTRATION").forEach { inputCategory ->
+            givenRecognition(inputCategory = inputCategory, foods = listOf("콜라" to mapOf("hasPackageName" to true)))
+
+            val result = recognizeMeal()
+
+            assertFalse(result.foods.single().hasPackageName, inputCategory)
+        }
+    }
+
+    @Test
+    fun `영양 성분 문구와 음식 종류는 제품 이름이 아니라고, 영양 값은 그와 상관없이 옮겨 적으라고 지시한다`() {
+        val prompt = capturePrompt(Language.KO)
+
+        assertContains(prompt, "hasPackageName은 name이 포장에 적힌 제품 이름(브랜드나 제품명)이면 true야")
+        assertContains(prompt, "음식 종류(예: \"컵라면\")는 제품 이름이 아니야")
+        assertContains(prompt, "이 판단과 상관없이 사진에 적힌 영양 값은 위에서 정한 대로 그대로 옮겨 적어")
+    }
+
+    // 용량
+
+    @Test
+    fun `제품 사진에 적혀 있던 용량을 그 줄에 싣고 소수 첫째 자리로 맞춘다`() {
+        givenRecognition(
+            inputCategory = "PACKAGE",
+            foods = listOf(
+                "셀렉스 프로핏" to mapOf("netContent" to 250, "netContentUnit" to "ML"),
+                "꼬북칩" to mapOf("netContent" to 16.55, "netContentUnit" to "G"),
+            ),
+        )
+
+        val result = recognizeMeal()
+
+        assertEquals(BigDecimal("250.0"), result.foods[0].netContent)
+        assertEquals(NetContentUnit.ML, result.foods[0].netContentUnit)
+        assertEquals(BigDecimal("16.6"), result.foods[1].netContent)
+        assertEquals(NetContentUnit.G, result.foods[1].netContentUnit)
+    }
+
+    @Test
+    fun `kg과 L로 적힌 용량은 g과 ml로 바꾼다`() {
+        givenRecognition(
+            inputCategory = "PACKAGE",
+            foods = listOf(
+                "쌀" to mapOf("netContent" to 2.27, "netContentUnit" to "KG"),
+                "코카콜라 제로" to mapOf("netContent" to 1.5, "netContentUnit" to "L"),
+            ),
+        )
+
+        val result = recognizeMeal()
+
+        assertEquals(BigDecimal("2270.0"), result.foods[0].netContent)
+        assertEquals(NetContentUnit.G, result.foods[0].netContentUnit)
+        assertEquals(BigDecimal("1500.0"), result.foods[1].netContent)
+        assertEquals(NetContentUnit.ML, result.foods[1].netContentUnit)
+    }
+
+    @Test
+    fun `단위는 대소문자와 앞뒤 공백을 가리지 않고 받는다`() {
+        givenRecognition(
+            inputCategory = "PACKAGE",
+            foods = listOf("두유" to mapOf("netContent" to 190, "netContentUnit" to " ml ")),
+        )
+
+        val result = recognizeMeal()
+
+        assertEquals(BigDecimal("190.0"), result.foods.single().netContent)
+        assertEquals(NetContentUnit.ML, result.foods.single().netContentUnit)
+    }
+
+    @Test
+    fun `제품이 아닌 유형의 사진은 용량이 와도 받지 않는다`() {
+        listOf("FOOD_PHOTO", "TEXT_RECORD", "ILLUSTRATION").forEach { inputCategory ->
+            givenRecognition(
+                inputCategory = inputCategory,
+                foods = listOf("콜라" to mapOf("netContent" to 500, "netContentUnit" to "ML")),
+            )
+
+            val result = recognizeMeal()
+
+            assertNull(result.foods.single().netContent, inputCategory)
+            assertNull(result.foods.single().netContentUnit, inputCategory)
+        }
+    }
+
+    @Test
+    fun `용량이 적혀 있지 않은 제품은 용량이 없다`() {
+        givenRecognition(
+            inputCategory = "PACKAGE",
+            foods = listOf(
+                "신라면" to emptyMap(),
+                "삼각김밥" to mapOf("netContent" to null, "netContentUnit" to null),
+            ),
+        )
+
+        val result = recognizeMeal()
+
+        assertNull(result.foods[0].netContent)
+        assertNull(result.foods[0].netContentUnit)
+        assertNull(result.foods[1].netContent)
+        assertNull(result.foods[1].netContentUnit)
+    }
+
+    @Test
+    fun `숫자나 단위 하나만 왔거나 모르는 단위이면 용량을 버리고 인식은 계속한다`() {
+        givenRecognition(
+            inputCategory = "PACKAGE",
+            foods = listOf(
+                "두유" to mapOf("netContent" to 190),
+                "우유" to mapOf("netContentUnit" to "ML"),
+                "비타민" to mapOf("netContent" to 30, "netContentUnit" to "정"),
+            ),
+        )
+
+        val result = recognizeMeal()
+
+        assertEquals(listOf("두유", "우유", "비타민"), result.foods.map { it.name })
+        assertEquals(listOf(null, null, null), result.foods.map { it.netContent })
+        assertEquals(listOf(null, null, null), result.foods.map { it.netContentUnit })
+    }
+
+    @Test
+    fun `0 이하이거나 저장할 수 없게 큰 용량은 버리고 인식은 계속한다`() {
+        givenRecognition(
+            inputCategory = "PACKAGE",
+            foods = listOf(
+                "두유" to mapOf("netContent" to 0, "netContentUnit" to "ML"),
+                "우유" to mapOf("netContent" to -200, "netContentUnit" to "ML"),
+                // 반올림하면 0.0이 되는 값
+                "소금" to mapOf("netContent" to 0.04, "netContentUnit" to "G"),
+                // 1000kg은 g으로 바꾸면 컬럼에 담을 수 없다.
+                "쌀" to mapOf("netContent" to 1000, "netContentUnit" to "KG"),
+                "설탕" to mapOf("netContent" to 999.9999, "netContentUnit" to "KG"),
+            ),
+        )
+
+        val result = recognizeMeal()
+
+        assertEquals(5, result.foods.size)
+        assertEquals(listOf(null, null, null, null, BigDecimal("999999.9")), result.foods.map { it.netContent })
+        assertEquals(listOf(null, null, null, null, NetContentUnit.G), result.foods.map { it.netContentUnit })
+    }
+
+    @Test
+    fun `용량은 제품일 때만, 묶음 상품은 낱개의 용량을, 짐작하지 말고 적으라고 지시한다`() {
+        val prompt = capturePrompt(Language.KO)
+
+        assertContains(prompt, "netContent·netContentUnit은 PACKAGE일 때만 적어")
+        assertContains(prompt, "낱개 하나의 용량을 적어")
+        assertContains(prompt, "둘 다 null로 둬")
+        // 이름에 용량이 붙으면 같은 제품이 다른 이름으로 저장된다.
+        assertContains(prompt, "용량은 여기에만 적고 name에는 넣지 마")
     }
 
     @Test
@@ -285,6 +482,14 @@ class GeminiMealRecognitionClientTest {
 
         assertContains(prompt, "식사 전체의 값은 어느 음식에도 적지 말고")
         assertContains(prompt, "음식이 하나뿐이면 적혀 있는 값이 그 음식의 값이니 그대로 적어")
+    }
+
+    @Test
+    fun `대표 이름은 브랜드와 제품명을 뺀 음식 종류로 적고 음식 줄의 이름은 구체적으로 두라고 지시한다`() {
+        val prompt = capturePrompt(Language.KO)
+
+        assertContains(prompt, "무엇을 먹었는지 알 수 있는 음식 종류로 적어. 브랜드, 제품명, 맛, 용량은 빼.")
+        assertContains(prompt, "foods의 name은 여기에 맞추지 말고")
     }
 
     @Test

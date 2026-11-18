@@ -2,9 +2,13 @@ package com.dandi.nyummy.meal.entity
 
 import com.dandi.nyummy.meal.dto.NutritionHint
 import com.dandi.nyummy.meal.dto.ServingNutrition
+import com.dandi.nyummy.meal.enum.MealInputCategory
+import com.dandi.nyummy.meal.enum.NetContentUnit
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.EntityListeners
+import jakarta.persistence.EnumType
+import jakarta.persistence.Enumerated
 import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
@@ -74,6 +78,20 @@ class MealFood(
     @Column(name = "is_icon_fixed", nullable = false)
     var isIconFixed: Boolean = false
 
+    // 제품의 총 내용량과 단위. 인식이 사진에서 읽은 값이고, 제품이 아니거나 읽지 못했으면 둘 다 null이다.
+    // 같은 제품도 용량에 따라 영양이 달라, 제품 이름·용량별로 저장한 영양을 찾을 때 이름과 함께 쓴다.
+    @Column(name = "net_content", precision = 7, scale = 1)
+    var netContent: BigDecimal? = null
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "net_content_unit", length = 10)
+    var netContentUnit: NetContentUnit? = null
+
+    // 이름이 포장에 적힌 제품명인지. 인식이 사진에서 판단한 것이고, 제품이 아닌 줄과 사용자가 더한 줄은 false다.
+    // 영양성분표 면만 찍은 사진에는 제품명이 없어 인식이 그 면의 문구나 종류를 이름으로 적는다. 그런 이름으로는 제품의 값을 저장하지 않는다.
+    @Column(name = "has_package_name", nullable = false)
+    var hasPackageName: Boolean = false
+
     @CreatedDate
     @Column(name = "created_at", nullable = false)
     var createdAt: Instant = Instant.now()
@@ -118,13 +136,28 @@ class MealFood(
     /**
      * 이름을 바꾼다. 이름이 달라지면 사용자가 고정하지 않은 1인분 영양과 아이콘을 비워, 새 이름으로 다시 구하게 한다.
      * 사용자가 직접 고친 영양과 직접 고른 아이콘은 이름을 바꿔도 그대로 둔다.
+     *
+     * 제품 사진에서 인식한 줄은 이름만 바꾸고 나머지는 건드리지 않는다. 그 줄의 값과 용량은 사진 속 제품의 것이라
+     * 이름을 고쳐도 달라지지 않는다. 인식이 틀리기 쉬운 쪽은 이름이다(영양성분표 면만 찍으면 제품 이름이 약하게 나온다).
+     * 아직 값을 구하지 않은 줄은 비어 있는 그대로라, 영양을 계산할 때 새 이름으로 구한다.
+     * 제품 식사에서 사용자가 더한 줄은 사진에서 인식한 것이 아니므로 다른 줄처럼 비운다.
+     *
+     * 그 밖의 줄은 용량도 비운다. 사용자에게 보이지 않는 값이라 남겨 두면 모르는 사이에 다른 제품의 값을 찾는 데 쓰인다.
+     *
+     * @param inputCategory 이 줄이 속한 식사의 입력 유형. 모르면 null이고 제품이 아닌 것으로 본다
      */
-    fun updateName(name: String) {
+    fun updateName(name: String, inputCategory: MealInputCategory? = null) {
         if (this.name == name) {
             return
         }
 
         this.name = name
+        if (inputCategory?.isPackage == true && mealFoodSnapshotId != null) {
+            return
+        }
+
+        this.netContent = null
+        this.netContentUnit = null
         if (!isNutritionFixed) {
             this.servingCalory = null
             this.servingCarbs = null
@@ -179,6 +212,17 @@ class MealFood(
 
     fun updateIconId(iconId: Long) {
         this.iconId = iconId
+    }
+
+    /** 인식이 판단한, 이름이 포장에 적힌 제품명인지를 적는다. */
+    fun updateHasPackageName(hasPackageName: Boolean) {
+        this.hasPackageName = hasPackageName
+    }
+
+    /** 인식이 사진에서 읽은 제품의 총 내용량과 단위를 적는다. 둘은 함께 있거나 함께 없다. */
+    fun updateNetContent(netContent: BigDecimal, netContentUnit: NetContentUnit) {
+        this.netContent = netContent
+        this.netContentUnit = netContentUnit
     }
 
     companion object {

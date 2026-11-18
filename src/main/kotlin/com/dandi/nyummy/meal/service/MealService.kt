@@ -358,7 +358,7 @@ class MealService(
             throw BusinessException(MealErrorCode.MEAL_FOODS_NOT_UPDATABLE)
         }
 
-        val mealFoods = mealFoodService.updateMealFoods(meal.id, request.foods)
+        val mealFoods = mealFoodService.updateMealFoods(meal.id, request.foods, meal.inputCategory)
         recalculateMealNutrition(meal, mealFoods, language)
 
         return meal.toMealStatusResponse()
@@ -411,7 +411,7 @@ class MealService(
             throw BusinessException(MealErrorCode.MEAL_FOODS_NOT_UPDATABLE)
         }
 
-        val mealFoods = mealFoodService.updateMealFood(meal.id, mealFoodId, request)
+        val mealFoods = mealFoodService.updateMealFood(meal.id, mealFoodId, request, meal.inputCategory)
         recalculateMealNutrition(meal, mealFoods, language)
     }
 

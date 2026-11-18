@@ -86,6 +86,7 @@ class MealFoodService(
      *
      * - [MealFoodRequest.mealFoodId]가 있으면 그 줄을 고치고, 없으면 새 줄을 만든다. 요청에 없는 기존 줄은 지운다.
      * - 이름이 바뀐 줄은 고정하지 않은 1인분 영양과 아이콘을 비운다([MealFood.updateName]). Worker가 새 이름으로 다시 구한다.
+     *   제품 사진에서 인식한 줄은 이름만 바꾸고 값과 용량을 그대로 둔다.
      * - 인분만 바뀐 줄은 1인분 영양을 그대로 둔다. 줄 영양은 1인분 × 새 인분이 된다.
      * - 인분을 생략한 줄은 있는 줄이면 인분을 그대로 두고, 새 줄이면 비워 둔다. 빈 인분은 영양을 계산할 때 채운다.
      * - [MealFoodRequest.nutrition]을 채운 줄은 그 값을 인분으로 나눠 1인분으로 저장하고 고정한다([updateFixedNutrition]).
@@ -95,12 +96,17 @@ class MealFoodService(
      *
      * @param mealId 음식 줄을 바꿀 식사 ID
      * @param mealFoodRequests 보낸 음식 줄 전체(순서대로)
+     * @param inputCategory 식사의 입력 유형. 제품이면 인식한 줄의 이름을 고쳐도 값과 용량을 그대로 둔다
      * @return 바꾼 뒤의 음식 줄(순서대로)
      * @throws BusinessException [CommonErrorCode.INVALID_INPUT_VALUE] 없는 아이콘 id가 있거나 같은 mealFoodId가 두 번 온 경우
      * @throws BusinessException [MealErrorCode.MEAL_FOOD_NOT_FOUND] 이 식사의 줄이 아닌 mealFoodId가 있는 경우
      */
     @Transactional
-    fun updateMealFoods(mealId: Long, mealFoodRequests: List<MealFoodRequest>): List<MealFood> {
+    fun updateMealFoods(
+        mealId: Long,
+        mealFoodRequests: List<MealFoodRequest>,
+        inputCategory: MealInputCategory? = null,
+    ): List<MealFood> {
         validateIconIds(mealFoodRequests.mapNotNull { it.iconId }.toSet())
 
         val mealFoodsById = mealFoodRepository.findAllByMealIdOrderByDisplayOrderAsc(mealId).associateBy { it.id }
@@ -124,7 +130,7 @@ class MealFoodService(
                     portion = request.portion,
                 )
             mealFood.updateDisplayOrder(index + 1)
-            mealFood.updateName(request.name)
+            mealFood.updateName(request.name, inputCategory)
             request.portion?.let { mealFood.updatePortion(it) }
             request.nutrition?.let { updateFixedNutrition(mealFood, it.toNutrition()) }
             request.iconId?.let { mealFood.updateFixedIconId(it) }
@@ -139,6 +145,7 @@ class MealFoodService(
      * 식사의 음식 한 줄을 고친다. 요청에 담긴 항목만 바꾸고 나머지는 그대로 둔다. 줄을 바꾸는 규칙은 [updateMealFoods]와 같다.
      *
      * - 이름을 바꾸면 고정하지 않은 1인분 영양과 아이콘을 비운다([MealFood.updateName]). Worker가 새 이름으로 다시 구한다.
+     *   제품 사진에서 인식한 줄은 이름만 바꾸고 값과 용량을 그대로 둔다.
      * - 인분만 바꾸면 1인분 영양을 그대로 둔다. 줄 영양은 1인분 × 새 인분이 된다.
      * - [UpdateMealFoodRequest.nutrition]은 고친 뒤의 인분으로 나눠 1인분으로 저장하고 고정한다([updateFixedNutrition]).
      * - [UpdateMealFoodRequest.iconId]는 그 아이콘으로 고정한다.
@@ -148,18 +155,24 @@ class MealFoodService(
      * @param mealId 음식 줄이 있는 식사 ID
      * @param mealFoodId 고칠 음식 줄 ID
      * @param request 바꾸려는 항목만 담은 [UpdateMealFoodRequest]
+     * @param inputCategory 식사의 입력 유형. 제품이면 인식한 줄의 이름을 고쳐도 값과 용량을 그대로 둔다
      * @return 고친 뒤의 식사 음식 줄 전체(순서대로). 식사의 합계를 다시 계산하는 데 쓴다
      * @throws BusinessException [MealErrorCode.MEAL_FOOD_NOT_FOUND] 이 식사의 줄이 아닌 mealFoodId인 경우
      * @throws BusinessException [CommonErrorCode.INVALID_INPUT_VALUE] 없는 아이콘 id인 경우
      */
     @Transactional
-    fun updateMealFood(mealId: Long, mealFoodId: Long, request: UpdateMealFoodRequest): List<MealFood> {
+    fun updateMealFood(
+        mealId: Long,
+        mealFoodId: Long,
+        request: UpdateMealFoodRequest,
+        inputCategory: MealInputCategory? = null,
+    ): List<MealFood> {
         val mealFoods = mealFoodRepository.findAllByMealIdOrderByDisplayOrderAsc(mealId)
         val mealFood = mealFoods.find { it.id == mealFoodId }
             ?: throw BusinessException(MealErrorCode.MEAL_FOOD_NOT_FOUND)
         validateIconIds(setOfNotNull(request.iconId))
 
-        request.name?.let { mealFood.updateName(it) }
+        request.name?.let { mealFood.updateName(it, inputCategory) }
         request.portion?.let { mealFood.updatePortion(it) }
         request.nutrition?.let { updateFixedNutrition(mealFood, it.toNutrition()) }
         request.iconId?.let { mealFood.updateFixedIconId(it) }
@@ -243,6 +256,7 @@ class MealFoodService(
      * 사진에 그 음식의 값이 적혀 있던 줄(힌트)은 그 값을 1인분 영양으로 적고 인분을 [MealFood.DEFAULT_PORTION]으로 둔다.
      * 인분을 따로 구하지 않는 유형(음식 사진이 아닌 것)의 줄도 인분을 [MealFood.DEFAULT_PORTION]으로 둔다.
      * 음식 사진 식사의 나머지 줄은 인분을 비워 두고, 영양을 계산할 때 채운다.
+     * 제품의 용량을 읽은 줄은 그 용량을 음식 줄에 적는다. 이름이 포장에서 읽은 제품명인지도 함께 적는다. 스냅샷 줄에는 남기지 않는다.
      *
      * 식사 기록 요청 안에서 인식했을 때와 Worker의 인식 작업이 인식했을 때 모두 이 메서드로 저장한다.
      * 식사의 상태·이름을 바꾸고 작업을 만드는 일과 함께 커밋돼야 하므로 호출하는 쪽 트랜잭션에 합류한다.
@@ -289,7 +303,13 @@ class MealFoodService(
                     displayOrder = mealFoodSnapshot.displayOrder,
                     name = mealFoodSnapshot.name,
                     portion = if (isPhotoMeal && food.nutritionHint == null) null else MealFood.DEFAULT_PORTION,
-                ).apply { food.nutritionHint?.let { updateNutritionHint(it) } }
+                ).apply {
+                    food.nutritionHint?.let { updateNutritionHint(it) }
+                    if (food.netContent != null && food.netContentUnit != null) {
+                        updateNetContent(food.netContent, food.netContentUnit)
+                    }
+                    updateHasPackageName(food.hasPackageName)
+                }
             },
         )
     }

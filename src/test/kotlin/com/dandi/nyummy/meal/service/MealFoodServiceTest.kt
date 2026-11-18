@@ -18,6 +18,7 @@ import com.dandi.nyummy.meal.entity.MealFoodSnapshot
 import com.dandi.nyummy.meal.entity.MealSnapshot
 import com.dandi.nyummy.meal.enum.MealInputCategory
 import com.dandi.nyummy.meal.enum.MealRecognitionCategory
+import com.dandi.nyummy.meal.enum.NetContentUnit
 import com.dandi.nyummy.meal.repository.IconRepository
 import com.dandi.nyummy.meal.repository.MealFoodRepository
 import com.dandi.nyummy.meal.repository.MealFoodSnapshotRepository
@@ -178,6 +179,36 @@ class MealFoodServiceTest {
     }
 
     @Test
+    fun `인식이 읽은 제품의 용량을 음식 줄에 적고 용량이 없는 줄은 비워 둔다`() {
+        val packageRecognition = recognition.copy(
+            inputCategory = MealInputCategory.PACKAGE,
+            foods = listOf(
+                MealFoodRecognitionResult(
+                    name = "셀렉스 프로핏",
+                    netContent = BigDecimal("250.0"),
+                    netContentUnit = NetContentUnit.ML,
+                    hasPackageName = true,
+                ),
+                MealFoodRecognitionResult(name = "삼각김밥"),
+            ),
+        )
+
+        val (drink, riceBall) = mealFoodService.createMealFoods(
+            mealId,
+            packageRecognition,
+            MealRecognitionCategory.SYNC,
+        )
+
+        assertEquals(BigDecimal("250.0"), drink.netContent)
+        assertEquals(NetContentUnit.ML, drink.netContentUnit)
+        assertNull(riceBall.netContent)
+        assertNull(riceBall.netContentUnit)
+        // 이름이 포장에서 읽은 제품명인지도 인식이 판단한 대로 적는다.
+        assertTrue(drink.hasPackageName)
+        assertFalse(riceBall.hasPackageName)
+    }
+
+    @Test
     fun `음식 줄은 아직 영양과 아이콘을 구하지 않았고 고정되지 않은 채로 저장한다`() {
         val mealFoods = mealFoodService.createMealFoods(mealId, recognition, MealRecognitionCategory.SYNC)
 
@@ -227,10 +258,11 @@ class MealFoodServiceTest {
         servingNutrition: ServingNutrition? = null,
         iconId: Long? = null,
         portion: BigDecimal? = BigDecimal("1.0"),
+        mealFoodSnapshotId: Long? = null,
     ): MealFood = spyk(
         MealFood(
             mealId = mealId,
-            mealFoodSnapshotId = null,
+            mealFoodSnapshotId = mealFoodSnapshotId,
             displayOrder = displayOrder,
             name = name,
             portion = portion,
@@ -457,6 +489,30 @@ class MealFoodServiceTest {
     }
 
     @Test
+    fun `제품 식사에서 인식한 줄은 이름을 바꿔도 1인분과 아이콘과 용량을 그대로 둔다`() {
+        val drink = createMealFood(
+            displayOrder = 1,
+            name = "완전단백질 20g",
+            servingNutrition = oldServingNutrition,
+            iconId = 12L,
+            mealFoodSnapshotId = 11L,
+        ).apply { updateNetContent(BigDecimal("250.0"), NetContentUnit.ML) }
+        givenMealFoodsToUpdate(drink)
+
+        mealFoodService.updateMealFoods(
+            mealId,
+            listOf(createRequest(1L, "셀렉스 프로핏 딸기초코")),
+            MealInputCategory.PACKAGE,
+        )
+
+        assertEquals("셀렉스 프로핏 딸기초코", drink.name)
+        assertEquals(oldServingNutrition, drink.servingNutrition)
+        assertEquals(12L, drink.iconId)
+        assertEquals(BigDecimal("250.0"), drink.netContent)
+        assertEquals(NetContentUnit.ML, drink.netContentUnit)
+    }
+
+    @Test
     fun `영양을 채운 줄은 그 값을 인분으로 나눈 1인분을 저장하고 고정한다`() {
         val bulgogi =
             createMealFood(displayOrder = 1, name = "불고기", servingNutrition = oldServingNutrition, iconId = 12L)
@@ -677,6 +733,29 @@ class MealFoodServiceTest {
         assertNull(bulgogi.servingNutrition)
         assertNull(bulgogi.iconId)
         assertEquals(BigDecimal("1.0"), bulgogi.portion)
+    }
+
+    @Test
+    fun `제품 식사에서 인식한 한 줄의 이름을 고쳐도 1인분과 아이콘을 그대로 둔다`() {
+        val drink = createMealFood(
+            displayOrder = 1,
+            name = "완전단백질 20g",
+            servingNutrition = oldServingNutrition,
+            iconId = 12L,
+            mealFoodSnapshotId = 11L,
+        )
+        givenMealFoods(drink)
+
+        mealFoodService.updateMealFood(
+            mealId,
+            1L,
+            UpdateMealFoodRequest(name = "셀렉스 프로핏 딸기초코"),
+            MealInputCategory.PACKAGE,
+        )
+
+        assertEquals("셀렉스 프로핏 딸기초코", drink.name)
+        assertEquals(oldServingNutrition, drink.servingNutrition)
+        assertEquals(12L, drink.iconId)
     }
 
     @Test
