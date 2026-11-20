@@ -76,7 +76,7 @@ class AuthController(private val authService: AuthService, private val oauthServ
         description = "앱 SDK로 받은 소셜 제공자의 토큰(OIDC 제공자는 ID 토큰, 그 외는 access token)을 검증한다. " +
             "기존 회원이면 AccessToken·RefreshToken을 발급하고 redirectUrl은 홈, " +
             "신규 회원이면 verifiedToken을 발급하고 redirectUrl은 프로필 입력 화면이다. " +
-            "nonce는 OIDC 제공자(KAKAO·GOOGLE)에서 필수이며 앱이 SDK 로그인 시 전달한 값 그대로 보낸다. " +
+            "nonce는 OIDC 제공자(KAKAO, GOOGLE, APPLE)에서 필수이며 앱이 SDK 로그인 시 전달한 값 그대로 보낸다. " +
             "NAVER는 token에 access token을 보내고 nonce는 생략한다. provider에 EMAIL은 보낼 수 없다.",
     )
     @ApiResponse(
