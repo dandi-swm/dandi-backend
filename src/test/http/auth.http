@@ -98,7 +98,7 @@ Content-Type: application/json
   "nonce": "{{nonce}}"
 }
 
-### 소셜 로그인 API (Google) - token은 Credential Manager가 준 ID 토큰(serverClientId = nyummy-server), nonce는 GetGoogleIdOption에 넣은 값 그대로
+### 소셜 로그인 API (Google) - token은 Credential Manager가 준 ID 토큰(serverClientId = nyummy-server), nonce는 GetGoogleIdOption에 넣은 값 그대로. iOS는 GIDSignIn이 준 ID 토큰(aud = iOS 클라이언트 ID일 수 있음)
 POST {{url}}/api/v1/auth/oauth/login
 Content-Type: application/json
 
@@ -115,6 +115,35 @@ Content-Type: application/json
 {
   "provider": "NAVER",
   "token": "{{naverAccessToken}}"
+}
+
+### 소셜 로그인 API (Apple) - token은 AuthenticationServices가 준 identityToken(UTF-8 문자열), nonce는 ASAuthorizationAppleIDRequest.nonce에 넣은 값 그대로(해시해서 넣었으면 해시값)
+POST {{url}}/api/v1/auth/oauth/login
+Content-Type: application/json
+
+{
+  "provider": "APPLE",
+  "token": "{{appleIdToken}}",
+  "nonce": "{{appleNonce}}"
+}
+
+### [실패] Apple 로그인 - 형식이 잘못된 ID 토큰 → 401, api.auth.invalidOAuthToken
+POST {{url}}/api/v1/auth/oauth/login
+Content-Type: application/json
+
+{
+  "provider": "APPLE",
+  "token": "invalid.token",
+  "nonce": "nonce"
+}
+
+### [실패] Apple 로그인 - nonce 없음 → 400, api.auth.oauthNonceRequired
+POST {{url}}/api/v1/auth/oauth/login
+Content-Type: application/json
+
+{
+  "provider": "APPLE",
+  "token": "invalid.token"
 }
 
 ### access token 재발급 API
