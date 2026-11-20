@@ -73,9 +73,31 @@ Authorization: Bearer {{accessToken}}
   "dinnerHour": null
 }
 
-### 회원 탈퇴 API
+### 회원 탈퇴 API - 이메일, 카카오, 구글, 네이버 계정은 바디 없이
 DELETE {{url}}/api/v1/users/me
 Authorization: Bearer {{accessToken}}
+
+### 회원 탈퇴 API (Apple) - authorizationCode는 탈퇴 직전에 Apple 인증을 다시 띄워 받은 값(5분 안에 한 번만 쓸 수 있음)
+DELETE {{url}}/api/v1/users/me
+Authorization: Bearer {{appleAccessToken}}
+Content-Type: application/json
+
+{
+  "authorizationCode": "{{appleAuthorizationCode}}"
+}
+
+### [실패] Apple 계정이 바디 없이 탈퇴 → 400 api.auth.oauthAuthorizationCodeRequired, 탈퇴되지 않음
+DELETE {{url}}/api/v1/users/me
+Authorization: Bearer {{appleAccessToken}}
+
+### [실패] Apple 계정이 틀린 code로 탈퇴 → 400 api.auth.invalidOAuthAuthorizationCode, 탈퇴되지 않음
+DELETE {{url}}/api/v1/users/me
+Authorization: Bearer {{appleAccessToken}}
+Content-Type: application/json
+
+{
+  "authorizationCode": "invalid-code"
+}
 
 ### [확인] 탈퇴 직후 기존 AccessToken이 막히는지 → 401 api.auth.unauthorized
 GET {{url}}/api/v1/users/me
