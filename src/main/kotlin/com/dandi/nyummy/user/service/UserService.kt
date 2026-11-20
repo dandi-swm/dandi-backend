@@ -1,11 +1,14 @@
 package com.dandi.nyummy.user.service
 
+import com.dandi.nyummy.auth.enum.AuthProvider
 import com.dandi.nyummy.auth.repository.TokenInvalidationRepository
 import com.dandi.nyummy.auth.service.RefreshTokenService
 import com.dandi.nyummy.coin.service.CoinService
 import com.dandi.nyummy.exception.BusinessException
+import com.dandi.nyummy.exception.errorcode.AuthErrorCode
 import com.dandi.nyummy.exception.errorcode.UserErrorCode
 import com.dandi.nyummy.image.service.ImageService
+import com.dandi.nyummy.infra.oauth.apple.AppleOAuthClient
 import com.dandi.nyummy.security.jwt.JwtService
 import com.dandi.nyummy.user.dto.PushSettingResponse
 import com.dandi.nyummy.user.dto.UpdateMealTimeRequest
@@ -39,6 +42,7 @@ class UserService(
     private val userWithdrawalTransactionService: UserWithdrawalTransactionService,
     private val imageService: ImageService,
     private val coinService: CoinService,
+    private val appleOAuthClient: AppleOAuthClient,
 ) {
     companion object {
         private val logger = LoggerFactory.getLogger(UserService::class.java)
@@ -171,6 +175,10 @@ class UserService(
     /**
      * 계정을 탈퇴 처리한다. 복구할 수 없다.
      *
+     * 0. Apple 계정이면 Apple 연결부터 끊는다([AppleOAuthClient.withdrawUser]). 실패하면 여기서 끝나므로
+     *    아무것도 바뀌지 않고, 사용자가 다시 탈퇴하면 된다. 연결을 끊은 뒤 1번이 실패해도 Apple sub는 그대로라
+     *    다시 Apple로 로그인해 탈퇴할 수 있다. 순서가 반대면 1번 뒤 연결 끊기가 실패했을 때 다시 끊을 방법이 없다.
+     *    Apple 토큰을 저장하지 않기 때문이다.
      * 1. DB 구간([UserWithdrawalTransactionService]) — 식별정보 파기, 세션·기기 토큰·문의 삭제.
      *    실패하면 여기서 끝나므로 외부 자원은 건드리지 않는다.
      * 2. 토큰 무효화 — RefreshToken을 지워도 이미 발급된 AccessToken은 최대 30분 남으므로,
@@ -182,10 +190,27 @@ class UserService(
      * 이미지는 `meals.image_key`가 남아 있어 접두사로 언제든 다시 지울 수 있다.
      *
      * @param userId 탈퇴할 사용자 ID
+     * @param authorizationCode 앱이 탈퇴 직전에 Apple 인증을 다시 띄워 받은 code. Apple 계정만 쓰고 그 밖의 계정은 무시한다
      * @throws BusinessException [UserErrorCode.USER_NOT_FOUND] 사용자가 없거나 이미 탈퇴한 경우
      * @throws BusinessException [UserErrorCode.PROFILE_NOT_FOUND] 프로필이 없는 경우
+     * @throws BusinessException [AuthErrorCode.OAUTH_AUTHORIZATION_CODE_REQUIRED] Apple 계정인데 code가 없는 경우
+     * @throws BusinessException [AuthErrorCode.INVALID_OAUTH_AUTHORIZATION_CODE] code가 틀렸거나 만료, 재사용됐거나 다른 Apple 계정의 것인 경우
+     * @throws BusinessException [AuthErrorCode.OAUTH_PROVIDER_UNAVAILABLE] Apple과 통신할 수 없는 경우
      */
-    fun withdrawUser(userId: Long) {
+    fun withdrawUser(userId: Long, authorizationCode: String?) {
+        val user = userRepository.findByIdOrNull(userId)
+            ?.takeUnless { it.isWithdrawn }
+            ?: throw BusinessException(UserErrorCode.USER_NOT_FOUND)
+
+        if (user.provider == AuthProvider.APPLE) {
+            val code = authorizationCode?.takeIf { it.isNotBlank() }
+                ?: throw BusinessException(AuthErrorCode.OAUTH_AUTHORIZATION_CODE_REQUIRED)
+
+            val providerUserId = checkNotNull(user.providerUserId) { "Apple 사용자에 providerUserId가 없음: userId=$userId" }
+
+            appleOAuthClient.withdrawUser(code, providerUserId)
+        }
+
         userWithdrawalTransactionService.withdrawUser(userId)
 
         try {

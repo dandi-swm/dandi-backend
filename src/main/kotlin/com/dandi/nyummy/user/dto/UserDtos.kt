@@ -88,6 +88,17 @@ data class UpdatePushSettingRequest(
 
 data class PushSettingResponse(val isServicePushEnabled: Boolean, val isMarketingPushEnabled: Boolean)
 
+/**
+ * 회원 탈퇴 요청. 바디는 Apple 계정만 보내고, 그 밖의 계정은 바디 없이 보낸다(보내도 무시한다).
+ */
+data class WithdrawUserRequest(
+    @field:Schema(
+        description = "Apple 계정만 필수. 탈퇴 직전에 Apple 인증을 다시 띄워 받은 authorizationCode(UTF-8 문자열). " +
+            "5분 안에 한 번만 쓸 수 있다.",
+    )
+    val authorizationCode: String? = null,
+)
+
 data class UpdateMealTimeRequest(
     @field:Min(value = 0, message = "식사 시간은 0시 이상이어야 합니다.")
     @field:Max(value = 23, message = "식사 시간은 23시 이하여야 합니다.")

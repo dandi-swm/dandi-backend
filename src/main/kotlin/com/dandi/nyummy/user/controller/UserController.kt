@@ -1,6 +1,7 @@
 package com.dandi.nyummy.user.controller
 
 import com.dandi.nyummy.config.openapi.ApiErrorCodes
+import com.dandi.nyummy.exception.errorcode.AuthErrorCode
 import com.dandi.nyummy.exception.errorcode.UserErrorCode
 import com.dandi.nyummy.security.AuthUser
 import com.dandi.nyummy.security.CurrentUser
@@ -11,6 +12,7 @@ import com.dandi.nyummy.user.dto.UpdatePasswordResponse
 import com.dandi.nyummy.user.dto.UpdateProfileRequest
 import com.dandi.nyummy.user.dto.UpdatePushSettingRequest
 import com.dandi.nyummy.user.dto.UserResponse
+import com.dandi.nyummy.user.dto.WithdrawUserRequest
 import com.dandi.nyummy.user.service.UserService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.responses.ApiResponse
@@ -109,13 +111,26 @@ class UserController(private val userService: UserService) {
             "식별정보(이메일 · 비밀번호 · 소셜 ID)와 프로필의 신체 정보, 업로드한 이미지, 문의 내역을 파기하고 " +
             "세션과 기기 토큰을 지운다. 식사 기록은 통계용 익명정보로 남는다. " +
             "탈퇴 시점 이전에 발급된 AccessToken은 모두 무효화되므로 클라이언트는 저장한 토큰을 폐기해야 한다. " +
-            "같은 이메일 · 소셜 계정으로 다시 가입할 수 있으며, 재가입 계정은 과거 데이터와 연결되지 않는다.",
+            "같은 이메일 · 소셜 계정으로 다시 가입할 수 있으며, 재가입 계정은 과거 데이터와 연결되지 않는다. " +
+            "Apple 계정은 탈퇴 직전에 Apple 인증을 다시 띄워 받은 authorizationCode를 바디에 보내야 하며, " +
+            "서버가 Apple 연결을 먼저 끊고 탈퇴한다. 연결 끊기에 실패하면 아무것도 바뀌지 않으므로 다시 인증해 재시도한다. " +
+            "그 밖의 계정은 바디 없이 보낸다.",
     )
     @ApiResponse(responseCode = "204", description = "탈퇴 완료. 응답 바디가 없다.")
-    @ApiErrorCodes(user = [UserErrorCode.USER_NOT_FOUND, UserErrorCode.PROFILE_NOT_FOUND])
+    @ApiErrorCodes(
+        auth = [
+            AuthErrorCode.OAUTH_AUTHORIZATION_CODE_REQUIRED,
+            AuthErrorCode.INVALID_OAUTH_AUTHORIZATION_CODE,
+            AuthErrorCode.OAUTH_PROVIDER_UNAVAILABLE,
+        ],
+        user = [UserErrorCode.USER_NOT_FOUND, UserErrorCode.PROFILE_NOT_FOUND],
+    )
     @DeleteMapping("/me")
-    fun withdrawUser(@CurrentUser user: AuthUser): ResponseEntity<Void> {
-        userService.withdrawUser(user.userId)
+    fun withdrawUser(
+        @CurrentUser user: AuthUser,
+        @RequestBody(required = false) request: WithdrawUserRequest?,
+    ): ResponseEntity<Void> {
+        userService.withdrawUser(user.userId, request?.authorizationCode)
         return ResponseEntity.noContent().build()
     }
 }
