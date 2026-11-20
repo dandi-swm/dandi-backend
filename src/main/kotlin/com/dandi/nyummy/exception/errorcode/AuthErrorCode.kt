@@ -44,6 +44,16 @@ enum class AuthErrorCode(override val status: HttpStatus, override val code: Str
     OAUTH_ACCOUNT_ALREADY_EXISTS(HttpStatus.CONFLICT, "api.auth.oauthAccountAlreadyExists", "이미 가입된 소셜 계정입니다."),
     UNSUPPORTED_OAUTH_PROVIDER(HttpStatus.BAD_REQUEST, "api.auth.unsupportedOAuthProvider", "지원하지 않는 소셜 로그인 제공자입니다."),
     OAUTH_NONCE_REQUIRED(HttpStatus.BAD_REQUEST, "api.auth.oauthNonceRequired", "이 소셜 로그인 제공자는 nonce가 필요합니다."),
+    OAUTH_AUTHORIZATION_CODE_REQUIRED(
+        HttpStatus.BAD_REQUEST,
+        "api.auth.oauthAuthorizationCodeRequired",
+        "이 소셜 계정은 탈퇴할 때 소셜 인증을 다시 해야 합니다.",
+    ),
+    INVALID_OAUTH_AUTHORIZATION_CODE(
+        HttpStatus.BAD_REQUEST,
+        "api.auth.invalidOAuthAuthorizationCode",
+        "유효하지 않은 소셜 인증입니다. 다시 인증해주세요.",
+    ),
     OAUTH_PROVIDER_UNAVAILABLE(
         HttpStatus.SERVICE_UNAVAILABLE,
         "api.auth.oauthProviderUnavailable",

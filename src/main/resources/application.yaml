@@ -337,6 +337,13 @@ app:
       jwk-set-uri: "https://appleid.apple.com/auth/keys"
       client-ids:
         - ${APPLE_BUNDLE_ID:com.dandi.nyummy}
+      client-id: ${APPLE_BUNDLE_ID:com.dandi.nyummy}
+      team-id: ${APPLE_TEAM_ID}
+      key-id: ${APPLE_KEY_ID}
+      private-key: ${APPLE_PRIVATE_KEY}
+      token-uri: "https://appleid.apple.com/auth/token"
+      revoke-uri: "https://appleid.apple.com/auth/revoke"
+      client-secret-time-to-live: 5m
       connect-timeout: 5s
       read-timeout: 5s
   jwt:

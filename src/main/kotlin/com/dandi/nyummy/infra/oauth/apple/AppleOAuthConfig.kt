@@ -5,6 +5,8 @@ import com.nimbusds.jose.jwk.source.JWKSourceBuilder
 import com.nimbusds.jose.proc.SecurityContext
 import com.nimbusds.jose.util.DefaultResourceRetriever
 import org.springframework.boot.context.properties.EnableConfigurationProperties
+import org.springframework.boot.http.client.ClientHttpRequestFactoryBuilder
+import org.springframework.boot.http.client.HttpClientSettings
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator
@@ -15,6 +17,7 @@ import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.security.oauth2.jwt.JwtIssuerValidator
 import org.springframework.security.oauth2.jwt.JwtTimestampValidator
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder
+import org.springframework.web.client.RestClient
 import java.net.URI
 import java.time.Clock
 import java.time.Duration
@@ -62,6 +65,26 @@ class AppleOAuthConfig {
         return jwtDecoder
     }
 
+    /**
+     * Apple 로그인 클라이언트. 로그인 검증 외에 탈퇴할 때 Apple 토큰 취소도 맡아서, 탈퇴 쪽이 이 타입으로 주입받게
+     * [OAuthClient]가 아닌 구현 타입으로 등록한다. [OAuthClient] 목록으로 주입받는 로그인 쪽에도 그대로 들어간다.
+     *
+     * RestClient를 빈으로 노출하지 않는 이유는 NaverOAuthConfig와 같다. 타입만으로 주입받는 곳이 있어 빈이 둘이 되면 모호해진다.
+     */
     @Bean
-    fun appleOAuthClient(appleJwtDecoder: JwtDecoder): OAuthClient = AppleOAuthClient(appleJwtDecoder)
+    fun appleOAuthClient(
+        appleJwtDecoder: JwtDecoder,
+        properties: AppleOAuthProperties,
+        clock: Clock,
+    ): AppleOAuthClient {
+        val settings = HttpClientSettings.defaults()
+            .withConnectTimeout(properties.connectTimeout)
+            .withReadTimeout(properties.readTimeout)
+
+        val restClient = RestClient.builder()
+            .requestFactory(ClientHttpRequestFactoryBuilder.detect().build(settings))
+            .build()
+
+        return AppleOAuthClient(appleJwtDecoder, restClient, properties, clock)
+    }
 }
