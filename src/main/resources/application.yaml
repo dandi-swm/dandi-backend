@@ -325,6 +325,7 @@ app:
       jwk-set-uri: "https://www.googleapis.com/oauth2/v3/certs"
       client-ids:
         - ${GOOGLE_SERVER_CLIENT_ID}
+        - ${GOOGLE_IOS_CLIENT_ID}
       connect-timeout: 5s
       read-timeout: 5s
     naver:
