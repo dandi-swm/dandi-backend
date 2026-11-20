@@ -66,6 +66,10 @@ app:
     apple:
       client-ids:
         - test-apple-bundle-id
+      client-id: test-apple-bundle-id
+      team-id: test-apple-team-id
+      key-id: test-apple-key-id
+      private-key: test-apple-private-key
 
 # S3Config / SesConfig가 @Value로 직접 읽는 값들. app.* 아래가 아니라 최상위여야 한다.
 AWS_REGION: ap-northeast-2
