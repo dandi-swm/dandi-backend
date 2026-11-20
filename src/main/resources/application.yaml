@@ -336,7 +336,7 @@ app:
       issuer: "https://appleid.apple.com"
       jwk-set-uri: "https://appleid.apple.com/auth/keys"
       client-ids:
-        - ${APPLE_BUNDLE_ID}
+        - ${APPLE_BUNDLE_ID:com.dandi.nyummy}
       connect-timeout: 5s
       read-timeout: 5s
   jwt:
