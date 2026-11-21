@@ -205,13 +205,85 @@ class GeminiCatCommentClientTest {
     }
 
     @Test
-    fun `일본어와 영어 요청에는 그 언어로 쓰라는 지시를 덧붙이고 추천 음식 종류를 바꾼다`() {
-        val japanesePrompt = capturePrompt(language = Language.JA)
-        val englishPrompt = capturePrompt(language = Language.EN)
+    fun `일본어 요청에는 일본어로 쓴 프롬프트를 보내고 일본에서 먹는 음식 종류에서 추천하게 한다`() {
+        val prompt = capturePrompt(language = Language.JA)
 
-        assertContains(japanesePrompt, "일본어 고양이 말투")
-        assertTrue(listOf("和食", "中華", "洋食", "韓国料理", "定食").any { japanesePrompt.contains("이번 추천은 $it 메뉴") })
-        assertContains(englishPrompt, "고양이 말투의 영어")
-        assertContains(englishPrompt, "160자 이내")
+        assertContains(prompt, "猫の口調で100文字以内のフィードバックをJSONで書いて。")
+        assertContains(prompt, "catCommentは日本語の猫の口調で書き")
+        assertTrue(listOf("和食", "中華", "洋食", "韓国料理", "定食").any { prompt.contains("今回のおすすめは${it}のメニューから選んで。") })
+    }
+
+    @Test
+    fun `영어 요청에는 영어로 쓴 프롬프트를 보내고 160자 안으로 쓰게 한다`() {
+        val prompt = capturePrompt(language = Language.EN)
+
+        assertContains(prompt, "in a playful cat voice, within 160 characters, as JSON.")
+        assertContains(prompt, "Write catComment in English")
+        assertTrue(
+            listOf("Korean", "Southeast Asian", "East Asian", "Western", "Mediterranean")
+                .any { prompt.contains("Pick this recommendation from $it dishes.") },
+        )
+    }
+
+    @Test
+    fun `일본어 프롬프트에는 음식 줄과 먹은 양과 영양 균형을 일본어로 넣는다`() {
+        val balance = CaloryShareBalanceResult(
+            excessNutrients = listOf(MacroNutrient.CARBS),
+            lackingNutrients = listOf(MacroNutrient.PROTEIN, MacroNutrient.FAT),
+        )
+
+        val prompt = capturePrompt(createInput(caloryShareBalance = balance), Language.JA)
+
+        assertContains(prompt, "- 불고기 1.5人前 (525kcal, 炭水化物 23g, たんぱく質 38g, 脂質 30g)")
+        assertContains(prompt, "今日最初の食事。")
+        assertContains(prompt, "- カロリー: 1245kcal / 目標 2000kcal")
+        assertContains(prompt, "- たんぱく質: 58g / 目標 100g")
+        assertContains(prompt, "- 多い栄養素: 炭水化物")
+        assertContains(prompt, "- 不足している栄養素: たんぱく質、脂質")
+    }
+
+    @Test
+    fun `영어 프롬프트에는 음식 줄과 먹은 양과 영양 균형을 영어로 넣는다`() {
+        val balance = CaloryShareBalanceResult(
+            excessNutrients = listOf(MacroNutrient.CARBS),
+            lackingNutrients = listOf(MacroNutrient.PROTEIN, MacroNutrient.FAT),
+        )
+
+        val prompt = capturePrompt(createInput(caloryShareBalance = balance), Language.EN)
+
+        assertContains(prompt, "- 불고기 1.5 serving(s) (525kcal, carbs 23g, protein 38g, fat 30g)")
+        assertContains(prompt, "This is their first meal today.")
+        assertContains(prompt, "- Calories: 1245kcal / target 2000kcal")
+        assertContains(prompt, "- Protein: 58g / target 100g")
+        assertContains(prompt, "- Too much: Carbs")
+        assertContains(prompt, "- Lacking: Protein, Fat")
+    }
+
+    @Test
+    fun `일본어와 영어 프롬프트에는 넘겨받은 이름 말고는 한글이 없다`() {
+        // 지시와 예시에 한국어가 남아 있으면 코멘트가 한국어로 끌려간다. 영양 균형 줄은 경우마다 문구가 달라 셋 다 본다.
+        val hangul = Regex("[가-힣ㄱ-ㅎㅏ-ㅣ]")
+        val earlierMeal = CatCommentMealInput(LocalTime.of(8, 10), "Toast", Nutrition(420, 52, 14, 17))
+        val balances = listOf(
+            null,
+            CaloryShareBalanceResult(emptyList(), emptyList()),
+            CaloryShareBalanceResult(listOf(MacroNutrient.CARBS), listOf(MacroNutrient.PROTEIN, MacroNutrient.FAT)),
+        )
+        val inputs = balances.flatMap { balance ->
+            listOf(emptyList(), listOf(earlierMeal)).map { earlierMeals ->
+                createInput(earlierMeals = earlierMeals, caloryShareBalance = balance).copy(
+                    catName = "Tama",
+                    mealFoods = listOf(
+                        CatCommentMealFoodInput("Bulgogi", BigDecimal("1.5"), Nutrition(525, 23, 38, 30)),
+                    ),
+                )
+            }
+        }
+
+        listOf(Language.JA, Language.EN).forEach { language ->
+            inputs.forEach { input ->
+                assertFalse(hangul.containsMatchIn(capturePrompt(input, language)), "$language 프롬프트에 한글이 있습니다.")
+            }
+        }
     }
 }
