@@ -633,9 +633,11 @@ class CatServiceTest {
 
     private val catCommentInput = slot<CatCommentInput>()
 
-    private fun givenCatComment() {
+    /** 모델이 부를 때마다 차례로 쓰는 코멘트. 마지막 코멘트는 그 뒤로도 계속 쓴다. */
+    private fun givenCatComment(vararg catComments: String = arrayOf("든든하게 먹었다냥")) {
         givenCat(evaluatedDaysAgo = 0)
-        every { catCommentClient.createCatComment(capture(catCommentInput), any(), any()) } returns "든든하게 먹었다냥"
+        every { catCommentClient.createCatComment(capture(catCommentInput), any(), any()) } returnsMany
+            catComments.toList()
     }
 
     private fun createCatComment(mealAt: Instant = commentMealAt, language: Language = Language.KO): String =
@@ -804,7 +806,7 @@ class CatServiceTest {
     @Test
     fun `코멘트에 고양이 이름과 음식 줄을 넘기고 요청 언어로 쓰게 하며 응답은 10초까지만 기다린다`() {
         // given
-        givenCatComment()
+        givenCatComment("しっかり食べたにゃ")
 
         // when
         createCatComment(language = Language.JA)
@@ -822,6 +824,36 @@ class CatServiceTest {
 
         // when & then
         assertEquals("든든하게 먹었다냥", createCatComment())
+    }
+
+    @Test
+    fun `코멘트에 요청한 언어가 아닌 글자가 있으면 한 번 다시 만든다`() {
+        // given
+        givenCatComment("단백질이 부족하다냥", "たんぱく質が足りないにゃ")
+
+        // when & then
+        assertEquals("たんぱく質が足りないにゃ", createCatComment(language = Language.JA))
+        verify(exactly = 2) { catCommentClient.createCatComment(any(), Language.JA, any()) }
+    }
+
+    @Test
+    fun `다시 만든 코멘트에도 요청한 언어가 아닌 글자가 있으면 고정 문구를 돌려준다`() {
+        // given
+        givenCatComment("단백질이 부족하다냥", "다음에는 焼き魚定食을 먹어보라냥")
+
+        // when & then
+        assertEquals("おいしく食べたにゃ！次のごはんも記録してほしいにゃ。", createCatComment(language = Language.JA))
+        verify(exactly = 2) { catCommentClient.createCatComment(any(), Language.JA, any()) }
+    }
+
+    @Test
+    fun `코멘트가 다른 언어로 된 음식 이름과 고양이 이름을 그대로 옮긴 것은 다시 만들지 않는다`() {
+        // given: 음식 이름(불고기)과 고양이 이름(나비)은 한국어이고 요청은 일본어다.
+        givenCatComment("ナビは불고기が大好きにゃ")
+
+        // when & then
+        assertEquals("ナビは불고기が大好きにゃ", createCatComment(language = Language.JA))
+        verify(exactly = 1) { catCommentClient.createCatComment(any(), Language.JA, any()) }
     }
 
     @Test

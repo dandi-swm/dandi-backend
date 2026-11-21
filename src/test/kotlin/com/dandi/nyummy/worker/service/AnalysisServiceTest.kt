@@ -556,6 +556,25 @@ class AnalysisServiceTest {
     }
 
     @Test
+    fun `인식 작업의 결과에 요청한 언어가 아닌 글자가 있어도 그대로 확정한다`() {
+        // 식사 기록 요청 안에서 섞인 결과는 이 작업으로 넘어와 다시 인식한 것이라, 여기서는 더 넘기지 않는다.
+        val japaneseJob = recognitionJob.copy(language = Language.JA)
+        givenRecognitionSuccess(japaneseJob)
+
+        analysisService.analyzeMealAnalysisJob(japaneseJob)
+
+        verify(exactly = 1) {
+            mealAnalysisJobTransactionService.confirmMealRecognition(
+                job = japaneseJob,
+                recognition = recognition,
+                nutritionDelay = any(),
+                rewardBox = any(),
+                rewardMailExpiresAt = any(),
+            )
+        }
+    }
+
+    @Test
     fun `인식에 성공해도 알림을 보내지 않는다`() {
         givenRecognitionSuccess(recognitionJob)
 

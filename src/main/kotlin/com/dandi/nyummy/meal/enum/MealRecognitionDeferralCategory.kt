@@ -16,4 +16,7 @@ enum class MealRecognitionDeferralCategory {
 
     // 인식이 실패했다. 요청 한도 초과·서버 오류처럼 다시 하면 될 수 있는 실패와 그렇지 않은 실패를 가리지 않는다.
     FAILED,
+
+    // 인식한 이름에 요청한 언어가 아닌 글자가 섞였다. 결과를 쓰지 않고 Worker가 다시 인식하게 한다.
+    LANGUAGE_MISMATCHED,
 }

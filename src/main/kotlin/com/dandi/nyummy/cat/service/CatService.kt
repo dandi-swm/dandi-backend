@@ -174,6 +174,7 @@ class CatService(
      *
      * 예외를 던지지 않는다. 코멘트를 만들지 못하면(모델 실패, 응답 대기 시간 초과, 하루 문맥 조회 실패, 고양이 없음)
      * 고정 문구를 돌려준다. 코멘트 때문에 영양 계산까지 실패로 끝나지 않게 하려는 것이다.
+     * 모델이 요청한 언어가 아닌 언어를 섞어 쓰면 한 번 다시 쓰게 하고, 그래도 섞이면 고정 문구를 돌려준다.
      *
      * 모델을 부르는 동안 DB 연결을 쥐지 않도록 트랜잭션을 걸지 않는다.
      *
@@ -197,7 +198,7 @@ class CatService(
             getDefaultCatComment(language)
         } else {
             val input = createCatCommentInput(userId, catName, mealAt, mealFoods, nutrition)
-            catCommentClient.createCatComment(input, language, CAT_COMMENT_TIMEOUT)
+            createCatComment(userId, input, language)
         }
     } catch (e: AnalysisFailureException) {
         if (e.category == AnalysisFailureCategory.UNAVAILABLE) {
@@ -209,6 +210,42 @@ class CatService(
     } catch (e: RuntimeException) {
         logger.error("고양이 코멘트를 만드는 중 예상하지 못한 오류로 고정 문구를 씁니다: userId={}", userId, e)
         getDefaultCatComment(language)
+    }
+
+    private fun createCatComment(userId: Long, input: CatCommentInput, language: Language): String {
+        val catComment = catCommentClient.createCatComment(input, language, CAT_COMMENT_TIMEOUT)
+        if (matchesLanguage(catComment, input, language)) {
+            return catComment
+        }
+
+        val recreatedCatComment = catCommentClient.createCatComment(input, language, CAT_COMMENT_TIMEOUT)
+        if (matchesLanguage(recreatedCatComment, input, language)) {
+            return recreatedCatComment
+        }
+
+        logger.warn(
+            "고양이 코멘트에 요청한 언어가 아닌 글자가 다시 써도 섞여 고정 문구를 씁니다: userId={}, language={}, catComment={}",
+            userId,
+            language,
+            recreatedCatComment,
+        )
+        return getDefaultCatComment(language)
+    }
+
+    /**
+     * 코멘트가 [language]의 글자로 쓰였는지.
+     *
+     * 고양이 이름과 음식 이름은 사용자가 정했거나 포장에 적힌 그대로라 다른 언어일 수 있다.
+     * 코멘트가 그 이름을 그대로 옮긴 부분은 모델이 언어를 섞은 것이 아니므로 빼고 본다.
+     */
+    private fun matchesLanguage(catComment: String, input: CatCommentInput, language: Language): Boolean {
+        val names = listOf(input.catName) + input.mealFoods.map { it.name } + input.earlierMeals.map { it.name }
+        // 긴 이름부터 지워야 다른 이름에 들어 있는 짧은 이름("밥")이 긴 이름("잡곡밥")을 먼저 쪼개지 않는다.
+        val writtenText = names.filter { it.isNotBlank() }
+            .sortedByDescending { it.length }
+            .fold(catComment) { text, name -> text.replace(name, "") }
+
+        return language.matchesScript(writtenText)
     }
 
     private fun createCatCommentInput(
