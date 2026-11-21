@@ -2,6 +2,8 @@ package com.dandi.nyummy.language.enum
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class LanguageTest {
 
@@ -43,5 +45,36 @@ class LanguageTest {
     fun `원본 언어는 한국어이고 대체 언어는 영어다`() {
         assertEquals(Language.KO, Language.ORIGINAL_LANGUAGE)
         assertEquals(Language.EN, Language.FALLBACK_LANGUAGE)
+    }
+
+    @Test
+    fun `한국어는 가나나 한자가 있으면 맞지 않는다`() {
+        assertTrue(Language.KO.matchesScript("냉동도시락과 군고구마"))
+        assertFalse(Language.KO.matchesScript("냉동도시락과 焼きいも"))
+        assertFalse(Language.KO.matchesScript("다음에는 サラダ를 먹어보라냥"))
+        assertFalse(Language.KO.matchesScript("牛丼"))
+    }
+
+    @Test
+    fun `일본어는 한글이 있으면 맞지 않는다`() {
+        assertTrue(Language.JA.matchesScript("カレーライスと白ご飯"))
+        assertFalse(Language.JA.matchesScript("カレーライスと김치"))
+        assertFalse(Language.JA.matchesScript("단백질이 부족하다냥"))
+    }
+
+    @Test
+    fun `영어는 한글과 가나와 한자가 있으면 맞지 않는다`() {
+        assertTrue(Language.EN.matchesScript("Kimchi stew"))
+        assertFalse(Language.EN.matchesScript("Kimchi 찌개"))
+        assertFalse(Language.EN.matchesScript("Curry with きんぴら"))
+        assertFalse(Language.EN.matchesScript("Beef 丼"))
+    }
+
+    @Test
+    fun `숫자와 영문과 문장 부호는 어느 언어에서나 맞는다`() {
+        Language.entries.forEach { language ->
+            assertTrue(language.matchesScript("Coca-Cola Zero 500ml (0kcal)!"))
+            assertTrue(language.matchesScript(""))
+        }
     }
 }

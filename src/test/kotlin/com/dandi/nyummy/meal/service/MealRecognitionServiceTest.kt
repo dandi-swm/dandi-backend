@@ -137,6 +137,39 @@ class MealRecognitionServiceTest {
     }
 
     @Test
+    fun `대표 이름에 요청한 언어가 아닌 글자가 있으면 결과를 쓰지 않고 넘긴다`() {
+        every { future.get(any(), any()) } returns recognition.copy(name = "불고기와 焼きいも")
+
+        val outcome = recognizeMeal()
+
+        assertEquals(MealRecognitionOutcome.Deferred(MealRecognitionDeferralCategory.LANGUAGE_MISMATCHED), outcome)
+        assertEquals(1, countRecognitions("deferred", "language_mismatched"))
+    }
+
+    @Test
+    fun `제품 이름이 아닌 음식 이름에 요청한 언어가 아닌 글자가 있으면 넘긴다`() {
+        every { future.get(any(), any()) } returns recognition.copy(
+            foods = listOf(MealFoodRecognitionResult(name = "불고기"), MealFoodRecognitionResult(name = "焼きいも")),
+        )
+
+        val outcome = recognizeMeal()
+
+        assertEquals(MealRecognitionOutcome.Deferred(MealRecognitionDeferralCategory.LANGUAGE_MISMATCHED), outcome)
+    }
+
+    @Test
+    fun `포장에 적힌 제품 이름은 다른 언어여도 넘기지 않는다`() {
+        val packageRecognition = recognition.copy(
+            inputCategory = MealInputCategory.PACKAGE,
+            name = "안미츠",
+            foods = listOf(MealFoodRecognitionResult(name = "お濃茶クリームあんみつ", hasPackageName = true)),
+        )
+        every { future.get(any(), any()) } returns packageRecognition
+
+        assertEquals(MealRecognitionOutcome.Recognized(packageRecognition), recognizeMeal())
+    }
+
+    @Test
     fun `남은 시간이 인식 최소 시간보다 적으면 인식을 부르지 않고 넘긴다`() {
         val outcome = recognizeMeal(elapsedMillis = 3000)
 
