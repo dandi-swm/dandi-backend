@@ -493,15 +493,18 @@ class GeminiMealRecognitionClientTest {
     }
 
     @Test
-    fun `한국어 요청에는 출력 언어 지시를 덧붙이지 않는다`() {
-        assertFalse(capturePrompt(Language.KO).contains("[출력 언어]"))
+    fun `한국어 요청에는 한국어로 쓴 프롬프트를 보내고 이름을 한국어로 쓰게 한다`() {
+        val prompt = capturePrompt(Language.KO)
+
+        assertContains(prompt, "그 밖의 이름(hasPackageName이 false인 이름)은 반드시 한국어로 적어.")
+        assertContains(prompt, "식사 이름은 항상 한국어로 적어.")
     }
 
     @Test
     fun `일본어 요청에는 일본어로 쓴 프롬프트를 보내고 이름을 일본어로 쓰게 한다`() {
         val prompt = capturePrompt(Language.JA)
 
-        assertContains(prompt, "nameは料理名を30文字以内で、日本語で書いて。")
+        assertContains(prompt, "それ以外の名前(hasPackageNameがfalseの名前)は必ず日本語で書いて。")
         assertContains(prompt, "食事の名前は必ず日本語で書いて。")
         // 한국어 지시가 남아 있으면 결과가 한국어로 끌려간다.
         assertFalse(prompt.contains("이 사진에서"))
@@ -511,17 +514,25 @@ class GeminiMealRecognitionClientTest {
     fun `영어 요청에는 영어로 쓴 프롬프트를 보내고 식사 이름을 20글자 안으로 쓰게 한다`() {
         val prompt = capturePrompt(Language.EN)
 
-        assertContains(prompt, "Write name as the name of the food, within 30 characters, in English.")
+        assertContains(prompt, "Every other name (a name for which hasPackageName is false) must be in English.")
         assertContains(prompt, "Write a name for this meal within 20 characters, counting spaces.")
         assertFalse(prompt.contains("이 사진에서"))
     }
 
     @Test
-    fun `일본어와 영어 프롬프트는 포장에 적힌 제품 이름을 다른 언어여도 적힌 그대로 쓰게 한다`() {
-        assertContains(capturePrompt(Language.JA), "商品名は他の言語でも直さず、パッケージに書かれたとおりに書いて。")
+    fun `어느 언어의 프롬프트든 포장에 적힌 제품 이름만 다른 언어여도 적힌 그대로 쓰게 한다`() {
+        assertContains(
+            capturePrompt(Language.KO),
+            "포장에 적힌 브랜드나 제품명(hasPackageName이 true인 이름)만 다른 언어여도 옮기지 말고 적힌 그대로 적어.",
+        )
+        assertContains(
+            capturePrompt(Language.JA),
+            "パッケージに書かれたブランドや製品名(hasPackageNameがtrueの名前)だけは、他の言語でも直さず書かれたとおりに書いて。",
+        )
         assertContains(
             capturePrompt(Language.EN),
-            "Do not translate a product name; write it exactly as it is written on the package, even in another language.",
+            "Only a brand or product name written on the package (a name for which hasPackageName is true) " +
+                "is written exactly as it appears, even in another language.",
         )
     }
 

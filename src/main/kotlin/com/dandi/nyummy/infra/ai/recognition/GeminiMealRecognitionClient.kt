@@ -71,7 +71,9 @@ class GeminiMealRecognitionClient(
         [foods] 먹은 음식을 하나씩 나눠 적어. NOT_FOOD면 빈 배열이야.
         - 한 항목에는 음식 하나만 적어. 서로 다른 음식은 같은 칸이나 같은 그릇에 있어도 따로 적어(예: 밥과 김치, 밥 옆의 후식).
         - 소스·양념·드레싱은 따로 적지 않고 그 음식에 포함해.
-        - name은 흔히 부르는 음식 이름으로 30자 이내로 적어. 포장·제품과 영양성분표는 제품 이름을 적어.
+        - name은 음식 이름을 30자 이내로 적어. 포장·제품과 영양성분표는 제품 이름을 적어.
+          포장에 적힌 브랜드나 제품명(hasPackageName이 true인 이름)만 다른 언어여도 옮기지 말고 적힌 그대로 적어.
+          그 밖의 이름(hasPackageName이 false인 이름)은 반드시 한국어로 적어. 가격표나 라벨에 다른 언어로 적힌 음식 종류도 한국어로 옮겨 적어. (예: 라벨의 焼きいも → 군고구마)
         - 같은 음식이 여러 그릇에 있으면 한 줄로 합쳐 적어.
         - calory·carbs·protein·fat은 사진에 그 음식의 값으로 적혀 있는 숫자만 옮겨 적어. calory는 kcal, 나머지는 g이야.
           음식 옆에 직접 적어 둔 숫자, 메뉴판·주문 화면에 적힌 숫자, 영양성분표의 총 내용량 기준 숫자가 여기에 들어가.
@@ -94,6 +96,7 @@ class GeminiMealRecognitionClient(
         - 10개를 넘으면 양이 많은 것부터 10개만 적어.
 
         [name] 이 식사를 부를 이름을 20자 이내로 적어. NOT_FOOD면 빈 문자열이야.
+        - 식사 이름은 항상 한국어로 적어. 제품 이름이 다른 언어로 적혀 있어도 무엇을 먹었는지를 한국어로 적어.
         - 무엇을 먹었는지 알 수 있는 음식 종류로 적어. 브랜드, 제품명, 맛, 용량은 빼.
           (예: "농심 신라면 큰사발" → "컵라면", "서울우유 초코우유와 오리온 초코파이" → "초코우유와 초코파이")
         - 브랜드나 제품명이 없는 음식은 음식 이름 그대로 적어. (예: "닭안심살과 쌀밥")
@@ -117,8 +120,9 @@ class GeminiMealRecognitionClient(
         [foods] 食べたものを1つずつ分けて書いて。NOT_FOODなら空の配列。
         - 1つの項目には食べ物を1つだけ書いて。別々の食べ物は同じ仕切りや同じ器にあっても分けて書いて(例: ご飯と漬物、ご飯の横のデザート)。
         - ソース、たれ、ドレッシングは分けて書かず、その食べ物に含めて。
-        - nameは料理名を30文字以内で、日本語で書いて。写真に他の言語で書かれていても日本語に直して書いて。(例: 김치찌개 → キムチチゲ)
-          パッケージ、商品と栄養成分表示は商品名を書いて。商品名は他の言語でも直さず、パッケージに書かれたとおりに書いて。
+        - nameは料理名を30文字以内で書いて。パッケージ、商品と栄養成分表示は商品名を書いて。
+          パッケージに書かれたブランドや製品名(hasPackageNameがtrueの名前)だけは、他の言語でも直さず書かれたとおりに書いて。
+          それ以外の名前(hasPackageNameがfalseの名前)は必ず日本語で書いて。値札やラベルに他の言語で書かれた食べ物の種類も日本語に直して書いて。(例: ラベルの 군고구마 → 焼きいも)
         - 同じ食べ物が複数の器にあれば1行にまとめて書いて。
         - calory、carbs、protein、fatは、写真にその食べ物の値として書かれている数字だけを写して。caloryはkcal、それ以外はg。
           食べ物の横に直接書いてある数字、メニュー表や注文画面に書かれた数字、栄養成分表示の内容量全体あたりの数字がここに入る。
@@ -141,7 +145,7 @@ class GeminiMealRecognitionClient(
         - 10個を超えるなら量の多いものから10個だけ書いて。
 
         [name] この食事を呼ぶ名前を20文字以内で書いて。NOT_FOODなら空文字列。
-        - 食事の名前は必ず日本語で書いて。商品名が他の言語で書かれていても、何を食べたのかを日本語で書いて。(例: 「농심 신라면 큰사발」→「カップ麺」)
+        - 食事の名前は必ず日本語で書いて。商品名が他の言語で書かれていても、何を食べたのかを日本語で書いて。
         - 何を食べたのかがわかる料理や食品の名前で書いて。ブランド、製品名、味、容量は除いて。
           (例: 「日清カップヌードル ビッグ」→「カップ麺」、「明治おいしい牛乳とロッテ チョコパイ」→「牛乳とチョコパイ」)
         - 「副菜」「おかず」のようにまとめた呼び方ではなく、料理名を書いて。
@@ -166,8 +170,9 @@ class GeminiMealRecognitionClient(
         [foods] List what was eaten one food at a time. For NOT_FOOD it is an empty array.
         - Write only one food per item. Write different foods separately even when they share a compartment or a bowl (e.g. rice and kimchi, a dessert next to the rice).
         - Do not list sauces, seasonings, or dressings separately; include them in the food.
-        - Write name as the name of the food, within 30 characters, in English. Even if it is written in another language in the photo, write it in English. (e.g. 김치찌개 → Kimchi stew)
-          For packaging, products, and nutrition facts labels, write the product name. Do not translate a product name; write it exactly as it is written on the package, even in another language.
+        - Write name as the name of the food, within 30 characters. For packaging, products, and nutrition facts labels, write the product name.
+          Only a brand or product name written on the package (a name for which hasPackageName is true) is written exactly as it appears, even in another language. Do not translate it.
+          Every other name (a name for which hasPackageName is false) must be in English. If the kind of food is written in another language on a price tag or label, write it in English too. (e.g. 焼きいも on a label → Roasted sweet potato)
         - If the same food is in several bowls, combine it into one line.
         - For calory, carbs, protein, and fat, copy only numbers that are written in the photo as that food's values. calory is in kcal and the others are in g.
           Numbers written right next to the food, numbers on a menu or an order screen, and numbers on a nutrition facts label for the whole net content belong here.
@@ -183,16 +188,16 @@ class GeminiMealRecognitionClient(
           Write the content only here and do not put it in name. (e.g. name is "Chocolate milk", netContent is 200, netContentUnit is ML)
         - hasPackageName is true when name is a product name written on the package (a brand or product name). It can be true only for PACKAGE.
           If the product name is not visible in the photo (e.g. a photo of only the nutrition facts side) and you wrote wording from that side or the kind of food as name, it is false.
-          Wording that promotes nutrition or features (e.g. "30% less sodium", "0g sugar") and the kind of food (e.g. "Cup noodles") are not product names.
+          Wording that promotes nutrition or features (e.g. "30% less sodium", "0g sugar") and the kind of food (e.g. "Cereal") are not product names.
           Regardless of this decision, copy the nutrition values written in the photo as decided above.
-          (e.g. "Nissin Cup Noodles Big" is true)
+          (e.g. "Kellogg's Corn Flakes Original" is true)
         - Put the food that represents this meal (the main dish) at the top.
         - If there are more than 10, write only the 10 with the largest amounts.
 
         [name] Write a name for this meal within 20 characters, counting spaces. If it would be longer, choose a shorter name. (e.g. Bulgogi set) For NOT_FOOD it is an empty string.
-        - Always write the meal name in English. Even if a product name is written in another language, write what was eaten in English. (e.g. "농심 신라면 큰사발" → "Cup noodles")
+        - Always write the meal name in English. Even if a product name is written in another language, write what was eaten in English.
         - Write the kind of food that shows what was eaten. Leave out the brand, product name, flavor, and size.
-          (e.g. "Nissin Cup Noodles Big" → "Cup noodles", "Hershey's chocolate milk and Oreo cookies" → "Chocolate milk and cookies")
+          (e.g. "Kellogg's Corn Flakes Original" → "Cereal", "Hershey's chocolate milk and Oreo cookies" → "Chocolate milk and cookies")
         - For food without a brand or product name, write the name of the food as it is. (e.g. "Chicken breast and rice")
         - Do not match the names in foods to this; keep them specific, as decided above.
     """
