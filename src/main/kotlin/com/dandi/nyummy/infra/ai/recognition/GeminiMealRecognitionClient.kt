@@ -32,7 +32,7 @@ class GeminiMealRecognitionClient(
     companion object {
 
         // 프롬프트나 응답 스키마를 바꾸면 올린다. 스냅샷에 남겨 사용자가 고친 비율을 프롬프트별로 나눠 본다.
-        private const val PROMPT_VERSION = "v3"
+        private const val PROMPT_VERSION = "v4"
 
         // 영양성분표는 제품으로 판정한다. 값만 남겨 두는 것은 예전에 저장된 행을 읽기 위해서다.
         private val INPUT_CATEGORIES = MealInputCategory.entries - MealInputCategory.NUTRITION_LABEL
@@ -53,7 +53,9 @@ class GeminiMealRecognitionClient(
             "L" to (NetContentUnit.ML to BigDecimal("1000")),
         )
 
-        private const val PROMPT =
+        // 프롬프트는 언어마다 전문을 따로 둔다. 한국어 지시 끝에 "일본어로 써"만 덧붙이면 지시와 예시의 언어에 결과가 끌려간다.
+        // 규칙을 고칠 때는 세 언어를 같이 고친다.
+        private const val KO_PROMPT =
             """
         이 사진에서 사용자가 먹은(또는 먹을) 음식을 알아내 JSON으로 답해.
 
@@ -98,21 +100,101 @@ class GeminiMealRecognitionClient(
         - foods의 name은 여기에 맞추지 말고 위에서 정한 대로 구체적인 이름을 그대로 둬.
     """
 
-        // 한국어가 아닌 언어는 위의 한국어 지시를 그대로 두고, 출력 언어 지시를 맨 끝에 덧붙인다.
-        private const val JA_OUTPUT_LANGUAGE_PROMPT =
+        // 이름을 쓸 언어는 끝에 따로 적지 않고 name을 정하는 줄에 적는다. 포장에 적힌 제품 이름은 다른 언어여도 적힌 그대로 둔다.
+        private const val JA_PROMPT =
             """
-        [출력 언어]
-        name과 foods의 name은 모두 일본어로 써. 한국어를 섞지 마.
-        일본에서 흔히 부르는 음식 이름으로 써. (예: 김치찌개 → キムチチゲ)
+        この写真から、ユーザーが食べた(または食べる)食べ物を読み取ってJSONで答えて。
+
+        [inputCategory] 写真が何を写したものか、1つ選んで。
+        FOOD_PHOTO 実際の食べ物(食べる前、食べている途中、少し残ったもの)
+        PACKAGE お菓子、飲み物、即席食品のパッケージや商品、その商品の栄養成分表示
+        TEXT_RECORD レシート、注文やデリバリーアプリの画面、メニュー表、食べたものを書いたメモ
+        ILLUSTRATION 食べ物の絵や模型
+        NOT_FOOD 食べ物とまったく関係のない写真、何なのか見分けられない写真
+        食べ物と少しでも関係があればNOT_FOODを選ばないで。
+        複数が一緒に写っていれば最も大きな割合を占めるものを選ぶが、実際の食べ物が写っていればFOOD_PHOTOを選んで。
+
+        [foods] 食べたものを1つずつ分けて書いて。NOT_FOODなら空の配列。
+        - 1つの項目には食べ物を1つだけ書いて。別々の食べ物は同じ仕切りや同じ器にあっても分けて書いて(例: ご飯と漬物、ご飯の横のデザート)。
+        - ソース、たれ、ドレッシングは分けて書かず、その食べ物に含めて。
+        - nameは料理名を30文字以内で、日本語で書いて。写真に他の言語で書かれていても日本語に直して書いて。(例: 김치찌개 → キムチチゲ)
+          パッケージ、商品と栄養成分表示は商品名を書いて。商品名は他の言語でも直さず、パッケージに書かれたとおりに書いて。
+        - 同じ食べ物が複数の器にあれば1行にまとめて書いて。
+        - calory、carbs、protein、fatは、写真にその食べ物の値として書かれている数字だけを写して。caloryはkcal、それ以外はg。
+          食べ物の横に直接書いてある数字、メニュー表や注文画面に書かれた数字、栄養成分表示の内容量全体あたりの数字がここに入る。
+          書かれていない項目はnullにして。写真に書かれた数字がないのに食べ物を見て推測した値は絶対に書かないで。
+          100gあたり、100mlあたりのように、その食べ物1つ全体の値ではない数字は書かずにnullにして。
+          食べ物が2つ以上あるのに数字が食べ物ごとに書かれておらず1組だけ書かれていれば(例: 「総カロリー650」)、それは食事全体の値。
+          食事全体の値はどの食べ物にも書かず、すべての食べ物の値をnullにして。分けて書くのもだめ。
+          食べ物が1つだけなら、書かれている値がその食べ物の値なのでそのまま書いて。
+        - netContentとnetContentUnitはPACKAGEのときだけ書いて。パッケージや栄養成分表示に書かれたその商品の内容量。
+          netContentは数字、netContentUnitは単位(G, ML, KG, L)。(例: 「500ml」は500とML、「1.5L」は1.5とL)
+          複数個をまとめて売る商品(例: 200ml × 6)は1個分の容量を書いて。
+          書かれていないか、単位がg、ml、kg、Lでなければ(個、錠、枚など)両方nullにして。推測した値は絶対に書かないで。
+          容量はここにだけ書き、nameには入れないで。(例: nameは「チョコレート牛乳」、netContentは200、netContentUnitはML)
+        - hasPackageNameは、nameがパッケージに書かれた商品名(ブランドや製品名)ならtrue。PACKAGEのときだけtrueになれる。
+          商品名が写真に写っていなくて(例: 栄養成分表示の面だけ写った写真)、その面の文言や食べ物の種類をnameに書いたならfalse。
+          栄養成分や特徴をうたう文言(例: 「塩分30%カット」、「糖類0g」)と食べ物の種類(例: 「カップ麺」)は商品名ではない。
+          この判断とは関係なく、写真に書かれた栄養の値は上で決めたとおりそのまま写して。
+          (例: 「日清カップヌードル ビッグ」はtrue)
+        - この食事を代表する食べ物(メイン)をいちばん上に書いて。
+        - 10個を超えるなら量の多いものから10個だけ書いて。
+
+        [name] この食事を呼ぶ名前を20文字以内で書いて。NOT_FOODなら空文字列。
+        - 食事の名前は必ず日本語で書いて。商品名が他の言語で書かれていても、何を食べたのかを日本語で書いて。(例: 「농심 신라면 큰사발」→「カップ麺」)
+        - 何を食べたのかがわかる料理や食品の名前で書いて。ブランド、製品名、味、容量は除いて。
+          (例: 「日清カップヌードル ビッグ」→「カップ麺」、「明治おいしい牛乳とロッテ チョコパイ」→「牛乳とチョコパイ」)
+        - 「副菜」「おかず」のようにまとめた呼び方ではなく、料理名を書いて。
+        - ブランドや製品名のない食べ物は料理名をそのまま書いて。(例: 「鶏ささみとご飯」)
+        - foodsのnameはここに合わせず、上で決めたとおり具体的な名前のままにして。
     """
 
         // 영어는 같은 이름이 한국어보다 길어 20자를 넘기기 쉽다. 넘으면 서버가 단어 중간에서 자르게 되므로 짧은 이름을 고르게 한다.
-        private const val EN_OUTPUT_LANGUAGE_PROMPT =
+        private const val EN_PROMPT =
             """
-        [출력 언어]
-        name과 foods의 name은 모두 영어로 써. 한국어를 섞지 마.
-        영어권에서 통하는 음식 이름으로 써. (예: 김치찌개 → Kimchi stew)
-        식사 이름([name])은 띄어쓰기를 포함해 영어 20글자를 넘기지 마. 넘을 것 같으면 더 짧은 이름을 골라. (예: Bulgogi set)
+        Work out the food the user ate (or is about to eat) from this photo and answer in JSON.
+
+        [inputCategory] Choose one for what the photo shows.
+        FOOD_PHOTO real food (before eating, while eating, or with a little left)
+        PACKAGE the packaging or the product itself for snacks, drinks, or ready meals, or that product's nutrition facts label
+        TEXT_RECORD a receipt, an order or delivery app screen, a menu, or a written note of what was eaten
+        ILLUSTRATION a drawing or a model of food
+        NOT_FOOD a photo that has nothing to do with food, or one where you cannot tell what it is
+        If it has anything at all to do with food, do not choose NOT_FOOD.
+        If several are shown together, choose the one that takes up the most, but if real food is visible choose FOOD_PHOTO.
+
+        [foods] List what was eaten one food at a time. For NOT_FOOD it is an empty array.
+        - Write only one food per item. Write different foods separately even when they share a compartment or a bowl (e.g. rice and kimchi, a dessert next to the rice).
+        - Do not list sauces, seasonings, or dressings separately; include them in the food.
+        - Write name as the name of the food, within 30 characters, in English. Even if it is written in another language in the photo, write it in English. (e.g. 김치찌개 → Kimchi stew)
+          For packaging, products, and nutrition facts labels, write the product name. Do not translate a product name; write it exactly as it is written on the package, even in another language.
+        - If the same food is in several bowls, combine it into one line.
+        - For calory, carbs, protein, and fat, copy only numbers that are written in the photo as that food's values. calory is in kcal and the others are in g.
+          Numbers written right next to the food, numbers on a menu or an order screen, and numbers on a nutrition facts label for the whole net content belong here.
+          Leave items that are not written as null. Never write a value you guessed from looking at the food when no number is written in the photo.
+          Do not write numbers that are not for the whole of that one food, such as per 100g or per 100ml; leave them as null.
+          If there are two or more foods and the numbers are written only once rather than per food (e.g. "Total calories 650"), those are the values for the whole meal.
+          Do not write whole-meal values on any food; leave every food's values as null. Do not split them up either.
+          If there is only one food, the written values are that food's values, so write them as they are.
+        - Write netContent and netContentUnit only for PACKAGE. They are the product's total net content written on the package or the nutrition facts label.
+          netContent is the number and netContentUnit is the unit (G, ML, KG, L). (e.g. "500ml" is 500 and ML, "1.5L" is 1.5 and L)
+          For products sold as a bundle (e.g. 200ml × 6), write the content of a single unit.
+          If it is not written, or the unit is not g, ml, kg, or L (pieces, tablets, sheets, and so on), leave both as null. Never write a guessed value.
+          Write the content only here and do not put it in name. (e.g. name is "Chocolate milk", netContent is 200, netContentUnit is ML)
+        - hasPackageName is true when name is a product name written on the package (a brand or product name). It can be true only for PACKAGE.
+          If the product name is not visible in the photo (e.g. a photo of only the nutrition facts side) and you wrote wording from that side or the kind of food as name, it is false.
+          Wording that promotes nutrition or features (e.g. "30% less sodium", "0g sugar") and the kind of food (e.g. "Cup noodles") are not product names.
+          Regardless of this decision, copy the nutrition values written in the photo as decided above.
+          (e.g. "Nissin Cup Noodles Big" is true)
+        - Put the food that represents this meal (the main dish) at the top.
+        - If there are more than 10, write only the 10 with the largest amounts.
+
+        [name] Write a name for this meal within 20 characters, counting spaces. If it would be longer, choose a shorter name. (e.g. Bulgogi set) For NOT_FOOD it is an empty string.
+        - Always write the meal name in English. Even if a product name is written in another language, write what was eaten in English. (e.g. "농심 신라면 큰사발" → "Cup noodles")
+        - Write the kind of food that shows what was eaten. Leave out the brand, product name, flavor, and size.
+          (e.g. "Nissin Cup Noodles Big" → "Cup noodles", "Hershey's chocolate milk and Oreo cookies" → "Chocolate milk and cookies")
+        - For food without a brand or product name, write the name of the food as it is. (e.g. "Chicken breast and rice")
+        - Do not match the names in foods to this; keep them specific, as decided above.
     """
 
         // 모델은 스키마에 적은 순서대로 쓴다. 음식 줄을 먼저 쓰게 해 대표 이름이 그 줄들을 보고 정해지게 한다.
@@ -194,9 +276,9 @@ class GeminiMealRecognitionClient(
     }
 
     private fun createPrompt(language: Language): String = when (language) {
-        Language.KO -> PROMPT
-        Language.JA -> "$PROMPT\n$JA_OUTPUT_LANGUAGE_PROMPT"
-        Language.EN -> "$PROMPT\n$EN_OUTPUT_LANGUAGE_PROMPT"
+        Language.KO -> KO_PROMPT
+        Language.JA -> JA_PROMPT
+        Language.EN -> EN_PROMPT
     }
 
     private fun convertRecognitionResponse(resultJson: String): GeminiMealRecognitionResponse = try {

@@ -108,7 +108,7 @@ class GeminiMealRecognitionClientTest {
         val result = recognizeMeal()
 
         assertEquals("gemini-recognition-test", result.model)
-        assertEquals("v3", result.promptVersion)
+        assertEquals("v4", result.promptVersion)
     }
 
     @Test
@@ -498,9 +498,31 @@ class GeminiMealRecognitionClientTest {
     }
 
     @Test
-    fun `일본어와 영어 요청에는 그 언어로 쓰라는 지시를 덧붙인다`() {
-        assertContains(capturePrompt(Language.JA), "모두 일본어로 써")
-        assertContains(capturePrompt(Language.EN), "모두 영어로 써")
+    fun `일본어 요청에는 일본어로 쓴 프롬프트를 보내고 이름을 일본어로 쓰게 한다`() {
+        val prompt = capturePrompt(Language.JA)
+
+        assertContains(prompt, "nameは料理名を30文字以内で、日本語で書いて。")
+        assertContains(prompt, "食事の名前は必ず日本語で書いて。")
+        // 한국어 지시가 남아 있으면 결과가 한국어로 끌려간다.
+        assertFalse(prompt.contains("이 사진에서"))
+    }
+
+    @Test
+    fun `영어 요청에는 영어로 쓴 프롬프트를 보내고 식사 이름을 20글자 안으로 쓰게 한다`() {
+        val prompt = capturePrompt(Language.EN)
+
+        assertContains(prompt, "Write name as the name of the food, within 30 characters, in English.")
+        assertContains(prompt, "Write a name for this meal within 20 characters, counting spaces.")
+        assertFalse(prompt.contains("이 사진에서"))
+    }
+
+    @Test
+    fun `일본어와 영어 프롬프트는 포장에 적힌 제품 이름을 다른 언어여도 적힌 그대로 쓰게 한다`() {
+        assertContains(capturePrompt(Language.JA), "商品名は他の言語でも直さず、パッケージに書かれたとおりに書いて。")
+        assertContains(
+            capturePrompt(Language.EN),
+            "Do not translate a product name; write it exactly as it is written on the package, even in another language.",
+        )
     }
 
     private fun createResultJson(): String = objectMapper.writeValueAsString(
