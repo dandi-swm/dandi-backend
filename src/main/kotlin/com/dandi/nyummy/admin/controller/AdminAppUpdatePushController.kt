@@ -27,7 +27,7 @@ class AdminAppUpdatePushController(private val adminAppUpdatePushService: AdminA
 
     @Operation(
         summary = "앱 업데이트 알림 발송",
-        description = "서비스 알림을 켠 그 플랫폼 사용자 전체에게 새 버전이 나왔다는 알림을 보낸다. 누르면 스토어 페이지가 열린다. " +
+        description = "서비스 알림을 켠 그 플랫폼 사용자 전체에게 새 버전이 나왔다는 알림을 보낸다. 링크는 `/app-update` 앱 링크이고, 앱이 받아 자기 스토어를 연다. " +
             "사용자의 앱 버전은 보지 않아 이미 업데이트한 사용자도 받는다. " +
             "같은 플랫폼·버전으로 다시 보내면 이미 받은 사용자는 건너뛰므로, 중간에 끊겼으면 다시 보내면 된다. " +
             "8시~21시(KST)에만 보낼 수 있고, 다 보낸 뒤 건수를 응답한다.",

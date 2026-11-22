@@ -4,7 +4,7 @@ import com.dandi.nyummy.admin.config.ConditionalOnAdminEnabled
 import com.dandi.nyummy.admin.dto.AppUpdatePushResponse
 import com.dandi.nyummy.admin.dto.AppUpdatePushTargetResult
 import com.dandi.nyummy.admin.dto.SendAppUpdatePushRequest
-import com.dandi.nyummy.config.StoreLinkProperties
+import com.dandi.nyummy.config.AppLinkProperties
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.AdminErrorCode
 import com.dandi.nyummy.infra.push.dto.PushMessage
@@ -31,7 +31,7 @@ class AdminAppUpdatePushService(
     private val deviceTokenRepository: DeviceTokenRepository,
     private val pushDeduplicationRepository: PushDeduplicationRepository,
     private val notificationService: NotificationService,
-    private val storeLinkProperties: StoreLinkProperties,
+    private val appLinkProperties: AppLinkProperties,
     private val messageSource: MessageSource,
     private val clock: Clock,
 ) {
@@ -52,7 +52,9 @@ class AdminAppUpdatePushService(
     }
 
     /**
-     * 서비스 알림을 켠 그 플랫폼 사용자 전체에게 새 버전이 나왔다고 알린다. 누르면 스토어 페이지가 열린다.
+     * 서비스 알림을 켠 그 플랫폼 사용자 전체에게 새 버전이 나왔다고 알린다.
+     * 링크는 플랫폼과 상관없이 `/app-update` 앱 링크이고, 앱이 받아 자기 스토어를 연다.
+     * 스토어 주소는 플랫폼마다 달라(패키지명·App Store 앱 id) 앱이 더 잘 알기 때문이다.
      *
      * 사용자의 앱 버전은 보지 않는다. 기기 토큰 등록이 앞으로 덜 잦아지면 저장한 버전이 늦게 바뀌어 거르는 의미가 없어서다.
      * 그래서 이미 업데이트한 사용자도 받는다.
@@ -63,8 +65,6 @@ class AdminAppUpdatePushService(
      */
     fun sendAppUpdatePushes(adminId: Long, request: SendAppUpdatePushRequest): AppUpdatePushResponse {
         validatePushTime()
-        val storeLink = storeLinkProperties.getStoreLink(request.platform)
-
         // 소요시간은 주입된 Clock이 아니라 단조 시계로 잰다
         val startedAt = TimeSource.Monotonic.markNow()
 
@@ -83,7 +83,7 @@ class AdminAppUpdatePushService(
             }
 
             cursor = page.content.last().userId
-            total += sendAppUpdatePushPage(page.content, request, storeLink)
+            total += sendAppUpdatePushPage(page.content, request)
         } while (page.hasNext())
 
         logger.info(
@@ -117,7 +117,6 @@ class AdminAppUpdatePushService(
     private fun sendAppUpdatePushPage(
         page: List<AppUpdatePushTargetResult>,
         request: SendAppUpdatePushRequest,
-        storeLink: String,
     ): AppUpdatePushResponse {
         val notificationIds = page.map {
             NotificationId.createAppUpdateId(it.userId, request.platform, request.appVersion)
@@ -139,7 +138,7 @@ class AdminAppUpdatePushService(
                 notificationId = notificationId,
                 title = messageSource.getMessage("push.appUpdate.title", language),
                 body = messageSource.getMessage("push.appUpdate.body", language),
-                appLink = storeLink,
+                appLink = appLinkProperties.appUpdate,
             )
         }.toMap()
 

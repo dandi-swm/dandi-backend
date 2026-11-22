@@ -3,7 +3,7 @@ package com.dandi.nyummy.admin.service
 import com.dandi.nyummy.admin.dto.AppUpdatePushResponse
 import com.dandi.nyummy.admin.dto.AppUpdatePushTargetResult
 import com.dandi.nyummy.admin.dto.SendAppUpdatePushRequest
-import com.dandi.nyummy.config.StoreLinkProperties
+import com.dandi.nyummy.config.AppLinkProperties
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.AdminErrorCode
 import com.dandi.nyummy.exception.errorcode.ErrorCode
@@ -57,7 +57,14 @@ class AdminAppUpdatePushServiceTest {
         deviceTokenRepository = deviceTokenRepository,
         pushDeduplicationRepository = pushDeduplicationRepository,
         notificationService = notificationService,
-        storeLinkProperties = StoreLinkProperties(android = PLAY_STORE_LINK, ios = APP_STORE_LINK),
+        appLinkProperties = AppLinkProperties(
+            baseUrl = "https://link.nyummy.co.kr",
+            homeUrl = "/home",
+            signupUrl = "/signup",
+            mealDetailUrl = "/meals",
+            onboardingUrl = "/onboarding",
+            inquiryDetailUrl = "/inquiries",
+        ),
         messageSource = messageSource,
         clock = Clock.fixed(Instant.parse(now), ZoneOffset.UTC),
     )
@@ -113,7 +120,7 @@ class AdminAppUpdatePushServiceTest {
     }
 
     @Test
-    fun `업데이트 알림은 누르면 플랫폼 스토어가 열린다`() {
+    fun `업데이트 알림은 누르면 앱 업데이트 링크로 간다`() {
         givenPage(cursor = 0, listOf(createTarget(1)), hasNext = false)
         val messagesByToken = captureMessages()
 
@@ -121,7 +128,7 @@ class AdminAppUpdatePushServiceTest {
 
         val message = messagesByToken.captured.getValue("token-1")
         assertEquals(PushType.APP_UPDATE, message.type)
-        assertEquals(PLAY_STORE_LINK, message.appLink)
+        assertEquals(APP_UPDATE_LINK, message.appLink)
         assertEquals(NotificationId.createAppUpdateId(1, DevicePlatform.ANDROID, "1.4.0"), message.notificationId)
     }
 
@@ -149,7 +156,7 @@ class AdminAppUpdatePushServiceTest {
     }
 
     @Test
-    fun `iOS로 보내면 App Store 링크와 iOS 출시의 중복 방지 키로 보낸다`() {
+    fun `iOS도 같은 앱 업데이트 링크와 iOS 출시의 중복 방지 키로 보낸다`() {
         givenPage(cursor = 0, listOf(createTarget(1)), hasNext = false, platform = DevicePlatform.IOS)
         val messagesByToken = captureMessages()
 
@@ -159,7 +166,7 @@ class AdminAppUpdatePushServiceTest {
         )
 
         val message = messagesByToken.captured.getValue("token-1")
-        assertEquals(APP_STORE_LINK, message.appLink)
+        assertEquals(APP_UPDATE_LINK, message.appLink)
         assertEquals(NotificationId.createAppUpdateId(1, DevicePlatform.IOS, "1.4.0"), message.notificationId)
     }
 
@@ -233,7 +240,6 @@ class AdminAppUpdatePushServiceTest {
     companion object {
         private const val ADMIN_ID = 1L
         private const val PAGE_SIZE = 500
-        private const val PLAY_STORE_LINK = "https://play.google.com/store/apps/details?id=com.dandi.nyummy"
-        private const val APP_STORE_LINK = "https://apps.apple.com/kr/app/id6836862137"
+        private const val APP_UPDATE_LINK = "https://link.nyummy.co.kr/app-update"
     }
 }

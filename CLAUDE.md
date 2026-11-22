@@ -187,7 +187,6 @@
 - 발송 대상 `Target`(영양의 목표 섭취량 Target과 다른 뜻), Redis 중복 발송 방지 표시 `SentMark`
 - 푸시 전송 내역 한 건 `PushHistory`(테이블 `push_histories`, PushLog·SendLog 금지) — 중복 발송 방지 표시 `SentMark`와 다른 것. FCM 접수 결과 `PushOutcome`(Result·Status 금지) — 기기 도착 여부와 다른 것
 - 새 버전 출시를 알리는 운영자 발송 알림 `AppUpdatePush`(`PushType.APP_UPDATE`, `sendAppUpdatePushes`, Release·Upgrade 금지)
-- 플랫폼별 스토어 페이지 링크 `StoreLink`(`app.store-link`, `StoreLinkProperties`, Market 금지 — 상점은 `Shop`) — 앱 안 화면으로 가는 `appLink`와 다른 것
 
 ### 문의
 
