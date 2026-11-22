@@ -154,7 +154,7 @@ class DailyPromotionIntegrationTest @Autowired constructor(
 
         dailyPromotionService.createDailyPromotion(today)
 
-        val page = shopService.getRecommendPage(userId, null, Language.KO)
+        val page = shopService.getRecommendPage(userId, Language.KO)
         val items = page.sduiComponents.filterIsInstance<ItemListComponentResponse>().single().content.items
         assertEquals(3, items.size)
         items.forEach { item ->

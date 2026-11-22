@@ -65,7 +65,6 @@ class ShopService(
 ) {
 
     companion object {
-        private const val LAYOUT_B = "B"
         const val DAILY_PRODUCT_COUNT = 3
 
         /** 오늘의 할인이 끝나기까지 이 기간 안이면 남은 시간을 빨간색으로 정확히 보여 준다 */
@@ -74,7 +73,7 @@ class ShopService(
     }
 
     /**
-     * 추천 탭 SDUI 칸 목록. A는 배너 → 오늘의 할인 → 인기, B는 배너 → 인기 → 오늘의 할인 순이다.
+     * 추천 탭 SDUI 칸 목록. 배너 → 인기 → 오늘의 할인 순이다.
      * 배너가 없으면 배너 칸을, 상품이 없는 섹션은 위 제목 줄까지 같이 뺀다.
      *
      * - 배너: 노출 중이고, 알리는 프로모션이 진행 중이며 사용자가 대상인 배너를 노출 순서대로
@@ -83,12 +82,11 @@ class ShopService(
      *
      * 가격은 상품이 든 프로모션 중 사용자가 대상인 것의 할인율 가장 큰 것으로 계산한다.
      *
-     * @param shopLayoutVariant 앱이 Remote Config에서 받은 배치 그룹. B가 아니면 A로 본다
      * @param language 요청의 `X-Language`로 정한 앱 언어. 섹션 제목·남은 시간과 상품 카드의 분류 이름·태그를 이 언어로 꺼낸다
      * @throws BusinessException [UserErrorCode.USER_NOT_FOUND] 사용자가 없는 경우
      */
     @Transactional(readOnly = true)
-    fun getRecommendPage(userId: Long, shopLayoutVariant: String?, language: Language): ShopPageResponse {
+    fun getRecommendPage(userId: Long, language: Language): ShopPageResponse {
         val now = clock.instant()
         val promotions = shopItemService.getEligiblePromotions(userId, now)
         val promotionProducts = promotionProductRepository.findByPromotionIdInOrderByDisplayOrderAsc(
@@ -156,9 +154,7 @@ class ShopService(
             language = language,
         )
 
-        val isLayoutB = shopLayoutVariant?.trim() == LAYOUT_B
-        val sections = if (isLayoutB) popularSection + discountSection else discountSection + popularSection
-        return ShopPageResponse(pageKey = "RECOMMEND", sduiComponents = heroBanner + sections)
+        return ShopPageResponse(pageKey = "RECOMMEND", sduiComponents = heroBanner + popularSection + discountSection)
     }
 
     /**
