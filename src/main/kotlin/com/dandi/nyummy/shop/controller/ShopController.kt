@@ -21,7 +21,6 @@ import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
-import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
@@ -31,28 +30,18 @@ import org.springframework.web.bind.annotation.RestController
 @RequestMapping("/api/v1/shop")
 class ShopController(private val shopService: ShopService) {
 
-    companion object {
-        private const val SHOP_LAYOUT_VARIANT = "X-Shop-Layout-Variant"
-    }
-
     @Operation(
         summary = "추천 탭 조회 (SDUI)",
         description = "추천 탭을 그릴 SDUI 칸 목록을 위에서 아래 순서로 조회한다. 칸은 viewType마다 content 모양이 정해져 있고, " +
             "앱은 모르는 viewType이나 필수 필드가 빠진 칸만 빼고 그린다. 상품이 없는 칸은 위 SectionHeader까지 같이 빠진다. " +
-            "A/B 그룹은 앱이 Remote Config에서 받은 값을 X-Shop-Layout-Variant 헤더(A 또는 B)로 보낸다. " +
-            "헤더가 없거나 모르는 값이면 A다. A는 배너 → 오늘의 할인 → 인기 순, B는 배너 → 인기 → 오늘의 할인 순이다. " +
+            "순서는 배너 → 인기 → 오늘의 할인이다. " +
             "배너는 진행 중이고 대상인 프로모션의 노출 중 배너이고, 할인율이 있는 프로모션만 묶음 가격(price)을 준다. " +
             "오늘의 할인은 진행 중인 오늘의 할인 프로모션의 판매 중 상품 3개, 인기는 인테리어 상품 판매량순 4개다. " +
             "상품 가격은 대상인 프로모션 중 할인율이 가장 큰 것으로 계산한다.",
     )
     @GetMapping("/pages/recommend")
-    fun getRecommendPage(
-        @CurrentUser user: AuthUser,
-        @CurrentLanguage language: Language,
-        @Parameter(description = "앱이 Remote Config에서 받은 추천 탭 배치 그룹 (A 또는 B)")
-        @RequestHeader(SHOP_LAYOUT_VARIANT, required = false)
-        shopLayoutVariant: String?,
-    ): ShopPageResponse = shopService.getRecommendPage(user.userId, shopLayoutVariant, language)
+    fun getRecommendPage(@CurrentUser user: AuthUser, @CurrentLanguage language: Language): ShopPageResponse =
+        shopService.getRecommendPage(user.userId, language)
 
     @Operation(
         summary = "상품 목록 조회",

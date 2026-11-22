@@ -172,8 +172,7 @@ class ShopServiceTest {
         adminId = 1,
     ).also { ReflectionTestUtils.setField(it, "id", id) }
 
-    private fun getRecommendPage(shopLayoutVariant: String? = null, language: Language = Language.KO) =
-        shopService.getRecommendPage(userId, shopLayoutVariant, language)
+    private fun getRecommendPage(language: Language = Language.KO) = shopService.getRecommendPage(userId, language)
 
     private inline fun <reified T> ShopPageResponse.componentOf(): T = sduiComponents.filterIsInstance<T>().single()
 
@@ -342,8 +341,8 @@ class ShopServiceTest {
         val headers = getRecommendPage(language = Language.JA).sduiComponents
             .filterIsInstance<SectionHeaderComponentResponse>()
             .map { it.content }
-        val dailyHeader = headers.first()
-        val popularHeader = headers.last()
+        val popularHeader = headers.first()
+        val dailyHeader = headers.last()
 
         assertEquals(
             messageSource.getMessage("shop.section.dailyPromotion.title", Language.JA),
@@ -370,9 +369,10 @@ class ShopServiceTest {
         promotions = listOf(promotion(3, PromotionCategory.DAILY, endsAt = now.plus(remainingTime)))
         promotionProducts = listOf(PromotionProduct(3, 101L, 0))
 
+        // 오늘의 할인은 인기 다음 섹션이다
         val header = getRecommendPage().sduiComponents
             .filterIsInstance<SectionHeaderComponentResponse>()
-            .first()
+            .last()
             .content
         val (icon, label) = assertNotNull(header.trailing).content
 
@@ -391,7 +391,7 @@ class ShopServiceTest {
 
         val header = getRecommendPage().sduiComponents
             .filterIsInstance<SectionHeaderComponentResponse>()
-            .first()
+            .last()
             .content
 
         assertEquals("오늘의 할인", header.title.single().text)
@@ -486,17 +486,15 @@ class ShopServiceTest {
     }
 
     @Test
-    fun `B 그룹은 인기를 오늘의 할인보다 먼저 준다`() {
+    fun `인기를 오늘의 할인보다 먼저 준다`() {
         products = listOf(product(101))
         productItems = products.map { single(it) }
         promotions = listOf(promotion(3, PromotionCategory.DAILY))
         promotionProducts = listOf(PromotionProduct(3, 101, 0))
 
-        val viewTypesA = getRecommendPage().sduiComponents.map { it.viewType }
-        val viewTypesB = getRecommendPage(shopLayoutVariant = "B").sduiComponents.map { it.viewType }
+        val viewTypes = getRecommendPage().sduiComponents.map { it.viewType }
 
-        assertEquals(listOf("SectionHeader", "ItemList", "SectionHeader", "Ranking"), viewTypesA)
-        assertEquals(listOf("SectionHeader", "Ranking", "SectionHeader", "ItemList"), viewTypesB)
+        assertEquals(listOf("SectionHeader", "Ranking", "SectionHeader", "ItemList"), viewTypes)
     }
 
     @Test

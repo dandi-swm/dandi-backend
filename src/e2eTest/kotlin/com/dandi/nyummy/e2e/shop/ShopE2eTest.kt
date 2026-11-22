@@ -23,14 +23,15 @@ class ShopE2eTest {
 
     @Smoke
     @Test
-    fun `추천 탭은 SDUI 칸 목록으로 오고 헤더의 A·B 그룹에 따라 섹션 순서가 바뀐다`() {
-        val viewTypesA = getRecommendViewTypes(shopLayoutVariant = null)
-        val viewTypesB = getRecommendViewTypes(shopLayoutVariant = "B")
+    fun `추천 탭은 SDUI 칸 목록으로 오고 인기가 오늘의 할인보다 먼저 온다`() {
+        val viewTypes = getRecommendViewTypes(shopLayoutVariant = null)
+        // A/B 테스트를 하던 앱은 X-Shop-Layout-Variant 헤더를 계속 보내므로, 예전 A 그룹 값을 보내도 같은 순서인지 본다
+        val viewTypesWithOldVariant = getRecommendViewTypes(shopLayoutVariant = "A")
 
-        // A는 오늘의 할인(ItemList)이 인기(Ranking)보다 먼저, B는 반대다. 상품이 없는 섹션은 빠지므로 둘 다 있을 때만 본다.
-        if (viewTypesA.containsAll(listOf("ItemList", "Ranking"))) {
-            assertTrue(viewTypesA.indexOf("ItemList") < viewTypesA.indexOf("Ranking"), "A 그룹 순서가 다릅니다: $viewTypesA")
-            assertTrue(viewTypesB.indexOf("Ranking") < viewTypesB.indexOf("ItemList"), "B 그룹 순서가 다릅니다: $viewTypesB")
+        assertEquals(viewTypes, viewTypesWithOldVariant, "예전 A/B 그룹 헤더에 따라 칸 목록이 달라졌습니다")
+        // 인기(Ranking)가 오늘의 할인(ItemList)보다 먼저다. 상품이 없는 섹션은 빠지므로 둘 다 있을 때만 본다.
+        if (viewTypes.containsAll(listOf("ItemList", "Ranking"))) {
+            assertTrue(viewTypes.indexOf("Ranking") < viewTypes.indexOf("ItemList"), "섹션 순서가 다릅니다: $viewTypes")
         }
     }
 
