@@ -11,6 +11,7 @@ class AppLinkProperties(
     onboardingUrl: String,
     inquiryDetailUrl: String,
     reportUrl: String = "/reports",
+    appUpdateUrl: String = "/app-update",
 ) {
     val home: String = baseUrl + homeUrl
     val signup: String = baseUrl + signupUrl
@@ -20,6 +21,9 @@ class AppLinkProperties(
 
     // 리포트 목록. 상세는 뒤에 /{reportId}를 붙인다.
     val reports: String = baseUrl + reportUrl
+
+    // 앱 업데이트 알림의 링크. 스토어는 앱이 자기 플랫폼에 맞게 연다.
+    val appUpdate: String = baseUrl + appUpdateUrl
 
     fun createMealDetailLink(mealId: Long): String = "$mealDetail/$mealId"
 

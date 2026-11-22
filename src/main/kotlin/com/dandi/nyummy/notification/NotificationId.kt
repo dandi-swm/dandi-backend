@@ -2,6 +2,7 @@ package com.dandi.nyummy.notification
 
 import com.dandi.nyummy.meal.enum.MealStatus
 import com.dandi.nyummy.meal.enum.MealTime
+import com.dandi.nyummy.notification.enum.DevicePlatform
 import com.dandi.nyummy.report.enum.ReportStatus
 import java.time.Instant
 import java.time.LocalDate
@@ -21,4 +22,8 @@ object NotificationId {
 
     // 리포트는 완료·실패로 한 번만 끝나므로 리포트 id와 끝난 상태로 구분된다.
     fun createReportId(reportId: Long, status: ReportStatus): String = "report:$reportId:$status"
+
+    // 앱 업데이트 알림은 출시(플랫폼·버전)마다 한 번만 보내므로 둘과 사용자 id로 구분된다.
+    fun createAppUpdateId(userId: Long, platform: DevicePlatform, appVersion: String): String =
+        "app-update:$userId:$platform:$appVersion"
 }

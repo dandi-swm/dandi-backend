@@ -306,6 +306,8 @@ app:
     onboarding-url: "/onboarding"
     inquiry-detail-url: "/inquiries"
     report-url: "/reports"
+    # 앱 업데이트 알림의 링크. 스토어 주소는 플랫폼마다 달라 앱이 이 링크를 받아 연다.
+    app-update-url: "/app-update"
 
   email:
     client: ${EMAIL_CLIENT:smtp} # smtp | ses (ses는 샌드박스 해제 후 전환)
