@@ -1,5 +1,6 @@
 package com.dandi.nyummy.meal.dto
 
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.meal.enum.MealInputCategory
 import com.dandi.nyummy.meal.enum.NetContentUnit
 import java.math.BigDecimal
@@ -19,7 +20,15 @@ data class MealRecognitionResult(
     val foods: List<MealFoodRecognitionResult>,
     val model: String,
     val promptVersion: String,
-)
+) {
+
+    /**
+     * 대표 이름과 음식 이름이 [language]의 글자로 쓰였는지. 모델이 요청한 언어가 아닌 언어를 섞어 썼는지 가려낸다.
+     * 포장에 적힌 제품 이름은 다른 언어여도 적힌 그대로 옮기는 것이 맞으므로 보지 않는다.
+     */
+    fun matchesLanguage(language: Language): Boolean =
+        language.matchesScript(name) && foods.filterNot { it.hasPackageName }.all { language.matchesScript(it.name) }
+}
 
 /**
  * 인식한 음식 한 줄. 인분은 인식이 정하지 않는다.

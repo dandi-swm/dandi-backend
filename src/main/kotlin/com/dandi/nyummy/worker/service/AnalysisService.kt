@@ -147,11 +147,23 @@ class AnalysisService(
      *
      * 인식이 끝났다는 알림은 보내지 않는다. 사용자는 대기 화면에서 상태를 조회하다 음식 목록으로 넘어간다.
      * 음식이 아니거나 인식에 실패한 것은 [handleAnalysisFailure]가 다른 작업과 같은 규칙으로 다루고 알린다.
+     *
+     * 인식한 이름에 요청한 언어가 아닌 글자가 섞여도 그대로 확정하고 로그만 남긴다. 식사 기록 요청 안에서 섞인 결과는
+     * 이 작업으로 넘어와 다시 인식한 것이라, 여기서도 섞이면 더 넘길 곳이 없다.
      */
     private fun recognizeMeal(job: MealAnalysisJobResult, analyzedAt: Instant) {
         val image = downloadImage(job)
 
         val recognition = mealRecognitionClient.recognizeMeal(image.bytes, image.contentType, job.language)
+        if (!recognition.matchesLanguage(job.language)) {
+            logger.warn(
+                "인식한 이름에 요청한 언어가 아닌 글자가 있습니다: mealId={}, language={}, name={}, foods={}",
+                job.mealId,
+                job.language,
+                recognition.name,
+                recognition.foods.map { it.name },
+            )
+        }
         val isConfirmed = mealAnalysisJobTransactionService.confirmMealRecognition(
             job = job,
             recognition = recognition,

@@ -51,6 +51,7 @@ class MealRecognitionService(
      *
      * 음식이 아니라는 판정만 그대로 돌려주고, 그 밖에는 요청 안에서 끝내지 못한 것으로 보고 Worker의 인식 작업으로 넘긴다.
      * 인식의 실패도 넘긴다. Worker에는 실패를 다루는 정책(재시도, 설정 오류면 미룸, 끝내 실패하면 알림)이 이미 있다.
+     * 인식한 이름에 요청한 언어가 아닌 글자가 섞인 결과도 쓰지 않고 넘겨, Worker가 사진으로 다시 인식하게 한다.
      *
      * @param receivedAt 서버가 식사 기록 요청을 받은 시각. 응답 기한을 여기서부터 센다
      */
@@ -88,7 +89,11 @@ class MealRecognitionService(
 
         return try {
             val recognition: MealRecognitionResult = future.get(timeout.toMillis(), TimeUnit.MILLISECONDS)
-            MealRecognitionOutcome.Recognized(recognition)
+            if (recognition.matchesLanguage(language)) {
+                MealRecognitionOutcome.Recognized(recognition)
+            } else {
+                MealRecognitionOutcome.Deferred(MealRecognitionDeferralCategory.LANGUAGE_MISMATCHED)
+            }
         } catch (e: TimeoutException) {
             future.cancel(true)
             MealRecognitionOutcome.Deferred(MealRecognitionDeferralCategory.TIMEOUT)
