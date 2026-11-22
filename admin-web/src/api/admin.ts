@@ -529,3 +529,27 @@ export const createRefund = (itemPurchaseProductId: number, input: CreateItemPur
     method: "POST",
     body: JSON.stringify(input),
   });
+
+export type DevicePlatform = "ANDROID" | "IOS";
+
+export const DEVICE_PLATFORM_LABELS: Record<DevicePlatform, string> = {
+  ANDROID: "Android",
+  IOS: "iOS",
+};
+
+// 백엔드 SendAppUpdatePushRequest와 같은 규칙
+export const APP_VERSION_PATTERN = /^[0-9]+(\.[0-9]+){1,3}$/;
+
+export type AppUpdatePushResult = {
+  targetCount: number;
+  sentCount: number;
+  successCount: number;
+  invalidCount: number;
+  retryableCount: number;
+};
+
+export const sendAppUpdatePushes = (platform: DevicePlatform, appVersion: string) =>
+  request<AppUpdatePushResult>(`${PREFIX}/app-update-pushes`, {
+    method: "POST",
+    body: JSON.stringify({ platform, appVersion }),
+  });

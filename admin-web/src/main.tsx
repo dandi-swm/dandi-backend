@@ -5,6 +5,7 @@ import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import { isUnauthorized } from "./api/client";
 import { AdminLayout } from "./components/AdminLayout";
 import { AnalysisFeedbackListPage } from "./pages/AnalysisFeedbackListPage";
+import { AppUpdatePushPage } from "./pages/AppUpdatePushPage";
 import { IconListPage } from "./pages/IconListPage";
 import { ItemPurchaseListPage } from "./pages/ItemPurchaseListPage";
 import { LinksPage } from "./pages/LinksPage";
@@ -52,6 +53,7 @@ const router = createBrowserRouter(
       { path: "/promotions", element: <PromotionListPage /> },
       { path: "/banners", element: <ShopBannerListPage /> },
       { path: "/item-purchases", element: <ItemPurchaseListPage /> },
+      { path: "/app-update-pushes", element: <AppUpdatePushPage /> },
     ],
   },
   ],
