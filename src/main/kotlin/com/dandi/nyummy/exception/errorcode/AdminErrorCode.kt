@@ -33,4 +33,9 @@ enum class AdminErrorCode(override val status: HttpStatus, override val code: St
         "api.admin.refundPolicyExceptionRequired",
         "환불 정책에 어긋나 예외 처리 확인이 필요합니다.",
     ),
+    PUSH_NOT_ALLOWED_TIME(
+        HttpStatus.CONFLICT,
+        "api.admin.pushNotAllowedTime",
+        "알림은 8시부터 21시 전까지만 보낼 수 있습니다.",
+    ),
 }
