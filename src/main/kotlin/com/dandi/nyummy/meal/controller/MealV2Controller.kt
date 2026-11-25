@@ -297,10 +297,11 @@ class MealV2Controller(
     @PostMapping("/{mealId}/analysis/feedback")
     fun createAnalysisFeedbackV2(
         @CurrentUser user: AuthUser,
+        @CurrentLanguage language: Language,
         @Parameter(description = "식사 ID") @PathVariable("mealId") mealId: Long,
         @Valid @RequestBody request: CreateAnalysisFeedbackRequest,
     ): ResponseEntity<Void> {
-        analysisFeedbackService.createAnalysisFeedback(user.userId, mealId, request)
+        analysisFeedbackService.createAnalysisFeedback(user.userId, mealId, request, language)
         return ResponseEntity.status(HttpStatus.CREATED).build()
     }
 }

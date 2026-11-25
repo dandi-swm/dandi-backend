@@ -1,6 +1,7 @@
 package com.dandi.nyummy.admin.service
 
 import com.dandi.nyummy.image.service.ImageService
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.meal.dto.Nutrition
 import com.dandi.nyummy.meal.entity.AnalysisFeedback
 import com.dandi.nyummy.meal.entity.Meal
@@ -43,7 +44,13 @@ class AdminAnalysisFeedbackServiceTest {
     }
 
     private fun analysisFeedback(id: Long, mealId: Long, rating: Float = 2.0f, reason: String? = "칼로리가 너무 높아요") =
-        AnalysisFeedback(rating = rating, reason = reason, mealId = mealId, userId = userId).apply {
+        AnalysisFeedback(
+            rating = rating,
+            reason = reason,
+            mealId = mealId,
+            userId = userId,
+            language = Language.KO,
+        ).apply {
             // id는 DB가 채우는 val이라 테스트에서만 직접 넣는다.
             ReflectionTestUtils.setField(this, "id", id)
         }

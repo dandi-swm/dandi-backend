@@ -1,6 +1,7 @@
 package com.dandi.nyummy.meal.repository
 
 import com.dandi.nyummy.auth.enum.AuthProvider
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.meal.entity.AnalysisFeedback
 import com.dandi.nyummy.meal.entity.Meal
 import com.dandi.nyummy.meal.enum.MealStatus
@@ -121,6 +122,12 @@ class AnalysisFeedbackRepositoryIntegrationTest @Autowired constructor(
 
     private fun createAnalysisFeedback(userId: Long, rating: Float = 3.0f, reason: String? = "칼로리가 너무 높게 나왔어요"): Long =
         analysisFeedbackRepository.save(
-            AnalysisFeedback(rating = rating, reason = reason, mealId = createMeal(userId), userId = userId),
+            AnalysisFeedback(
+                rating = rating,
+                reason = reason,
+                mealId = createMeal(userId),
+                userId = userId,
+                language = Language.KO,
+            ),
         ).id
 }
