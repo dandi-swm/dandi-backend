@@ -24,13 +24,14 @@ class AdminItemPurchaseController(private val adminItemPurchaseService: AdminIte
 
     @Operation(
         summary = "구매 내역 조회",
-        description = "사용자의 구매를 최신순으로 조회한다. 구매가 없거나 없는 사용자면 빈 목록이다. 무한 스크롤용 cursor 방식이다. " +
+        description = "구매를 최신순으로 조회한다. userId가 있으면 그 사용자의 구매만, 없으면 모든 사용자의 구매를 준다. " +
+            "구매가 없거나 없는 사용자면 빈 목록이다. 무한 스크롤용 cursor 방식이다. " +
             "구성품의 status는 NOT_CLAIMED(우편을 받기 전), CLAIMED(받음. 사용자가 지운 아이템 포함), REFUNDED(환불함)다. " +
             "isEquipped는 지금 장착 중인지이고, 장착한 적이 있는지는 환불 미리 보기의 EQUIPPED로 알 수 있다.",
     )
     @GetMapping
     fun getItemPurchases(
-        @Parameter(description = "구매한 사용자 ID") @RequestParam userId: Long,
+        @Parameter(description = "구매한 사용자 ID. 생략하면 모든 사용자") @RequestParam(required = false) userId: Long?,
         @Parameter(description = "직전 응답의 nextCursor. 첫 요청에서는 생략한다.") @RequestParam(required = false) cursor: Long?,
         @Parameter(description = "한 번에 조회할 개수 (1~50, 기본 20)")
         @RequestParam(defaultValue = "20")

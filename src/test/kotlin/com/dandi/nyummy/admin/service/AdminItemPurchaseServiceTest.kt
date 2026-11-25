@@ -63,9 +63,10 @@ class AdminItemPurchaseServiceTest {
         const val CURSOR = 50L
     }
 
-    private fun itemPurchase(id: Long) = ItemPurchase(userId, purchasePrice = 800, idempotencyKey = "key-$id").apply {
-        ReflectionTestUtils.setField(this, "id", id)
-    }
+    private fun itemPurchase(id: Long, userId: Long = this.userId) =
+        ItemPurchase(userId, purchasePrice = 800, idempotencyKey = "key-$id").apply {
+            ReflectionTestUtils.setField(this, "id", id)
+        }
 
     private fun itemPurchaseProduct(id: Long, itemPurchaseId: Long) =
         ItemPurchaseProduct(itemPurchaseId, PRODUCT_ID, null, listPrice = 1000, purchasePrice = 800).apply {
@@ -125,6 +126,23 @@ class AdminItemPurchaseServiceTest {
 
     private fun getSingleLine() = service.getItemPurchases(userId, null, SIZE)
         .itemPurchases.single().products.single().lines.single()
+
+    @Test
+    fun `사용자 ID가 없으면 모든 사용자의 구매를 최신순으로 주고 구매마다 사용자 ID를 준다`() {
+        val otherUserId = 3L
+        every {
+            itemPurchaseRepository.findByIdLessThanOrderByIdDesc(CURSOR, pageable)
+        } returns SliceImpl(listOf(itemPurchase(4L, otherUserId), itemPurchase(3L)), pageable, true)
+        givenDetails(products = listOf(itemPurchaseProduct(10L, 4L), itemPurchaseProduct(11L, 3L)))
+
+        val response = service.getItemPurchases(userId = null, cursor = CURSOR, size = SIZE)
+
+        assertEquals(listOf(4L, 3L), response.itemPurchases.map { it.itemPurchaseId })
+        assertEquals(listOf(otherUserId, userId), response.itemPurchases.map { it.userId })
+        assertEquals(3L, response.nextCursor)
+        assertTrue(response.hasNext)
+        verify(exactly = 0) { itemPurchaseRepository.findByUserIdAndIdLessThanOrderByIdDesc(any(), any(), any()) }
+    }
 
     @Test
     fun `구매가 없으면 빈 목록을 주고 상세 쿼리를 하지 않는다`() {

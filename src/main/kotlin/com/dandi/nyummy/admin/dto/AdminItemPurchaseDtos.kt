@@ -11,8 +11,12 @@ data class AdminItemPurchasesResponse(
     val hasNext: Boolean,
 )
 
+/**
+ * @property userId 구매한 사용자. 모든 사용자의 구매를 볼 때 누구의 구매인지 알고 그 사용자로 거르는 데 쓴다
+ */
 data class AdminItemPurchaseResponse(
     val itemPurchaseId: Long,
+    val userId: Long,
     val purchasePrice: Int,
     val createdAt: Instant,
     val products: List<AdminItemPurchaseProductResponse>,

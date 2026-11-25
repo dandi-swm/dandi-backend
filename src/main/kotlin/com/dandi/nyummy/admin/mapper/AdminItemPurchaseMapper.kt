@@ -13,6 +13,7 @@ import com.dandi.nyummy.shop.enum.ItemPurchaseLineStatus
 fun ItemPurchase.toAdminItemPurchaseResponse(products: List<AdminItemPurchaseProductResponse>) =
     AdminItemPurchaseResponse(
         itemPurchaseId = id,
+        userId = userId,
         purchasePrice = purchasePrice,
         createdAt = createdAt,
         products = products,

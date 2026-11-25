@@ -38,18 +38,26 @@ class AdminItemPurchaseService(
 ) {
 
     /**
-     * 사용자의 구매 내역을 최신순으로 조회한다. 구매가 없거나 없는 사용자면 빈 목록이다.
+     * 구매 내역을 최신순으로 조회한다. [userId]가 있으면 그 사용자의 구매만, 없으면 모든 사용자의 구매를 준다.
+     * 구매가 없거나 없는 사용자면 빈 목록이다.
      *
      * 구매 상품, 구성품, 환불, 보유 아이템을 묶음 단위로 한 번씩 읽어 구매 수만큼 쿼리가 늘지 않게 한다.
      * 한 트랜잭션에서 읽어, 그사이 환불이 끝나도 구성품 상태와 환불 기록이 어긋나지 않는다.
      */
     @Transactional(readOnly = true)
-    fun getItemPurchases(userId: Long, cursor: Long?, size: Int): AdminItemPurchasesResponse {
-        val itemPurchases = itemPurchaseRepository.findByUserIdAndIdLessThanOrderByIdDesc(
-            userId = userId,
-            cursor = cursor ?: Long.MAX_VALUE,
-            pageable = PageRequest.of(0, size),
-        )
+    fun getItemPurchases(userId: Long?, cursor: Long?, size: Int): AdminItemPurchasesResponse {
+        val itemPurchases = if (userId == null) {
+            itemPurchaseRepository.findByIdLessThanOrderByIdDesc(
+                cursor = cursor ?: Long.MAX_VALUE,
+                pageable = PageRequest.of(0, size),
+            )
+        } else {
+            itemPurchaseRepository.findByUserIdAndIdLessThanOrderByIdDesc(
+                userId = userId,
+                cursor = cursor ?: Long.MAX_VALUE,
+                pageable = PageRequest.of(0, size),
+            )
+        }
         val productsByItemPurchaseId = getItemPurchaseProductResponses(itemPurchases.content)
 
         return AdminItemPurchasesResponse(
