@@ -79,7 +79,7 @@ class DailyPromotionIntegrationTest @Autowired constructor(
 
         val promotions = findDailyPromotions(date)
         assertEquals(1, promotions.size)
-        assertEquals(5, promotions.single().discountRate)
+        assertEquals(20, promotions.single().discountRate)
         assertEquals(
             listOf(0, 1, 2),
             promotionProductRepository.findByPromotionIdInOrderByDisplayOrderAsc(listOf(promotions.single().id))
@@ -159,7 +159,7 @@ class DailyPromotionIntegrationTest @Autowired constructor(
         assertEquals(3, items.size)
         items.forEach { item ->
             val price = item.price.joinToString("") { it.text.orEmpty() }
-            assertTrue("950" in price, "1000코인의 5% 할인가가 아닙니다: $price")
+            assertTrue("800" in price, "1000코인의 20% 할인가가 아닙니다: $price")
         }
     }
 

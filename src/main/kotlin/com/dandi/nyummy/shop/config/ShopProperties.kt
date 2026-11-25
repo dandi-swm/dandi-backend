@@ -18,7 +18,7 @@ data class ShopProperties(
     val cdnBaseUrl: String = "https://cdn.nyummy.co.kr",
     val newUserTimeToLive: Duration = Duration.ofDays(7),
     val newProductTimeToLive: Duration = Duration.ofDays(7),
-    val dailyDiscountRate: Int = 5,
+    val dailyDiscountRate: Int = 20,
     val salesCountTimeToLive: Duration = Duration.ofDays(30),
     val refundTimeToLive: Duration = Duration.ofDays(7),
     val maxQuantityPerProduct: Int = 10,
