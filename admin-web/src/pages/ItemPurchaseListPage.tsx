@@ -27,7 +27,8 @@ const convertToUserId = (value: string | null) => {
 };
 
 /**
- * 사용자의 구매 내역. 사용자 id는 주소(?userId=)에 둬서 새로고침·뒤로 가기에도 유지된다.
+ * 구매 내역. 처음에는 모든 사용자의 최근 구매를 보여 주고, 사용자 id로 거를 수 있다.
+ * 사용자 id는 주소(?userId=)에 둬서 새로고침·뒤로 가기에도 유지된다.
  */
 export function ItemPurchaseListPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -37,15 +38,20 @@ export function ItemPurchaseListPage() {
 
   const itemPurchases = useInfiniteQuery({
     queryKey: ["itemPurchases", userId],
-    queryFn: ({ pageParam }) => getItemPurchases(userId!, pageParam),
+    queryFn: ({ pageParam }) => getItemPurchases(userId, pageParam),
     initialPageParam: null as number | null,
     getNextPageParam: (last) => (last.hasNext ? last.nextCursor : undefined),
-    enabled: userId !== null,
   });
+
+  // 입력칸도 같이 바꿔, 카드의 사용자 id를 눌렀을 때와 "전체"를 눌렀을 때 입력칸이 지금 조건을 보여 주게 한다.
+  const updateUserIdFilter = (value: string) => {
+    setUserIdInput(value);
+    setSearchParams(value ? { userId: value } : {});
+  };
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
-    setSearchParams(userIdInput ? { userId: userIdInput } : {});
+    updateUserIdFilter(userIdInput);
   };
 
   const rows = itemPurchases.data?.pages.flatMap((page) => page.itemPurchases) ?? [];
@@ -66,11 +72,20 @@ export function ItemPurchaseListPage() {
           <button type="submit" className="primary" disabled={!userIdInput}>
             조회
           </button>
+          {userIdParam !== null && (
+            <button type="button" className="secondary" onClick={() => updateUserIdFilter("")}>
+              전체
+            </button>
+          )}
         </form>
       </div>
 
-      {userId === null && <p className="muted">사용자 ID로 조회합니다. 문의함에서 사용자 ID를 확인할 수 있습니다.</p>}
-      {userId !== null && itemPurchases.isPending && <p className="muted">불러오는 중…</p>}
+      <p className="muted">
+        {userId === null
+          ? "모든 사용자의 최근 구매입니다. 사용자 ID를 누르거나 입력하면 그 사용자의 구매만 봅니다."
+          : `사용자 ${userId}의 구매입니다.`}
+      </p>
+      {itemPurchases.isPending && <p className="muted">불러오는 중…</p>}
       {itemPurchases.error && <p className="error">{itemPurchases.error.message}</p>}
       {itemPurchases.isSuccess && rows.length === 0 && <p className="muted">구매 내역이 없습니다.</p>}
 
@@ -79,6 +94,17 @@ export function ItemPurchaseListPage() {
           <article key={itemPurchase.itemPurchaseId} className="card">
             <div className="meta">
               <span>구매 {itemPurchase.itemPurchaseId}</span>
+              {userId === null ? (
+                <button
+                  type="button"
+                  className="link"
+                  onClick={() => updateUserIdFilter(String(itemPurchase.userId))}
+                >
+                  사용자 {itemPurchase.userId}
+                </button>
+              ) : (
+                <span>사용자 {itemPurchase.userId}</span>
+              )}
               <span>{formatDateTime(itemPurchase.createdAt)}</span>
               <span>결제 {itemPurchase.purchasePrice} 코인</span>
             </div>
