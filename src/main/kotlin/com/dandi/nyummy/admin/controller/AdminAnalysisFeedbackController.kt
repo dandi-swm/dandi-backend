@@ -4,6 +4,7 @@ import com.dandi.nyummy.admin.config.AdminPaths
 import com.dandi.nyummy.admin.config.ConditionalOnAdminEnabled
 import com.dandi.nyummy.admin.dto.AdminAnalysisFeedbacksResponse
 import com.dandi.nyummy.admin.service.AdminAnalysisFeedbackService
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.security.AuthAdmin
 import com.dandi.nyummy.security.CurrentAdmin
 import io.swagger.v3.oas.annotations.Operation
@@ -27,7 +28,8 @@ class AdminAnalysisFeedbackController(private val adminAnalysisFeedbackService: 
     @Operation(
         summary = "분석 평가 목록 조회",
         description = "사용자의 영양 분석 평가를 대상 식사와 함께 최신순으로 조회한다. 사용자가 지운 식사의 평가도 포함하고 " +
-            "meal.deletedAt으로 구분한다. 식사의 메뉴명·영양은 평가 당시가 아니라 지금 값이다. 무한 스크롤용 cursor 방식이다. " +
+            "meal.deletedAt으로 구분한다. 식사의 메뉴명·영양은 평가 당시가 아니라 지금 값이다. " +
+            "language는 평가를 등록한 앱 언어이고, 언어를 알 수 없는 예전 평가는 원본 언어(KO)로 본다. 무한 스크롤용 cursor 방식이다. " +
             "첫 요청은 cursor 없이 보내고, 다음 요청부터는 직전 응답의 nextCursor를 cursor로 보낸다.",
     )
     @GetMapping
@@ -37,6 +39,9 @@ class AdminAnalysisFeedbackController(private val adminAnalysisFeedbackService: 
         @Parameter(description = "이유 여부. 생략하면 모두, true면 이유를 적은 평가만")
         @RequestParam(required = false)
         hasReason: Boolean?,
+        @Parameter(description = "평가를 등록한 앱 언어. 생략하면 모든 언어")
+        @RequestParam(required = false)
+        language: Language?,
         @Parameter(description = "직전 응답의 nextCursor. 첫 요청에서는 생략한다.") @RequestParam(required = false) cursor: Long?,
         @Parameter(description = "한 번에 조회할 개수 (1~50, 기본 20)")
         @RequestParam(defaultValue = "20")
@@ -44,5 +49,5 @@ class AdminAnalysisFeedbackController(private val adminAnalysisFeedbackService: 
         @Max(50)
         size: Int,
     ): AdminAnalysisFeedbacksResponse =
-        adminAnalysisFeedbackService.getAnalysisFeedbacks(admin.adminId, maxRating, hasReason, cursor, size)
+        adminAnalysisFeedbackService.getAnalysisFeedbacks(admin.adminId, maxRating, hasReason, language, cursor, size)
 }

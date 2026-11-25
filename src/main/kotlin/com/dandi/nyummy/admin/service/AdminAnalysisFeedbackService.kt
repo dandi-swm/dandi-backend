@@ -5,6 +5,7 @@ import com.dandi.nyummy.admin.dto.AdminAnalysisFeedbacksResponse
 import com.dandi.nyummy.admin.mapper.toAdminAnalysisFeedbackMealResponse
 import com.dandi.nyummy.admin.mapper.toAdminAnalysisFeedbackResponse
 import com.dandi.nyummy.image.service.ImageService
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.meal.repository.AnalysisFeedbackRepository
 import com.dandi.nyummy.meal.repository.MealRepository
 import org.slf4j.LoggerFactory
@@ -24,7 +25,8 @@ class AdminAnalysisFeedbackService(
     }
 
     /**
-     * 분석 평가를 대상 식사와 함께 최신순으로 조회한다. 별점 상한·이유 여부가 null이면 그 조건으로 거르지 않는다.
+     * 분석 평가를 대상 식사와 함께 최신순으로 조회한다. 별점 상한·이유 여부·언어가 null이면 그 조건으로 거르지 않는다.
+     * 언어가 NULL인 예전 평가는 원본 언어로 보고 거르고 응답한다.
      *
      * 평가와 식사는 연관관계가 없어 식사를 한 번에 따로 읽는다. 평가의 meal_id는 FK(ON DELETE CASCADE)라
      * 식사가 없는 평가는 없고, 사용자가 지운(soft delete) 식사도 행은 남아 함께 읽힌다.
@@ -36,14 +38,16 @@ class AdminAnalysisFeedbackService(
         adminId: Long,
         maxRating: Float?,
         hasReason: Boolean?,
+        language: Language?,
         cursor: Long?,
         size: Int,
     ): AdminAnalysisFeedbacksResponse {
         logger.info(
-            "분석 평가 목록 열람: adminId={}, maxRating={}, hasReason={}, cursor={}, size={}",
+            "분석 평가 목록 열람: adminId={}, maxRating={}, hasReason={}, language={}, cursor={}, size={}",
             adminId,
             maxRating,
             hasReason,
+            language,
             cursor,
             size,
         )
@@ -51,6 +55,8 @@ class AdminAnalysisFeedbackService(
         val analysisFeedbacks = analysisFeedbackRepository.findAnalysisFeedbacksBeforeCursor(
             maxRating = maxRating,
             hasReason = hasReason,
+            language = language,
+            originalLanguage = Language.ORIGINAL_LANGUAGE,
             cursor = cursor ?: Long.MAX_VALUE,
             pageable = PageRequest.of(0, size),
         )

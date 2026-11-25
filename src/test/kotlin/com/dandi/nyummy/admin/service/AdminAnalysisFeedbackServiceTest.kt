@@ -43,17 +43,22 @@ class AdminAnalysisFeedbackServiceTest {
         every { imageService.createImageUrl(any()) } answers { "https://image.example/${firstArg<String>()}" }
     }
 
-    private fun analysisFeedback(id: Long, mealId: Long, rating: Float = 2.0f, reason: String? = "칼로리가 너무 높아요") =
-        AnalysisFeedback(
-            rating = rating,
-            reason = reason,
-            mealId = mealId,
-            userId = userId,
-            language = Language.KO,
-        ).apply {
-            // id는 DB가 채우는 val이라 테스트에서만 직접 넣는다.
-            ReflectionTestUtils.setField(this, "id", id)
-        }
+    private fun analysisFeedback(
+        id: Long,
+        mealId: Long,
+        rating: Float = 2.0f,
+        reason: String? = "칼로리가 너무 높아요",
+        language: Language? = Language.KO,
+    ) = AnalysisFeedback(
+        rating = rating,
+        reason = reason,
+        mealId = mealId,
+        userId = userId,
+        language = language,
+    ).apply {
+        // id는 DB가 채우는 val이라 테스트에서만 직접 넣는다.
+        ReflectionTestUtils.setField(this, "id", id)
+    }
 
     private fun meal(id: Long, deletedAt: Instant? = null) = Meal(
         status = MealStatus.COMPLETED,
@@ -74,6 +79,8 @@ class AdminAnalysisFeedbackServiceTest {
             analysisFeedbackRepository.findAnalysisFeedbacksBeforeCursor(
                 null,
                 null,
+                null,
+                Language.ORIGINAL_LANGUAGE,
                 Long.MAX_VALUE,
                 PageRequest.of(0, 2),
             )
@@ -88,6 +95,7 @@ class AdminAnalysisFeedbackServiceTest {
             adminId = adminId,
             maxRating = null,
             hasReason = null,
+            language = null,
             cursor = null,
             size = 2,
         )
@@ -100,7 +108,14 @@ class AdminAnalysisFeedbackServiceTest {
     @Test
     fun `마지막 묶음이면 다음 커서가 없다`() {
         every {
-            analysisFeedbackRepository.findAnalysisFeedbacksBeforeCursor(2.0f, true, 20L, PageRequest.of(0, 2))
+            analysisFeedbackRepository.findAnalysisFeedbacksBeforeCursor(
+                2.0f,
+                true,
+                Language.JA,
+                Language.ORIGINAL_LANGUAGE,
+                20L,
+                PageRequest.of(0, 2),
+            )
         } returns SliceImpl(listOf(analysisFeedback(id = 10, mealId = 100)), PageRequest.of(0, 2), false)
         every { mealRepository.findAllById(listOf(100L)) } returns listOf(meal(id = 100))
 
@@ -108,6 +123,7 @@ class AdminAnalysisFeedbackServiceTest {
             adminId = adminId,
             maxRating = 2.0f,
             hasReason = true,
+            language = Language.JA,
             cursor = 20L,
             size = 2,
         )
@@ -122,6 +138,8 @@ class AdminAnalysisFeedbackServiceTest {
             analysisFeedbackRepository.findAnalysisFeedbacksBeforeCursor(
                 null,
                 null,
+                null,
+                Language.ORIGINAL_LANGUAGE,
                 Long.MAX_VALUE,
                 PageRequest.of(0, 20),
             )
@@ -132,11 +150,12 @@ class AdminAnalysisFeedbackServiceTest {
         )
         every { mealRepository.findAllById(listOf(100L)) } returns listOf(meal(id = 100))
 
-        val analysisFeedback = adminAnalysisFeedbackService.getAnalysisFeedbacks(adminId, null, null, null, 20)
+        val analysisFeedback = adminAnalysisFeedbackService.getAnalysisFeedbacks(adminId, null, null, null, null, 20)
             .analysisFeedbacks.single()
 
         assertEquals(1.5f, analysisFeedback.rating)
         assertEquals("양이 달라요", analysisFeedback.reason)
+        assertEquals(Language.KO, analysisFeedback.language)
         assertEquals(100L, analysisFeedback.meal.mealId)
         assertEquals("제육볶음", analysisFeedback.meal.name)
         assertEquals(Nutrition(calory = 726, carbs = 82, protein = 34, fat = 29), analysisFeedback.meal.nutrition)
@@ -151,15 +170,41 @@ class AdminAnalysisFeedbackServiceTest {
             analysisFeedbackRepository.findAnalysisFeedbacksBeforeCursor(
                 null,
                 null,
+                null,
+                Language.ORIGINAL_LANGUAGE,
                 Long.MAX_VALUE,
                 PageRequest.of(0, 20),
             )
         } returns SliceImpl(listOf(analysisFeedback(id = 10, mealId = 100)), PageRequest.of(0, 20), false)
         every { mealRepository.findAllById(listOf(100L)) } returns listOf(meal(id = 100, deletedAt = deletedAt))
 
-        val analysisFeedback = adminAnalysisFeedbackService.getAnalysisFeedbacks(adminId, null, null, null, 20)
+        val analysisFeedback = adminAnalysisFeedbackService.getAnalysisFeedbacks(adminId, null, null, null, null, 20)
             .analysisFeedbacks.single()
 
         assertEquals(deletedAt, analysisFeedback.meal.deletedAt)
+    }
+
+    @Test
+    fun `언어를 알 수 없는 예전 평가는 원본 언어로 준다`() {
+        every {
+            analysisFeedbackRepository.findAnalysisFeedbacksBeforeCursor(
+                null,
+                null,
+                null,
+                Language.ORIGINAL_LANGUAGE,
+                Long.MAX_VALUE,
+                PageRequest.of(0, 20),
+            )
+        } returns SliceImpl(
+            listOf(analysisFeedback(id = 10, mealId = 100, language = null)),
+            PageRequest.of(0, 20),
+            false,
+        )
+        every { mealRepository.findAllById(listOf(100L)) } returns listOf(meal(id = 100))
+
+        val analysisFeedback = adminAnalysisFeedbackService.getAnalysisFeedbacks(adminId, null, null, null, null, 20)
+            .analysisFeedbacks.single()
+
+        assertEquals(Language.ORIGINAL_LANGUAGE, analysisFeedback.language)
     }
 }

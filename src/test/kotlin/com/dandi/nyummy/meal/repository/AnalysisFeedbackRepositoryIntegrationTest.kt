@@ -22,7 +22,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * 어드민 분석 평가 목록 쿼리의 별점·이유·커서 조건이 실제 MySQL에서 의도대로 거르는지 확인한다.
+ * 어드민 분석 평가 목록 쿼리의 별점·이유·언어·커서 조건이 실제 MySQL에서 의도대로 거르는지 확인한다.
  *
  * 컨테이너를 테스트끼리 함께 쓰므로 결과는 각 테스트가 만든 평가로만 좁혀서 비교한다.
  */
@@ -72,6 +72,20 @@ class AnalysisFeedbackRepositoryIntegrationTest @Autowired constructor(
     }
 
     @Test
+    fun `언어 조건은 언어를 알 수 없는 평가를 원본 언어로 본다`() {
+        val userId = createUser()
+        val korean = createAnalysisFeedback(userId, language = Language.KO)
+        val japanese = createAnalysisFeedback(userId, language = Language.JA)
+        val english = createAnalysisFeedback(userId, language = Language.EN)
+        val unknown = createAnalysisFeedback(userId, language = null)
+        val createdIds = setOf(korean, japanese, english, unknown)
+
+        assertEquals(listOf(unknown, korean), findAnalysisFeedbackIds(createdIds, language = Language.KO))
+        assertEquals(listOf(japanese), findAnalysisFeedbackIds(createdIds, language = Language.JA))
+        assertEquals(listOf(unknown, english, japanese, korean), findAnalysisFeedbackIds(createdIds))
+    }
+
+    @Test
     fun `커서보다 작은 id부터 최신순으로 개수만큼 준다`() {
         val userId = createUser()
         val (_, second, third) = List(3) { createAnalysisFeedback(userId) }
@@ -79,6 +93,8 @@ class AnalysisFeedbackRepositoryIntegrationTest @Autowired constructor(
         val analysisFeedbacks = analysisFeedbackRepository.findAnalysisFeedbacksBeforeCursor(
             maxRating = null,
             hasReason = null,
+            language = null,
+            originalLanguage = Language.ORIGINAL_LANGUAGE,
             cursor = third,
             pageable = PageRequest.of(0, 1),
         )
@@ -102,8 +118,16 @@ class AnalysisFeedbackRepositoryIntegrationTest @Autowired constructor(
         createdIds: Set<Long>,
         maxRating: Float? = null,
         hasReason: Boolean? = null,
+        language: Language? = null,
     ): List<Long> = analysisFeedbackRepository
-        .findAnalysisFeedbacksBeforeCursor(maxRating, hasReason, cursor = createdIds.max() + 1, PageRequest.of(0, SIZE))
+        .findAnalysisFeedbacksBeforeCursor(
+            maxRating = maxRating,
+            hasReason = hasReason,
+            language = language,
+            originalLanguage = Language.ORIGINAL_LANGUAGE,
+            cursor = createdIds.max() + 1,
+            pageable = PageRequest.of(0, SIZE),
+        )
         .content
         .map { it.id }
         .filter { it in createdIds }
@@ -120,14 +144,18 @@ class AnalysisFeedbackRepositoryIntegrationTest @Autowired constructor(
         ).apply { deletedAt?.let { updateDeletedAt(it) } },
     ).id
 
-    private fun createAnalysisFeedback(userId: Long, rating: Float = 3.0f, reason: String? = "칼로리가 너무 높게 나왔어요"): Long =
-        analysisFeedbackRepository.save(
-            AnalysisFeedback(
-                rating = rating,
-                reason = reason,
-                mealId = createMeal(userId),
-                userId = userId,
-                language = Language.KO,
-            ),
-        ).id
+    private fun createAnalysisFeedback(
+        userId: Long,
+        rating: Float = 3.0f,
+        reason: String? = "칼로리가 너무 높게 나왔어요",
+        language: Language? = Language.KO,
+    ): Long = analysisFeedbackRepository.save(
+        AnalysisFeedback(
+            rating = rating,
+            reason = reason,
+            mealId = createMeal(userId),
+            userId = userId,
+            language = language,
+        ),
+    ).id
 }

@@ -2,6 +2,7 @@
 
 package com.dandi.nyummy.admin.dto
 
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.meal.dto.Nutrition
 import java.time.Instant
 
@@ -18,6 +19,8 @@ data class AdminAnalysisFeedbackResponse(
     val analysisFeedbackId: Long,
     val rating: Float,
     val reason: String?,
+    // 평가를 등록한 앱 언어. 언어를 알 수 없는 예전 평가는 원본 언어로 내린다.
+    val language: Language,
     val createdAt: Instant,
     val meal: AdminAnalysisFeedbackMealResponse,
 )
