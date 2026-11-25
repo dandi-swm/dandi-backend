@@ -2,6 +2,7 @@ package com.dandi.nyummy.meal.service
 
 import com.dandi.nyummy.exception.BusinessException
 import com.dandi.nyummy.exception.errorcode.MealErrorCode
+import com.dandi.nyummy.language.enum.Language
 import com.dandi.nyummy.meal.config.MealProperties
 import com.dandi.nyummy.meal.dto.CreateAnalysisFeedbackRequest
 import com.dandi.nyummy.meal.entity.Meal
@@ -51,13 +52,14 @@ class AnalysisFeedbackService(
      * @param userId 평가를 등록하는 사용자 ID
      * @param mealId 평가 대상 식사 ID
      * @param request 별점과 이유를 담은 [CreateAnalysisFeedbackRequest]
+     * @param language 요청의 앱 언어. 어드민이 평가를 언어별로 나눠 보도록 평가에 남긴다
      * @throws BusinessException [MealErrorCode.INVALID_RATING] 별점이 허용 범위·단위를 벗어난 경우
      * @throws BusinessException [MealErrorCode.MEAL_NOT_FOUND] 식사가 없거나 삭제됐거나 요청자 소유가 아닌 경우
      * @throws BusinessException [MealErrorCode.ANALYSIS_NOT_COMPLETED] 영양 분석이 완료되지 않은 경우
      * @throws BusinessException [MealErrorCode.ANALYSIS_FEEDBACK_ALREADY_EXISTS] 이미 평가한 식사인 경우
      */
     @Transactional
-    fun createAnalysisFeedback(userId: Long, mealId: Long, request: CreateAnalysisFeedbackRequest) {
+    fun createAnalysisFeedback(userId: Long, mealId: Long, request: CreateAnalysisFeedbackRequest, language: Language) {
         validateRating(request.rating)
 
         val meal = mealRepository.findMealByIdAndDeletedAtIsNull(mealId)
@@ -73,7 +75,7 @@ class AnalysisFeedbackService(
             throw BusinessException(MealErrorCode.ANALYSIS_FEEDBACK_ALREADY_EXISTS)
         }
 
-        val analysisFeedback = request.toAnalysisFeedback(mealId, userId)
+        val analysisFeedback = request.toAnalysisFeedback(mealId, userId, language)
 
         // 위 중복 검사와 저장 사이에 같은 식사의 두 번째 요청이 끼면 유니크 제약
         // (uk_analysis_feedbacks_meal_id)에 걸린다. 별점 버튼은 더블탭이 쉬워 실제로 발생하므로,
