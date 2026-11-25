@@ -62,11 +62,22 @@ export type AdminAnalysisFeedbackMeal = {
   deletedAt: string | null;
 };
 
+/** 서버의 Language enum 이름. 앱이 X-Language 헤더로 보내는 앱 언어다. */
+export type Language = "KO" | "JA" | "EN";
+
+export const LANGUAGE_LABELS: Record<Language, string> = {
+  KO: "한국어",
+  JA: "일본어",
+  EN: "영어",
+};
+
 /** 분석 품질을 보는 화면이라 누가 평가했는지(userId)는 서버가 내리지 않는다. */
 export type AdminAnalysisFeedback = {
   analysisFeedbackId: number;
   rating: number;
   reason: string | null;
+  /** 평가를 등록한 앱 언어. 언어를 알 수 없는 예전 평가는 서버가 KO로 내린다. */
+  language: Language;
   createdAt: string;
   meal: AdminAnalysisFeedbackMeal;
 };
@@ -80,6 +91,7 @@ export type AdminAnalysisFeedbacks = {
 export type AnalysisFeedbackFilter = {
   maxRating?: number;
   hasReason?: boolean;
+  language?: Language;
 };
 
 /** 음식 아이콘. imageUrl은 앱과 같은 규칙(CDN 주소 + /icons/{iconId}.png)의 미리보기 주소다. */
@@ -147,6 +159,7 @@ export function getAnalysisFeedbacks(filter: AnalysisFeedbackFilter, cursor: num
   const params = new URLSearchParams({ size: String(size) });
   if (filter.maxRating !== undefined) params.set("maxRating", String(filter.maxRating));
   if (filter.hasReason !== undefined) params.set("hasReason", String(filter.hasReason));
+  if (filter.language !== undefined) params.set("language", filter.language);
   if (cursor !== null) params.set("cursor", String(cursor));
 
   return request<AdminAnalysisFeedbacks>(`${PREFIX}/analysis-feedbacks?${params}`);
