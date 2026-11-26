@@ -284,6 +284,12 @@ select {
   font-size: 13px;
 }
 
+/* 메타 줄 안의 링크 버튼은 주변 글자와 크기를 맞추고, 누를 수 있다는 걸 밑줄로 보여 준다. */
+.meta button.link {
+  font-size: inherit;
+  text-decoration: underline;
+}
+
 .card h2 {
   margin: 16px 0 8px;
   overflow-wrap: anywhere;

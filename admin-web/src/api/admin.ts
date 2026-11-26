@@ -481,6 +481,8 @@ export type AdminItemPurchaseProduct = {
 
 export type AdminItemPurchase = {
   itemPurchaseId: number;
+  /** 구매한 사용자. 모든 사용자의 구매를 볼 때 누구의 구매인지 보여 주고 그 사용자로 거르는 데 쓴다. */
+  userId: number;
   purchasePrice: number;
   createdAt: string;
   products: AdminItemPurchaseProduct[];
@@ -492,8 +494,10 @@ export type AdminItemPurchases = {
   hasNext: boolean;
 };
 
-export function getItemPurchases(userId: number, cursor: number | null, size = 20) {
-  const params = new URLSearchParams({ userId: String(userId), size: String(size) });
+/** userId가 null이면 모든 사용자의 구매를 최신순으로 준다. */
+export function getItemPurchases(userId: number | null, cursor: number | null, size = 20) {
+  const params = new URLSearchParams({ size: String(size) });
+  if (userId !== null) params.set("userId", String(userId));
   if (cursor !== null) params.set("cursor", String(cursor));
 
   return request<AdminItemPurchases>(`${PREFIX}/item-purchases?${params}`);
